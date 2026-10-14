@@ -1,0 +1,187 @@
+#!/usr/bin/env python3
+"""Apply tightly-scoped VX Ace mutations to a disposable project copy, never the source."""
+from __future__ import annotations
+import argparse, difflib, hashlib, json, os, shutil, subprocess, sys, tempfile
+from pathlib import Path
+
+VERSION='0.8.0'
+DB_FILES={'actors':'Actors.rvdata2','classes':'Classes.rvdata2','skills':'Skills.rvdata2','items':'Items.rvdata2','weapons':'Weapons.rvdata2','armors':'Armors.rvdata2','enemies':'Enemies.rvdata2','troops':'Troops.rvdata2','states':'States.rvdata2','animations':'Animations.rvdata2','tilesets':'Tilesets.rvdata2','common-events':'CommonEvents.rvdata2','common_events':'CommonEvents.rvdata2','system':'System.rvdata2','map-infos':'MapInfos.rvdata2','map_infos':'MapInfos.rvdata2'}
+
+def sha256(path:Path)->str:
+    h=hashlib.sha256()
+    with path.open('rb') as f:
+        for b in iter(lambda:f.read(1024*1024),b''): h.update(b)
+    return h.hexdigest()
+
+def load_json(p:Path): return json.loads(p.read_text(encoding='utf-8'))
+def dump_json(p:Path,obj): p.parent.mkdir(parents=True,exist_ok=True); p.write_text(json.dumps(obj,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+def safe_rel(v:str)->str:
+    p=Path(v)
+    if p.is_absolute() or '..' in p.parts or not v: raise ValueError(f'unsafe relative path: {v}')
+    return p.as_posix()
+
+def current_inventory(project:Path)->dict[str,str]:
+    return {p.relative_to(project).as_posix():sha256(p) for p in sorted(project.rglob('*')) if p.is_file()}
+
+def verify_fresh(index:Path, project:Path)->dict:
+    manifest=load_json(index/'manifest.json'); expected={safe_rel(str(x['path'])):str(x.get('sha256') or '') for x in manifest.get('files',[])}
+    current=current_inventory(project); problems=[]
+    for rel,h in expected.items():
+        if rel not in current: problems.append({'path':rel,'reason':'missing'})
+        elif h and current[rel]!=h: problems.append({'path':rel,'reason':'hash_mismatch','expected':h,'actual':current[rel]})
+    for rel in sorted(set(current)-set(expected)): problems.append({'path':rel,'reason':'new_file'})
+    return {'status':'fresh' if not problems else 'stale','problems':problems,'checked':len(expected)}
+
+def run(cmd:list[str], *, capture=True)->subprocess.CompletedProcess:
+    return subprocess.run(cmd,stdout=subprocess.PIPE if capture else None,stderr=subprocess.PIPE if capture else None,text=True,check=False)
+
+def inspect_file(ruby:str, mutator:Path, file:Path)->dict:
+    p=run([ruby,str(mutator),'inspect',str(file)])
+    if p.returncode: raise RuntimeError(f'inspect failed for {file.name}: {p.stderr.strip()}')
+    return json.loads(p.stdout)
+
+def roundtrip_preflight(ruby:str, mutator:Path, file:Path)->dict:
+    with tempfile.TemporaryDirectory() as td:
+        out=Path(td)/file.name
+        before=inspect_file(ruby,mutator,file)
+        p=run([ruby,str(mutator),'roundtrip',str(file),str(out)])
+        if p.returncode: raise RuntimeError(f'roundtrip failed for {file.name}: {p.stderr.strip()}')
+        after=inspect_file(ruby,mutator,out)
+        if before['semantic_sha256']!=after['semantic_sha256']:
+            raise RuntimeError(f'roundtrip semantic mismatch for {file.name}')
+        binary_identical = sha256(file)==sha256(out)
+        if not binary_identical:
+            raise RuntimeError(f'roundtrip binary mismatch for {file.name}; v0.8 refuses mutation')
+        return {'file':file.name,'status':'passed','semantic_sha256':before['semantic_sha256'],'binary_identical':True}
+
+def script_index(index:Path, rel:str)->int:
+    order=load_json(index/'scripts'/'order.json').get('scripts',[])
+    for item in order:
+        if item.get('path')==rel: return int(item['index'])
+    raise ValueError(f'script path not present in order.json: {rel}')
+
+def normalize_changes(index:Path,spec:dict)->list[dict]:
+    raw=spec.get('changes');
+    if not isinstance(raw,list) or not raw: raise ValueError('spec requires non-empty changes array')
+    out=[]
+    for n,c in enumerate(raw,1):
+        if not isinstance(c,dict): raise ValueError(f'change #{n} must be object')
+        kind=c.get('kind'); loc=c.get('locator') or {}; mut=c.get('mutation') or {}
+        if kind=='script':
+            rel=safe_rel(str(c.get('script_path') or '')); search=str(c.get('search') or ''); replace=str(c.get('replace') or '')
+            if not search: raise ValueError(f'script change #{n} missing search')
+            out.append({'kind':'script','target':'Data/Scripts.rvdata2','ruby_spec':{'type':'scripts','mutation':{'script_index':script_index(index,rel),'search':search,'replace':replace}},'description':c.get('description',''),'script_path':rel,'search':search,'replace':replace})
+        elif kind=='database':
+            table=str(loc.get('table') or '')
+            if table not in DB_FILES: raise ValueError(f'unsupported database table: {table}')
+            if 'id' not in loc or not mut.get('field'): raise ValueError(f'database change #{n} requires locator.id and mutation.field')
+            out.append({'kind':'database','target':'Data/'+DB_FILES[table],'ruby_spec':{'type':'database','mutation':{'id':loc['id'],'field':mut['field'],'value':mut.get('value')}},'description':c.get('description',''),'locator':loc,'mutation':mut})
+        elif kind=='event':
+            action=mut.get('action')
+            if action not in {'set_parameter','set_parameters'}: raise ValueError(f'event change #{n} unsupported mutation.action')
+            if 'map_id' in loc:
+                scope='map'; target=f"Data/Map{int(loc['map_id']):03d}.rvdata2"; base={'scope':scope,'event_id':loc.get('event_id'),'page':loc.get('page'),'command_index':loc.get('command_index')}
+            elif 'common_event_id' in loc:
+                scope='common_event'; target='Data/CommonEvents.rvdata2'; base={'scope':scope,'common_event_id':loc.get('common_event_id'),'command_index':loc.get('command_index')}
+            elif 'troop_id' in loc:
+                scope='troop'; target='Data/Troops.rvdata2'; base={'scope':scope,'troop_id':loc.get('troop_id'),'page':loc.get('page'),'command_index':loc.get('command_index')}
+            else: raise ValueError(f'event change #{n} needs map/common-event/troop locator')
+            if any(v is None for k,v in base.items() if k not in {'scope'}): raise ValueError(f'event change #{n} locator incomplete')
+            base.update(mut)
+            out.append({'kind':'event','target':target,'ruby_spec':{'type':'event','mutation':base},'description':c.get('description',''),'locator':loc,'mutation':mut})
+        else: raise ValueError(f'change #{n} unsupported kind: {kind}')
+    return out
+
+def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Path, index:int)->dict:
+    rel=safe_rel(change['target']); target=(copy_root/rel).resolve()
+    if copy_root.resolve() not in target.parents: raise ValueError(f'target escapes copy: {rel}')
+    if not target.is_file(): raise FileNotFoundError(rel)
+    before_raw=sha256(target); before_sem=inspect_file(ruby,mutator,target)['semantic_sha256']
+    specfile=audit_dir/f'mutation-{index:03d}.json'; dump_json(specfile,change['ruby_spec'])
+    tmp=target.with_suffix(target.suffix+'.new')
+    p=run([ruby,str(mutator),'mutate',str(target),str(tmp),str(specfile)])
+    if p.returncode: raise RuntimeError(f'mutation failed for {rel}: {p.stderr.strip()}')
+    after_sem=inspect_file(ruby,mutator,tmp)['semantic_sha256']; after_raw=sha256(tmp)
+    if before_sem==after_sem: raise RuntimeError(f'mutation produced no semantic change: {rel}')
+    os.replace(tmp,target)
+    rec={'kind':change['kind'],'target':rel,'description':change.get('description',''),'before_sha256':before_raw,'after_sha256':after_raw,'before_semantic_sha256':before_sem,'after_semantic_sha256':after_sem}
+    if change['kind']=='script':
+        idxroot=change.get('_index_root')
+        if idxroot:
+            text=(Path(idxroot)/'scripts'/change['script_path']).read_text(encoding='utf-8')
+            proposed=text.replace(change['search'],change['replace'],1)
+            rec['diff']=''.join(difflib.unified_diff(text.splitlines(True),proposed.splitlines(True),fromfile='a/'+change['script_path'],tofile='b/'+change['script_path']))
+    return rec
+
+def render_audit(a:dict)->str:
+    lines=[f"# {a['title']}",'',f"Status: **{a['status']}**",'', '## Safety','', '- Source project modified: **no**', '- All binary writes occurred only in the staged copy.', '- Every targeted `.rvdata2` file passed semantic and byte-identical no-op round-trip preflight before mutation.', '']
+    lines += ['## Mutations','']
+    for i,c in enumerate(a['changes'],1):
+        lines += [f"### {i}. {c['kind']} — `{c['target']}`",'',c.get('description','') or '(no description)','']
+        if c.get('diff'): lines += ['```diff',c['diff'].rstrip(),'```','']
+    lines += ['## Validation','',f"- Source freshness before patch: **{a['freshness']['status']}**",f"- Source integrity after patch: **{a['source_integrity_after']['status']}**",f"- Re-index status: **{a['reindex']['status']}**",'']
+    if a.get('index_diff'): lines += [f"- Re-index changed files: **{a['index_diff'].get('changed_count',0)}**",f"- Re-index added files: **{a['index_diff'].get('added_count',0)}**",f"- Re-index removed files: **{a['index_diff'].get('removed_count',0)}**",'']
+    lines += ['## Rollback','','Delete the staged project copy. The original source project was not modified.','']
+    return '\n'.join(lines)
+
+def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,ruby:str,mutator:Path,reader:Path|None,diff_tool:Path|None,no_reindex:bool=False)->dict:
+    index=index.resolve(); project=project.resolve(); copy_root=copy_root.resolve(); audit_dir=audit_dir.resolve()
+    if not (project/'Data').is_dir(): raise ValueError('source is not a VX Ace project (missing Data/)')
+    if project==copy_root or project in copy_root.parents: raise ValueError('copy destination may not be inside source project')
+    if project==audit_dir or project in audit_dir.parents: raise ValueError('audit destination may not be inside source project')
+    if copy_root==audit_dir or copy_root in audit_dir.parents or audit_dir in copy_root.parents: raise ValueError('copy and audit destinations must be separate non-nested paths')
+    if copy_root.exists(): raise ValueError('copy destination already exists')
+    if audit_dir.exists(): raise ValueError('audit destination already exists')
+    freshness=verify_fresh(index,project)
+    if freshness['status']!='fresh': raise RuntimeError('STALE_INDEX:'+json.dumps(freshness))
+    source_before=current_inventory(project)
+    spec=load_json(spec_path); changes=normalize_changes(index,spec)
+    for c in changes: c['_index_root']=str(index)
+    audit_dir.mkdir(parents=True)
+    preflights=[]
+    for rel in sorted({c['target'] for c in changes}):
+        preflights.append(roundtrip_preflight(ruby,mutator,project/safe_rel(rel)))
+    shutil.copytree(project,copy_root)
+    try:
+        applied=[]
+        for i,c in enumerate(changes,1): applied.append(apply_one(ruby,mutator,copy_root,c,audit_dir,i))
+        source_after=current_inventory(project); src_problems=[]
+        if source_before!=source_after:
+            for rel in sorted(set(source_before)|set(source_after)):
+                if source_before.get(rel)!=source_after.get(rel): src_problems.append(rel)
+        source_integrity={'status':'unchanged' if not src_problems else 'CHANGED','problems':src_problems}
+        if src_problems: raise RuntimeError('SOURCE_CHANGED:'+json.dumps(source_integrity))
+        reindex={'status':'skipped'}; index_diff=None
+        if not no_reindex:
+            if reader is None or not reader.is_file(): raise ValueError('reader required unless --no-reindex')
+            post=audit_dir/'post-index'
+            p=run([sys.executable,str(reader),str(copy_root),'--output',str(post),'--ruby',ruby])
+            if p.returncode: raise RuntimeError('re-index failed: '+p.stderr.strip())
+            reindex={'status':'ok','path':str(post)}
+            if diff_tool and diff_tool.is_file():
+                j=audit_dir/'index-diff.json'; m=audit_dir/'index-diff.md'
+                p=run([sys.executable,str(diff_tool),str(index),str(post),'--json',str(j),'--markdown',str(m)])
+                if p.returncode: raise RuntimeError('index diff failed: '+p.stderr.strip())
+                index_diff=json.loads(p.stdout)
+        result={'version':VERSION,'title':str(spec.get('title') or 'VX Ace staged patch'),'status':'ok','source_project_omitted_from_persistent_output':True,'freshness':freshness,'roundtrip_preflight':preflights,'changes':applied,'source_integrity_after':source_integrity,'copy_path':str(copy_root),'reindex':reindex,'index_diff':index_diff,'rollback':{'strategy':'delete staged project copy','source_project_modified':False}}
+        dump_json(audit_dir/'audit.json',result); (audit_dir/'audit.md').write_text(render_audit(result),encoding='utf-8')
+        return result
+    except Exception as exc:
+        if copy_root.exists(): shutil.rmtree(copy_root,ignore_errors=True)
+        dump_json(audit_dir/'failure.json',{'version':VERSION,'status':'failed','reason':str(exc),'staged_copy_removed':True,'source_project_modified_by_tool':False})
+        raise
+
+def main(argv=None)->int:
+    here=Path(__file__).resolve().parent
+    ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('index'); ap.add_argument('--project',required=True); ap.add_argument('--spec',required=True); ap.add_argument('--copy',required=True); ap.add_argument('--audit',required=True); ap.add_argument('--ruby',default=shutil.which('ruby')); ap.add_argument('--mutator',default=str(here/'rvdata2_mutator.rb')); ap.add_argument('--reader',default=str(here/'vxace_project_reader.py')); ap.add_argument('--diff-tool',default=str(here/'vxace_index_diff.py')); ap.add_argument('--no-reindex',action='store_true'); a=ap.parse_args(argv)
+    try:
+        if not a.ruby: raise ValueError('Ruby not found; pass --ruby PATH')
+        r=build(Path(a.index),Path(a.project),Path(a.spec),Path(a.copy),Path(a.audit),a.ruby,Path(a.mutator),Path(a.reader),Path(a.diff_tool),a.no_reindex)
+    except RuntimeError as e:
+        msg=str(e)
+        reason='stale_index' if msg.startswith('STALE_INDEX:') else ('source_changed' if msg.startswith('SOURCE_CHANGED:') else 'runtime_error')
+        print(json.dumps({'status':'refused','reason':reason,'detail':msg}),file=sys.stderr); return 3
+    except Exception as e:
+        print(json.dumps({'status':'error','reason':str(e)}),file=sys.stderr); return 2
+    print(json.dumps({'status':'ok','copy':r['copy_path'],'change_count':len(r['changes']),'reindex':r['reindex']['status']})); return 0
+if __name__=='__main__': raise SystemExit(main())
