@@ -1,6 +1,6 @@
 # VX Ace Developer tools
 
-The toolchain is evidence-first and source-protective. v0.9 adds a **project-wide read-only validation gate** before copy mutation is treated as safe on a real project.
+The toolchain is evidence-first and source-protective. v0.10 adds **dependency-impact review before staging** and **semantic Codex diffing after re-indexing** without expanding binary write power.
 
 ## 1. Project validator — v0.9
 
@@ -16,8 +16,6 @@ For every `Data/*.rvdata2` file it performs a no-op round trip with `rvdata2_mut
 - invalid setup/tool failure -> exit `2`.
 
 If `Scripts.rvdata2` exists, each Script Editor source is extracted through the read-only bridge and checked with host `ruby -c`. That is diagnostic only and is **not** proof of Ruby 1.9.2 compatibility.
-
-Outputs: `validation.json` and `validation.md`.
 
 ## 2. Project Reader + Codex
 
@@ -36,7 +34,18 @@ python tools/rgss3_analyzer.py extracted-scripts/ \
   --markdown analysis/script-compatibility.md
 ```
 
-## 4. Proposal-only patch planner
+## 4. Dependency impact analyzer — v0.10
+
+```bash
+python tools/vxace_impact.py PROJECT_INDEX \
+  --spec patch.json \
+  --json impact.json \
+  --markdown impact.md
+```
+
+Use this before staging. It verifies direct patch targets and reports known Codex graph relationships plus script collision/save-hook evidence and explicit coverage limitations.
+
+## 5. Proposal-only patch planner
 
 ```bash
 python tools/vxace_patch_planner.py PROJECT_INDEX \
@@ -45,7 +54,7 @@ python tools/vxace_patch_planner.py PROJECT_INDEX \
   --output patch-plan/
 ```
 
-## 5. Byte-identical Marshal mutator
+## 6. Byte-identical Marshal mutator
 
 ```bash
 ruby tools/rvdata2_mutator.rb roundtrip INPUT.rvdata2 OUTPUT.rvdata2
@@ -53,7 +62,7 @@ ruby tools/rvdata2_mutator.rb roundtrip INPUT.rvdata2 OUTPUT.rvdata2
 
 Used only by verified staging/validation workflows. Never use direct mutation against a working source project.
 
-## 6. Verified copy patcher
+## 7. Verified copy patcher
 
 ```bash
 python tools/vxace_copy_patcher.py PROJECT_INDEX \
@@ -65,7 +74,7 @@ python tools/vxace_copy_patcher.py PROJECT_INDEX \
 
 The copy patcher still performs its own per-target round-trip gate even when the v0.9 project validator has passed.
 
-## 7. Normalized index diff
+## 8. Normalized index diff
 
 ```bash
 python tools/vxace_index_diff.py BEFORE_INDEX AFTER_INDEX \
@@ -73,16 +82,20 @@ python tools/vxace_index_diff.py BEFORE_INDEX AFTER_INDEX \
   --markdown index-diff.md
 ```
 
+## 9. Semantic Codex diff — v0.10
+
+```bash
+python tools/vxace_semantic_diff.py BEFORE_INDEX AFTER_INDEX \
+  --json semantic-diff.json \
+  --markdown semantic-diff.md
+```
+
+Use this after the staged copy has been re-indexed. It reports changes in inferred systems, state machines, graph nodes/edges, and script ownership/collision metadata.
+
 ## Tests
 
 ```bash
 python tools/run_tests.py
 ```
 
-Validator suite only:
-
-```bash
-python -m unittest discover -s tests/project_validator -p "test_*.py" -v
-```
-
-Synthetic fixtures contain no proprietary RPG Maker default scripts.
+v0.10 adds `tests/impact` to the full suite. Synthetic fixtures contain no proprietary RPG Maker default scripts.
