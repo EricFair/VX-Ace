@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.0
+
+- Added `tools/vxace_codex.py`, an evidence-first Project Codex generator.
+- Added quest/story, variable state-machine, boss/battle-gate, autorun/cutscene, and common-event subsystem candidates with explicit confidence/reasons/evidence.
+- Added observed variable assignment/comparison values while deliberately leaving semantic stage meanings blank unless grounded.
+- Added `codex/graph.json` relationship graph for switches, variables, event pages, common events, troops, and transfers.
+- Added `codex/maps.json` per-map/event/page dependency catalog.
+- Added `codex/scripts.json` preserving Script Editor order and attaching analyzer-derived ownership/collision information.
+- Integrated automatic codex generation into `vxace_project_reader.py` with `--no-codex` opt-out.
+- Expanded variable/control-condition indexing with operand/comparison metadata.
+- Preserved transfer source context separately from destination map IDs.
+- Added `tools/run_tests.py`.
+- Added eight Project Codex tests; total automated tooling tests are now 26.
+- Expanded benchmark from 75 to 90 specialist scenarios.
+
 ## 0.5.0
 
 - Added `tools/vxace_project_reader.py`, a read-only VX Ace project indexing prototype.

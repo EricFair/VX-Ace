@@ -112,7 +112,7 @@ python -m unittest discover -s tests/tooling -v
 
 The test fixtures are synthetic original code and do not contain RPG Maker default scripts.
 
-## VX Ace Project Reader — v0.5
+## VX Ace Project Reader — v0.6
 
 ```bash
 python tools/vxace_project_reader.py PATH_TO_PROJECT
@@ -135,4 +135,26 @@ By default the output is a sibling of the source project (`ProjectName-project-i
 
 ### Current dependency
 
-v0.5 requires an external Ruby executable for Marshal decoding. This is intentionally isolated behind the bridge so a future pure-Python backend can replace it without changing the project-index contract.
+v0.6 requires an external Ruby executable for Marshal decoding. This is intentionally isolated behind the bridge so a future pure-Python backend can replace it without changing the project-index contract.
+
+## Project Codex — v0.6
+
+Generate the normalized project index and codex together:
+
+```bash
+python tools/vxace_project_reader.py PROJECT
+```
+
+Or regenerate only the codex:
+
+```bash
+python tools/vxace_codex.py PROJECT_INDEX
+```
+
+Codex output lives under `PROJECT_INDEX/codex/` and contains evidence-first system/state candidates, a relationship graph, map/event/page dependencies, and script-order/ownership/collision summaries.
+
+Run all automated suites with:
+
+```bash
+python tools/run_tests.py
+```

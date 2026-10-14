@@ -16,34 +16,31 @@ class ProjectReaderTests(unittest.TestCase):
     def setUpClass(cls):
         cls.ruby = shutil.which("ruby")
         if not cls.ruby:
-            raise unittest.SkipTest("Ruby is required for the v0.5 fixture/bridge tests")
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.base = Path(self.tmp.name)
-        self.project = self.base / "SyntheticVXACE"
-        subprocess.run([self.ruby, str(FIXTURE), str(self.project)], check=True)
-        self.output = self.base / "index"
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def run_reader(self):
-        return subprocess.run(
-            [sys.executable, str(READER), str(self.project), "--output", str(self.output), "--ruby", self.ruby],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
+            raise unittest.SkipTest("Ruby is required for the project-reader fixture/bridge tests")
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.base = Path(cls.tmp.name)
+        cls.project = cls.base / "SyntheticVXACE"
+        cls.output = cls.base / "index"
+        subprocess.run([cls.ruby, str(FIXTURE), str(cls.project)], check=True)
+        cls.before = {p.relative_to(cls.project).as_posix(): p.read_bytes() for p in cls.project.rglob("*") if p.is_file()}
+        cls.proc = subprocess.run(
+            [sys.executable, str(READER), str(cls.project), "--output", str(cls.output), "--ruby", cls.ruby],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False,
         )
+        cls.after = {p.relative_to(cls.project).as_posix(): p.read_bytes() for p in cls.project.rglob("*") if p.is_file()}
+        if cls.proc.returncode != 0:
+            raise RuntimeError(cls.proc.stderr)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
 
     def load(self, rel):
         with (self.output / rel).open("r", encoding="utf-8") as f:
             return json.load(f)
 
     def test_end_to_end_reader(self):
-        proc = self.run_reader()
-        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(self.proc.returncode, 0, self.proc.stderr)
         summary = self.load("project.json")
         self.assertEqual(summary["map_count"], 1)
         self.assertEqual(summary["script_count"], 3)
@@ -51,8 +48,7 @@ class ProjectReaderTests(unittest.TestCase):
         self.assertEqual(summary["errors"], [])
 
     def test_database_objects_and_table_are_normalized(self):
-        proc = self.run_reader()
-        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(self.proc.returncode, 0, self.proc.stderr)
         actors = self.load("database/actors.json")
         self.assertEqual(actors[1]["__class__"], "RPG::Actor")
         self.assertEqual(actors[1]["name"], "Alicia")
@@ -64,16 +60,14 @@ class ProjectReaderTests(unittest.TestCase):
         self.assertEqual(table["data"][:3], [1, 2, 3])
 
     def test_script_order_and_sources_are_preserved(self):
-        proc = self.run_reader()
-        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(self.proc.returncode, 0, self.proc.stderr)
         order = self.load("scripts/order.json")["scripts"]
         self.assertEqual([x["name"] for x in order], ["Core Battle", "Alias Extension", "Destructive Extension"])
         self.assertTrue((self.output / "scripts" / order[0]["path"]).is_file())
         self.assertIn("def item_apply", (self.output / "scripts" / order[0]["path"]).read_text(encoding="utf-8"))
 
     def test_switch_variable_and_event_links(self):
-        proc = self.run_reader()
-        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(self.proc.returncode, 0, self.proc.stderr)
         switches = {x["id"]: x for x in self.load("analysis/switches.json")}
         variables = {x["id"]: x for x in self.load("analysis/variables.json")}
         self.assertEqual(switches[1]["name"], "QuestStarted")
@@ -93,8 +87,7 @@ class ProjectReaderTests(unittest.TestCase):
         self.assertEqual(self.load("analysis/self-switch-writes.json")[0]["letter"], "A")
 
     def test_compatibility_report_is_generated(self):
-        proc = self.run_reader()
-        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(self.proc.returncode, 0, self.proc.stderr)
         report = self.load("analysis/script-compatibility.json")
         methods = {item["method"]: item for item in report["method_collisions"]}
         self.assertIn("Game_Battler#item_apply", methods)
@@ -103,8 +96,7 @@ class ProjectReaderTests(unittest.TestCase):
 
     def test_source_project_is_not_modified(self):
         before = {p.relative_to(self.project).as_posix(): p.read_bytes() for p in self.project.rglob("*") if p.is_file()}
-        proc = self.run_reader()
-        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(self.proc.returncode, 0, self.proc.stderr)
         after = {p.relative_to(self.project).as_posix(): p.read_bytes() for p in self.project.rglob("*") if p.is_file()}
         self.assertEqual(before, after)
 

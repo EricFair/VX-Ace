@@ -1,6 +1,6 @@
 # RPG Maker VX Ace Developer
 
-Version: 0.5.0
+Version: 0.6.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -134,7 +134,8 @@ Static analysis may miss `eval`, `class_eval`, `module_eval`, `define_method`, d
 
 See `references/script-compatibility-index.md` and `workflows/compatibility-scan.md`.
 
-## v0.5 project-reader preflight
+
+## Project Reader + Codex preflight
 
 When a real VX Ace project is available, prefer generating a fresh project index before answering project-specific architecture/debugging questions:
 
@@ -142,18 +143,21 @@ When a real VX Ace project is available, prefer generating a fresh project index
 python tools/vxace_project_reader.py PATH_TO_PROJECT
 ```
 
-The v0.5 reader is read-only. It extracts normalized database/map data, Script Editor order/source, event-reference indexes, and compatibility reports into a separate directory. It does **not** execute project scripts and does **not** write `.rvdata2`.
+The reader is read-only. It extracts normalized database/map data, Script Editor order/source, event-reference indexes, compatibility reports, and an evidence-first Project Codex into a separate directory. It does **not** execute project scripts and does **not** write `.rvdata2`.
 
 Use generated project facts in this order:
 
-1. `project.json` for extraction completeness/errors;
-2. `analysis/event-references.json` and dedicated indexes for cross-event relationships;
-3. `analysis/script-compatibility.json` plus actual extracted script source/order for RGSS3 overlap;
-4. normalized map/database JSON for exact page/data inspection.
+1. `project.json` for extraction completeness/errors and codex-generation status;
+2. `codex/index.json`, `codex/maps.json`, and `codex/scripts.json` to route investigation;
+3. the candidate's exact evidence locations in `analysis/*.json`;
+4. `analysis/script-compatibility.json` plus actual extracted script source/order for RGSS3 overlap;
+5. normalized map/database JSON for exact source truth.
+
+Codex labels are **heuristic inferences**, not authoritative facts. Never turn an observed progression value into a semantic stage label unless the project itself supports that meaning. High confidence means the heuristic has strong evidence, not that verification is unnecessary.
 
 If the reader reports partial extraction, explicitly mark project knowledge as incomplete. Regenerate the index after project changes rather than assuming IDs, event paths, or script order are still current.
 
-See `references/project-reader.md` and `workflows/project-ingestion.md`.
+See `references/project-reader.md`, `references/project-codex.md`, `workflows/project-ingestion.md`, and `workflows/codex-review.md`.
 
 ## Persistence discipline
 
@@ -230,28 +234,32 @@ Label exact claims as verified, architecture-level, or hypothesis when uncertain
 
 ## Current capability boundary
 
-v0.5 includes:
+v0.6 includes:
 
 - engine architecture/lifecycle references;
 - practical database/event design patterns;
 - executable static RGSS3 compatibility analyzer with 12 unit tests;
-- read-only VX Ace Project Reader prototype;
+- read-only VX Ace Project Reader;
 - `.rvdata2` database/map normalization through an inert Ruby Marshal bridge;
 - Scripts archive extraction in Script Editor order;
 - switch/variable/self-switch/common-event/transfer/battle/event-script indexes;
-- automatic compatibility analysis integration;
-- 18 passing tooling tests across analyzer + reader.
+- variable operand/comparison metadata for better progression analysis;
+- evidence-first Project Codex generation;
+- quest/state-machine, boss-gate, cutscene, and common-event subsystem candidates;
+- relationship graph, per-map dependency catalog, and script ownership/collision catalog;
+- 26 passing automated tooling tests across analyzer + reader + codex.
 
 It does not yet include:
 
 - a pure-Python Marshal backend;
 - comprehensive extraction of every event-command reference type;
-- automatic project codex generation;
+- semantic stage labels without explicit evidence;
+- full event Script-command -> Ruby method resolution;
 - verified binary round-trip writing;
 - autonomous project patching.
 
 ## Next milestones
 
-- v0.6 — Project Codex generator + broader relationship indexing;
-- v0.7 — reversible project-aware patch workflow;
+- v0.7 — reversible project-aware patch workflow with stale-index protection, diffs, and regression tests;
+- v0.8+ — proven round-trip editing path and deeper semantic/call-resolution tooling;
 - v1.0 — validated specialist against real projects and the full benchmark.

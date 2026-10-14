@@ -1,4 +1,4 @@
-# VX Ace Project Reader — v0.5 Architecture
+# VX Ace Project Reader — v0.6 Architecture
 
 ## Goal
 
@@ -87,3 +87,11 @@ Extraction is best-effort per file. If one `.rvdata2` file cannot be decoded:
 The orchestration/index format should remain independent of the Marshal backend.
 
 A future pure-Python Ruby Marshal 4.8 backend can replace the Ruby bridge without changing the project-index contract. The target backend should preserve unknown objects/user-defined payloads and ultimately enable proven round-trip fidelity before any write capability is considered.
+
+## v0.6 additions
+
+The reader now preserves additional Control Variables / Conditional Branch operand metadata so downstream analysis can distinguish an observed constant assignment/comparison from a generic read/write.
+
+For direct map transfers, the index preserves `source_map_id` separately from the destination `map_id`. This avoids treating the destination map as the event context that initiated the transfer.
+
+Unless `--no-codex` is supplied, ingestion now runs `tools/vxace_codex.py` after deterministic indexes and compatibility analysis are generated.

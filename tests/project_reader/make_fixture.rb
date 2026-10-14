@@ -54,7 +54,7 @@ klass.instance_variable_set(:@params, Table.new(8, 3, 1, (1..24).to_a))
 File.binwrite(File.join(data_dir, 'Classes.rvdata2'), Marshal.dump([nil, klass]))
 
 system = RPG::System.new
-system.instance_variable_set(:@switches, ['', 'QuestStarted', 'BossDefeated'])
+system.instance_variable_set(:@switches, ['', 'QuestStarted', 'BossDefeated', 'IntroPlayed'])
 system.instance_variable_set(:@variables, ['', 'QuestStage', 'TargetMap'])
 File.binwrite(File.join(data_dir, 'System.rvdata2'), Marshal.dump(system))
 
@@ -77,6 +77,7 @@ page.instance_variable_set(:@list, [
   command(117, [1], 1),
   command(201, [0, 2, 5, 6, 2, 0], 1),
   command(301, [0, 3, true, false], 1),
+  command(121, [2, 2, 0], 1),
   command(123, ['A', 0], 1),
   command(0)
 ])
@@ -92,7 +93,17 @@ map = RPG::Map.new
 map.instance_variable_set(:@display_name, 'Test Map')
 map.instance_variable_set(:@width, 10)
 map.instance_variable_set(:@height, 10)
-map.instance_variable_set(:@events, {1 => event})
+intro_page = RPG::Event::Page.new
+intro_page.instance_variable_set(:@trigger, 3)
+intro_page.instance_variable_set(:@list, [command(121, [3, 3, 0]), command(0)])
+intro = RPG::Event.new
+intro.instance_variable_set(:@id, 2)
+intro.instance_variable_set(:@name, 'Opening Cutscene')
+intro.instance_variable_set(:@x, 1)
+intro.instance_variable_set(:@y, 1)
+intro.instance_variable_set(:@pages, [intro_page])
+
+map.instance_variable_set(:@events, {1 => event, 2 => intro})
 map.instance_variable_set(:@data, Table.new(10, 10, 4))
 File.binwrite(File.join(data_dir, 'Map001.rvdata2'), Marshal.dump(map))
 

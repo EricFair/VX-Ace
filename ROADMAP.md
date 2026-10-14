@@ -20,38 +20,52 @@ Executable static RGSS3 analyzer for class/method overlap, aliases, `$imported`,
 
 Read-only project inventory, Marshal decoding, normalized database/maps, Scripts extraction/order, event-reference indexes, symbolic names, analyzer integration.
 
-### Remaining hardening before calling extraction mature
+## v0.6 — Project Codex — COMPLETE
 
-- validate against one or more real user-owned VX Ace projects;
+Evidence-first project understanding on top of normalized indexes:
+
+- quest/story candidates;
+- progression/state-machine candidates;
+- observed constant stage values without invented semantics;
+- boss/battle-gate candidates;
+- autorun/cutscene candidates;
+- reusable common-event candidates;
+- switch/variable/event/common-event/troop/transfer graph;
+- per-map/event/page dependency catalog;
+- script-order/ownership/collision catalog;
+- exact evidence links back to normalized source locations;
+- automatic codex generation during project ingestion.
+
+### Remaining hardening
+
+- validate reader + codex on one or more real user-owned VX Ace projects;
 - broaden event-command relationship extraction;
-- handle unusual/custom serialized project data more explicitly;
-- add a pure-Python Marshal backend so external Ruby is optional;
-- add snapshot/diff tooling for regenerated indexes.
-
-## v0.6 — Project Codex
-
-Generate higher-level systems from the normalized index:
-
-- quest/state-machine candidates;
-- switch/variable ownership maps;
-- map/event dependency graph;
-- common-event call graph;
-- boss/troop/progression relationships;
-- script-to-event links;
-- likely system boundaries;
-- evidence links back to exact normalized source locations.
+- infer semantic stage labels only from explicit text/comments/conditions, never names alone;
+- improve event Script-command -> Ruby method ownership linking;
+- add index snapshot/diff tooling;
+- add pure-Python Marshal backend so Ruby becomes optional.
 
 ## v0.7 — Reversible project-aware patch workflow
 
-- plan changes against an indexed project;
-- generate script/event patch proposals;
-- validate source hashes before applying;
+- plan changes against an indexed project/codex;
+- source-hash freshness checks;
+- generate script patch proposals;
+- event/data patch representations without unsafe binary writes;
 - human-readable diffs;
-- backups and rollback;
-- regression-test generation.
+- backup/rollback plan;
+- project-specific regression-test generation;
+- refuse stale-index patches.
 
 No binary `.rvdata2` writer should be enabled until round-trip fidelity is proven on copies.
 
+## v0.8+ — Safer project mutation and deeper semantics
+
+- proven round-trip serialization path;
+- structured event/data editing on copies;
+- codex diff after patches;
+- richer script-call resolution;
+- automated dependency-impact summaries.
+
 ## v1.0 — Validated specialist
 
-Validated against the competency benchmark and real VX Ace projects with documented failure modes and safe fallback behavior.
+Validated against the competency benchmark and real VX Ace projects with documented failure modes, safe fallback behavior, and reproducible extraction/codex results.

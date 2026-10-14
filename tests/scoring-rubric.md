@@ -40,7 +40,7 @@ Maximum score 2 if an answer treats a static compatibility finding as proof of i
 
 Maximum score 2 if script-order-sensitive compatibility advice assumes alphabetical/file-system order when the actual VX Ace Script Editor order is available or required.
 
-## v0.5 project-awareness caps
+## v0.5+ project-awareness caps
 
 Apply these caps in addition to earlier scoring rules:
 
@@ -52,3 +52,15 @@ Apply these caps in addition to earlier scoring rules:
 - **Maximum 2/5 overall** if it uses a stale index after known project changes without requesting/regenerating a fresh snapshot.
 
 A top-scoring v0.5 answer clearly separates verified project facts, derived relationships, and hypotheses.
+
+
+## v0.6 codex-awareness caps
+
+- **Maximum 1/5 overall** if the answer presents a codex candidate as verified authorial intent without following its source evidence.
+- **Maximum 1/5 overall** if it invents semantic labels for observed variable values/stages that the project does not support.
+- **Maximum 2/5 overall** if it changes a quest/state system from `codex/index.json` without inspecting the linked event/common-event/script sources.
+- **Maximum 2/5 overall** if it confuses a transfer destination map with the event/map that initiated the transfer.
+- **Maximum 2/5 overall** if it treats a high codex confidence level as a substitute for source verification.
+- **Maximum 2/5 overall** if it ignores `codex/scripts.json` Script Editor order/collision context when reviewing an implicated custom-script subsystem.
+
+A top-scoring v0.6 answer uses the codex for navigation, then cites/inspects exact project evidence and clearly separates verified facts, deterministic relationships, heuristic inferences, and debugging hypotheses.
