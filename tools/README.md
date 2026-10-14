@@ -92,6 +92,14 @@ python tools/vxace_semantic_diff.py BEFORE_INDEX AFTER_INDEX \
 
 Use this after the staged copy has been re-indexed. It reports changes in inferred systems, state machines, graph nodes/edges, and script ownership/collision metadata.
 
+## Read-only map tile audit — v0.14
+
+```powershell
+python tools/vxace_map_audit.py PROJECT_INDEX --project PROJECT --output NEW_EXTERNAL_REPORT --map 1 --cell 8 6
+```
+
+Reports native Table/tileset structure, sheet routing, tile usage, static tile-only directional flags, regions and shadows. See [coverage and refusal rules](../references/map-tile-audit.md). This is not a tile writer, image validator or runtime movement proof.
+
 ## Tests
 
 ```bash

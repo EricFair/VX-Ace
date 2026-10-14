@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.0 — Read-only map tile audits and a native-tested playable example
+
+- Inspect fresh normalized map Tables and native tileset flags, ordinary B–E/A5 atlas positions, autotile kind/shape, regions, shadows and optional static cell passage. Unsupported tile gaps/empty sheet references require review. No map writer, runtime movement or image-existence claims.
+- Reuse bounded index access, strict external output, source freshness and input/source integrity checks; refuse malformed native shapes, invalid selections and exhausted budgets.
+- Enable the audit in the read-only master without weakening mutation policy; preserve older custom configurations without the new flag.
+- Add 13 map tests including independent Ruby Reader integration, plus two configuration checks (199 total). Compare low-level tile estimates with a private native-created scenery save; keep source data private.
+- Include original Oakfall quest/scenery code, exact seed requirements and native defeat/retry, reward-once and restart/save evidence, plus a reusable playable verification workflow.
+
 ## 0.13.0 — Bounded search and conservative event diagnostics
 
 - Search fresh external indexes by literal text and/or native command code across events, database, map metadata and ordered script lines; return exact evidence, bounded excerpts, complete selected-scope counts and honest pagination. No regex or game-code evaluation.

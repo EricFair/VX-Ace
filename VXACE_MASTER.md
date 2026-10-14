@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v0.13.0
+# VX Ace Masterfile — v0.14.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -37,6 +37,7 @@ Original game (read-only)
   → script compatibility analysis + Project Codex
   → observed class/field schema + reference inspection
   → conservative event-logic diagnostics
+  → static map tile/tileset diagnostics
   → full original-file inventory recheck
   → master report
 ```
@@ -52,6 +53,7 @@ report/
   index/database/ / maps/ / scripts/ / analysis/ / codex/
   inspection/inspection.json / inspection.md
   event-lint/event-lint.json / event-lint.md
+  map-audit/map-audit.json / map-audit.md
   stage stdout/stderr logs
 ```
 
@@ -72,6 +74,7 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Reference lint | Direct map transfers, coordinate bounds, common-event/troop targets, extraction errors; partial coverage is explicit |
 | Event-logic diagnostics | Local labels, continuations, terminators, unconditional map-page shadows and possible highest unconditional autorun locks; opaque behavior stays uncertain |
 | Bounded project search | Literal text/native code filters across indexed events, database, map metadata and ordered script lines; exact evidence and honest pagination |
+| Read-only map tile audit | Native Table/tileset shape, sheet routing, ordinary atlas cells/autotile kinds, static directional flags, regions and shadows; excludes runtime movement, asset validation and map mutation |
 | Patch proposals | Freshness, exact unique script anchors, structured database/event proposals, regression checks and rollback guidance |
 | Dependency impact | Exact target review, event graph relationships, script collision and save-hook evidence; incomplete dependency coverage is disclosed |
 | Verified copy patching | Existing scalar database fields, existing map/common/troop command parameters and unique script replacements; backend-specific limits apply |
@@ -80,6 +83,14 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Actual editor/runtime verification | Structural edit/old-save evidence in v0.12; search locations, hidden page selection, terminating cutscene and counted autorun restart in `references/real-project-validation-v0.13.md` |
 
 ## Exact individual commands
+
+Inspect map tiles or one cell from a fresh index:
+
+```powershell
+python tools/vxace_map_audit.py PROJECT_INDEX --project PROJECT --output NEW_EXTERNAL_REPORT --map 1 --cell 8 6
+```
+
+See [map audit fields, commands and limits](references/map-tile-audit.md). The tool reports static editor data; runtime-generated scenery still requires native playtesting. The [Oakfall example](examples/oakfall/README.md) includes original tested quest/scenery code and explicitly bounded save/load and loss/retry evidence.
 
 Validate with the selected Python production data backend:
 

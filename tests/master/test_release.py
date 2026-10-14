@@ -83,6 +83,18 @@ class ReleaseSafetyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             master.settings(path)
 
+    def test_map_audit_flag_refuses_truthy_strings(self):
+        config = json.loads((ROOT / 'vxace-master.json').read_text())
+        config['map_tile_audit'] = 'false'
+        path = self.base / 'invalid-map-flag.json'; path.write_text(json.dumps(config))
+        with self.assertRaises(ValueError): master.settings(path)
+
+    def test_older_config_without_map_audit_flag_remains_readable(self):
+        config = json.loads((ROOT / 'vxace-master.json').read_text())
+        del config['map_tile_audit']
+        path = self.base / 'older.json'; path.write_text(json.dumps(config))
+        self.assertNotIn('map_tile_audit', master.settings(path))
+
     def test_inspection_separates_variable_transfers_from_direct_coordinates(self):
         index = self.base / "index"
         (index / "maps").mkdir(parents=True)
@@ -126,9 +138,11 @@ class ReleaseSafetyTests(unittest.TestCase):
         result = master.workflow(project, self.base / "report", shutil.which("ruby"), ROOT / "vxace-master.json")
         self.assertTrue(result["source_unchanged"])
         self.assertFalse(result["mutation_performed"])
-        self.assertEqual([x["name"] for x in result["stages"]], ["validation", "codec-audit", "reader", "inspection", "event-lint"])
+        self.assertEqual([x["name"] for x in result["stages"]], ["validation", "codec-audit", "reader", "inspection", "event-lint", "map-audit"])
         # The old synthetic fixture omits troop pages. Serialization readiness
         # must not turn incomplete event analysis into a clean master report.
+        self.assertEqual(result['stages'][-2]['exit_code'],2)
+        # This earlier fixture also omits a tileset; map analysis must refuse.
         self.assertEqual(result['stages'][-1]['exit_code'],2)
         self.assertEqual(result['status'],'review_required')
         self.assertTrue(result["copy_mutation_ready"])
