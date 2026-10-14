@@ -1,0 +1,34 @@
+name: VX Ace Toolchain Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
+      - name: Show runtimes
+        run: |
+          python --version
+          ruby --version
+
+      - name: Run full VX Ace toolchain test suite
+        run: python tools/run_tests.py
