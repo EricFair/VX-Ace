@@ -1,6 +1,6 @@
 # RPG Maker VX Ace Developer
 
-Version: 0.10.0
+Version: 0.11.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -75,6 +75,8 @@ If `Scripts.rvdata2` exists, host-Ruby syntax results are a separate diagnostic.
 See `references/project-validation.md` and `workflows/real-project-validation.md`.
 
 ## Project Reader + Codex
+
+Use `VXACE_MASTER.md` and `vxace-master.json` as the master entry points. `python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR` runs the read-only release workflow with an explicitly selected Python data backend. Individual validator/patcher commands still default to Ruby; use `--backend python` to select the new backend. Readiness is specific to the selected backend and current snapshot. The standalone experimental codec audit is not a production gate. Structural writes remain disabled. See `references/upstream-adoption.md` and the real-project evidence document.
 
 Generate fresh evidence before project-specific work:
 
@@ -153,14 +155,14 @@ Choose the owning runtime object, define old-save behavior, inspect other save h
 
 ## Current capability boundary
 
-v0.10 includes engine knowledge, native patterns, compatibility analysis, Project Reader, Project Codex, proposal planning, byte-verified disposable-copy mutation, project-wide real-project validation, pre-mutation dependency-impact analysis, normalized index diffing, and post-mutation semantic Codex diffing.
+v0.11 includes engine knowledge, native patterns, compatibility analysis, Project Reader, Project Codex, proposal planning, byte-verified disposable-copy mutation, project-wide validation, dependency-impact analysis, normalized/semantic diffing, the read-only master workflow, observed schema/reference inspection and an explicitly selected Python data backend.
 
-Repository CI passed the 45-test v0.9 toolchain. v0.10 adds seven impact/semantic-verification tests for an intended 52-test suite.
+The local v0.11 suite passes 136 tests. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
 
-Real user-owned project validation is still external evidence that must actually be collected. Until then, broader structural mutation stays disabled.
+Real-project evidence is recorded for one small editor-produced project and a disposable-copy display-name smoke test. It is limited evidence, not blanket compatibility. Broader structural mutation stays disabled.
 
 ## Next milestones
 
 - run v0.9 validator against real user-owned VX Ace projects and document pass/refusal cases;
-- v0.11+: guarded structural event editing, richer schema/type checks, stronger script preflight, and deeper call-resolution tooling;
+- v0.12+: separately validated structural event editing, richer schema/type checks, stronger script preflight, and deeper call-resolution tooling;
 - v1.0: validated specialist with real-project evidence and documented failure modes/rollback.

@@ -1,0 +1,17 @@
+{
+  "version": "0.11.0",
+  "engine": "VX Ace",
+  "runtime_target": "RGSS3 / Ruby 1.9.2",
+  "validation_backend": "python",
+  "python_codec_audit": true,
+  "observed_schema_and_reference_lint": true,
+  "safety": {
+    "original_project_writes": false,
+    "mutation_mode": "disposable-copy-only",
+    "project_wide_byte_gate": true,
+    "immediate_target_byte_gate": true,
+    "fresh_index_required": true,
+    "structural_writes": false,
+    "runtime_review_required": true
+  }
+}

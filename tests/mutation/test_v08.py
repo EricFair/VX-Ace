@@ -1,4 +1,4 @@
-import hashlib, json, subprocess, tempfile, unittest
+import hashlib, json, subprocess, sys, tempfile, unittest
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -8,7 +8,11 @@ DIFF=ROOT/'tools'/'vxace_index_diff.py'
 FIX=ROOT/'tests'/'project_reader'/'make_fixture.rb'
 
 def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
-def run(*args): return subprocess.run(list(map(str,args)),capture_output=True,text=True)
+def run(*args):
+    command = list(map(str, args))
+    if command[0] == 'python3':
+        command[0] = sys.executable
+    return subprocess.run(command, capture_output=True, text=True)
 def inspect(path):
     p=run('ruby',MUT,'inspect',path); assert p.returncode==0,p.stderr; return json.loads(p.stdout)
 def find_class(node,name):

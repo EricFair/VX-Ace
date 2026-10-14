@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse, difflib, hashlib, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
-VERSION='0.8.0'
+VERSION='0.11.0'
+def mutator_command(ruby, mutator, *args):
+    return [sys.executable if mutator.suffix == '.py' else ruby, str(mutator), *map(str, args)]
 DB_FILES={'actors':'Actors.rvdata2','classes':'Classes.rvdata2','skills':'Skills.rvdata2','items':'Items.rvdata2','weapons':'Weapons.rvdata2','armors':'Armors.rvdata2','enemies':'Enemies.rvdata2','troops':'Troops.rvdata2','states':'States.rvdata2','animations':'Animations.rvdata2','tilesets':'Tilesets.rvdata2','common-events':'CommonEvents.rvdata2','common_events':'CommonEvents.rvdata2','system':'System.rvdata2','map-infos':'MapInfos.rvdata2','map_infos':'MapInfos.rvdata2'}
 
 def sha256(path:Path)->str:
@@ -36,7 +38,7 @@ def run(cmd:list[str], *, capture=True)->subprocess.CompletedProcess:
     return subprocess.run(cmd,stdout=subprocess.PIPE if capture else None,stderr=subprocess.PIPE if capture else None,text=True,check=False)
 
 def inspect_file(ruby:str, mutator:Path, file:Path)->dict:
-    p=run([ruby,str(mutator),'inspect',str(file)])
+    p=run(mutator_command(ruby,mutator,'inspect',file))
     if p.returncode: raise RuntimeError(f'inspect failed for {file.name}: {p.stderr.strip()}')
     return json.loads(p.stdout)
 
@@ -44,7 +46,7 @@ def roundtrip_preflight(ruby:str, mutator:Path, file:Path)->dict:
     with tempfile.TemporaryDirectory() as td:
         out=Path(td)/file.name
         before=inspect_file(ruby,mutator,file)
-        p=run([ruby,str(mutator),'roundtrip',str(file),str(out)])
+        p=run(mutator_command(ruby,mutator,'roundtrip',file,out))
         if p.returncode: raise RuntimeError(f'roundtrip failed for {file.name}: {p.stderr.strip()}')
         after=inspect_file(ruby,mutator,out)
         if before['semantic_sha256']!=after['semantic_sha256']:
@@ -99,7 +101,7 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     before_raw=sha256(target); before_sem=inspect_file(ruby,mutator,target)['semantic_sha256']
     specfile=audit_dir/f'mutation-{index:03d}.json'; dump_json(specfile,change['ruby_spec'])
     tmp=target.with_suffix(target.suffix+'.new')
-    p=run([ruby,str(mutator),'mutate',str(target),str(tmp),str(specfile)])
+    p=run(mutator_command(ruby,mutator,'mutate',target,tmp,specfile))
     if p.returncode: raise RuntimeError(f'mutation failed for {rel}: {p.stderr.strip()}')
     after_sem=inspect_file(ruby,mutator,tmp)['semantic_sha256']; after_raw=sha256(tmp)
     if before_sem==after_sem: raise RuntimeError(f'mutation produced no semantic change: {rel}')
@@ -138,6 +140,13 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
     spec=load_json(spec_path); changes=normalize_changes(index,spec)
     for c in changes: c['_index_root']=str(index)
     audit_dir.mkdir(parents=True)
+    # Programmatic project-wide gate for the exact selected backend, in addition
+    # to the immediate per-target semantic and raw-byte gates below.
+    from vxace_project_validator import validate
+    validation=validate(project,audit_dir/'project-validation',ruby,mutator,skip_script_syntax=True,
+                        backend='python' if mutator.suffix=='.py' else 'ruby')
+    if not validation['copy_mutation_ready']:
+        raise RuntimeError('project-wide byte-identical gate refused mutation')
     preflights=[]
     for rel in sorted({c['target'] for c in changes}):
         preflights.append(roundtrip_preflight(ruby,mutator,project/safe_rel(rel)))
@@ -173,7 +182,8 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
 
 def main(argv=None)->int:
     here=Path(__file__).resolve().parent
-    ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('index'); ap.add_argument('--project',required=True); ap.add_argument('--spec',required=True); ap.add_argument('--copy',required=True); ap.add_argument('--audit',required=True); ap.add_argument('--ruby',default=shutil.which('ruby')); ap.add_argument('--mutator',default=str(here/'rvdata2_mutator.rb')); ap.add_argument('--reader',default=str(here/'vxace_project_reader.py')); ap.add_argument('--diff-tool',default=str(here/'vxace_index_diff.py')); ap.add_argument('--no-reindex',action='store_true'); a=ap.parse_args(argv)
+    ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('index'); ap.add_argument('--project',required=True); ap.add_argument('--spec',required=True); ap.add_argument('--copy',required=True); ap.add_argument('--audit',required=True); ap.add_argument('--ruby',default=shutil.which('ruby')); ap.add_argument('--mutator'); ap.add_argument('--backend',choices=['ruby','python'],default='ruby'); ap.add_argument('--reader',default=str(here/'vxace_project_reader.py')); ap.add_argument('--diff-tool',default=str(here/'vxace_index_diff.py')); ap.add_argument('--no-reindex',action='store_true'); a=ap.parse_args(argv)
+    if a.mutator is None: a.mutator=str(here/('vxace_python_mutator.py' if a.backend=='python' else 'rvdata2_mutator.rb'))
     try:
         if not a.ruby: raise ValueError('Ruby not found; pass --ruby PATH')
         r=build(Path(a.index),Path(a.project),Path(a.spec),Path(a.copy),Path(a.audit),a.ruby,Path(a.mutator),Path(a.reader),Path(a.diff_tool),a.no_reindex)

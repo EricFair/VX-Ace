@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.11.0 — Master workflow and real-project-backed Python data backend
+
+- Added `VXACE_MASTER.md`, fixed safe defaults in `vxace-master.json`, and a read-only `vxace_master.py` workflow that combines validation, codec auditing, indexing/Codex, observed schema, reference lint, and original-file hash verification.
+- Added explicit `--backend python` support to the production validator and narrow copy patcher. Existing standalone Ruby defaults remain; readiness is backend-specific and there is no silent fallback.
+- Added a constrained Python mutator using the pinned MIT-declared codec. It preserves legacy float records, refuses codec warnings, enforces exact no-op byte identity, type-checks scalar database fields, and preserves copy-only staging.
+- Programmatically enforced the project-wide gate in the patcher before immediate per-target semantic/byte gates.
+- Added regression coverage for modern-Ruby legacy-float reformatting, backend parity, master policy, conservative transfer lint and full project refusal.
+- Validated an actual editor-produced 16-file project; tested a single actor-name edit in a disposable copy in the VX Ace editor/runtime. See the versioned evidence document; no user game data is redistributed.
+- Expanded CI to Ubuntu and Windows. No broader event/map/database structural writes are enabled.
+
+## Unreleased — isolated Python codec evaluation
+
+- Archived a pinned upstream reference separately; adopted only inert Marshal codec modules and conformance tests with provenance and license declarations.
+- Added `tools/vxace_codec_audit.py`, a read-only subprocess-isolated audit with byte equality, warning refusal, external new-output enforcement, and before/after Data inventory checks.
+- Added the codec and audit-safety suite to the full runner; existing CI automatically includes it.
+- Fixed mutation-test subprocess invocation to use the running Python interpreter on Windows.
+- Recorded a staged capability-adoption backlog. No production backend change, original-game mutation, new structural write support, or relaxation of existing gates.
+
 ## 0.10.0 — Dependency impact and semantic verification
 
 - Added `tools/vxace_impact.py` for evidence-first pre-mutation impact analysis.

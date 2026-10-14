@@ -1,0 +1,5 @@
+# Keep pinned dependency and test bytes stable for provenance checks on Windows.
+tools/_vendor/rpgvxace_mcp/*.py -text whitespace=cr-at-eol
+tools/_vendor/UPSTREAM_README.md -text whitespace=cr-at-eol
+tools/_vendor/UPSTREAM_pyproject.toml -text whitespace=cr-at-eol
+tests/marshal_codec/upstream_marshal.py -text whitespace=cr-at-eol

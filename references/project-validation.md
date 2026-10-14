@@ -1,10 +1,10 @@
-# Project Validation Harness — v0.9
+# Project Validation Harness — v0.11 (introduced in v0.9)
 
 `tools/vxace_project_validator.py` is the read-only gate used before treating a real VX Ace project as eligible for v0.8+ copy mutation.
 
 ## What it proves
 
-For every `.rvdata2` file currently present under `Data/`, the validator asks the current `rvdata2_mutator.rb` to perform a no-op load/dump into a temporary directory. The file passes only if the temporary output is **byte-for-byte identical** to the original.
+For every `.rvdata2` file currently present under `Data/`, the validator asks the selected backend to perform a no-op load/dump into a temporary directory. The file passes only if the temporary output is **byte-for-byte identical** to the original. Standalone commands default to `rvdata2_mutator.rb`; `--backend python` explicitly selects `vxace_python_mutator.py`. The master configuration selects Python. Never silently fall back between them or reuse readiness across backends.
 
 This is stronger than merely proving that Ruby can deserialize the file. It demonstrates that the current inert stand-ins and Marshal writer can reproduce that exact file without changing any byte.
 

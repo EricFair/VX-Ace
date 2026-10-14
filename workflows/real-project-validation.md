@@ -3,7 +3,7 @@
 Use this before the first mutation-capable operation on a real VX Ace project, and repeat after changing the mutator/bridge implementation.
 
 1. Keep the working project untouched and backed up normally.
-2. Run `python tools/vxace_project_validator.py PROJECT --output VALIDATION_DIR`.
+2. Run `python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR` for the recommended read-only workflow, or `python tools/vxace_project_validator.py PROJECT --output VALIDATION_DIR --backend python` for the selected-backend gate alone. Individual commands retain the historical Ruby default when the option is omitted.
 3. Review every `.rvdata2` row in `validation.md`.
 4. If any file is not byte-identical after no-op round trip, classify the project as **mutation-refused** for the current tool version. Do not bypass the failure for “unrelated” files when claiming project-wide readiness.
 5. Review Script Editor syntax diagnostics separately. A host-Ruby parse failure needs investigation, but does not by itself mean the binary round-trip gate failed.

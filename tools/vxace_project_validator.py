@@ -8,7 +8,10 @@ Never writes into the source project.
 from __future__ import annotations
 import argparse, hashlib, json, shutil, subprocess, sys, tempfile
 from pathlib import Path
-VERSION = "0.9.0"
+VERSION = "0.11.0"
+
+def mutator_command(ruby, mutator, *args):
+    return [sys.executable if mutator.suffix == '.py' else ruby, str(mutator), *map(str, args)]
 
 def sha256(path: Path) -> str:
     h=hashlib.sha256()
@@ -42,7 +45,7 @@ def parse_json_stdout(proc):
 
 def roundtrip_file(ruby, mutator, source, temp_dir):
     temp_dir.mkdir(parents=True,exist_ok=True); candidate=temp_dir/source.name
-    proc=run([ruby,str(mutator),'roundtrip',str(source),str(candidate)])
+    proc=run(mutator_command(ruby,mutator,'roundtrip',source,candidate))
     if proc.returncode:
         return {'path':source.name,'status':'failed','reason':'roundtrip_tool_error','stderr':(proc.stderr or proc.stdout).strip(),'source_sha256':sha256(source)}
     if not candidate.is_file(): return {'path':source.name,'status':'failed','reason':'roundtrip_output_missing','source_sha256':sha256(source)}
@@ -85,9 +88,10 @@ def render_markdown(report):
     lines += ['','## Safety interpretation','', 'A project is copy-mutation-ready only when every discovered `.rvdata2` file round-trips byte-for-byte identically with the current mutator. This report never modifies the source project.','']
     return '\n'.join(lines)
 
-def validate(project_arg,output_arg,ruby_arg=None,mutator_arg=None,bridge_arg=None,skip_script_syntax=False):
+def validate(project_arg,output_arg,ruby_arg=None,mutator_arg=None,bridge_arg=None,skip_script_syntax=False,backend='ruby'):
     project=project_root(project_arg); output=ensure_external_output(project,Path(output_arg)); ruby=find_ruby(ruby_arg); tools=Path(__file__).resolve().parent
-    mutator=Path(mutator_arg).expanduser().resolve() if mutator_arg else tools/'rvdata2_mutator.rb'; bridge=Path(bridge_arg).expanduser().resolve() if bridge_arg else tools/'rvdata2_bridge.rb'
+    if backend not in {'ruby','python'}: raise ValueError('Unknown backend')
+    mutator=Path(mutator_arg).expanduser().resolve() if mutator_arg else tools/('vxace_python_mutator.py' if backend=='python' else 'rvdata2_mutator.rb'); bridge=Path(bridge_arg).expanduser().resolve() if bridge_arg else tools/'rvdata2_bridge.rb'
     if not mutator.is_file(): raise RuntimeError(f'Mutator not found: {mutator}')
     if not skip_script_syntax and not bridge.is_file(): raise RuntimeError(f'Bridge not found: {bridge}')
     files=sorted((project/'Data').glob('*.rvdata2'),key=lambda p:p.name.lower())
@@ -95,12 +99,12 @@ def validate(project_arg,output_arg,ruby_arg=None,mutator_arg=None,bridge_arg=No
     with tempfile.TemporaryDirectory(prefix='vxace-validate-') as td:
         temp=Path(td); file_results=[roundtrip_file(ruby,mutator,source,temp/'roundtrip') for source in files]; failures=[x for x in file_results if x['status']!='pass']; script_syntax=None; scripts_file=project/'Data'/'Scripts.rvdata2'
         if not skip_script_syntax and scripts_file.is_file(): script_syntax=syntax_check_scripts(ruby,bridge,scripts_file,temp/'syntax')
-    report={'validator_version':VERSION,'source_path_omitted':True,'source_project_modified':False,'copy_mutation_ready':len(failures)==0,'roundtrip':{'checked':len(file_results),'failed':len(failures),'files':file_results},'script_syntax':script_syntax,'limitations':['Host-Ruby syntax validation is not proof of RGSS3/Ruby 1.9.2 runtime behavior.','Byte-identical round-trip success applies only to files checked by this validator version.','Real VX Ace runtime playtesting remains mandatory after any staged copy mutation.']}
+    report={'validator_version':VERSION,'backend':backend,'source_path_omitted':True,'source_project_modified':False,'copy_mutation_ready':len(failures)==0,'roundtrip':{'checked':len(file_results),'failed':len(failures),'files':file_results},'script_syntax':script_syntax,'limitations':['Host-Ruby syntax validation is not proof of RGSS3/Ruby 1.9.2 runtime behavior.','Byte-identical round-trip success applies only to files checked by this validator version and selected backend.','Real VX Ace runtime playtesting remains mandatory after any staged copy mutation.']}
     output.mkdir(parents=True,exist_ok=True); (output/'validation.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8'); (output/'validation.md').write_text(render_markdown(report),encoding='utf-8'); return report
 
 def main(argv=None):
-    ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('project'); ap.add_argument('--output',required=True); ap.add_argument('--ruby'); ap.add_argument('--mutator'); ap.add_argument('--bridge'); ap.add_argument('--skip-script-syntax',action='store_true'); args=ap.parse_args(argv)
-    try: report=validate(args.project,args.output,args.ruby,args.mutator,args.bridge,args.skip_script_syntax)
+    ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('project'); ap.add_argument('--output',required=True); ap.add_argument('--ruby'); ap.add_argument('--mutator'); ap.add_argument('--bridge'); ap.add_argument('--skip-script-syntax',action='store_true'); ap.add_argument('--backend',choices=['ruby','python'],default='ruby'); args=ap.parse_args(argv)
+    try: report=validate(args.project,args.output,args.ruby,args.mutator,args.bridge,args.skip_script_syntax,args.backend)
     except Exception as e: print(f'error: {e}',file=sys.stderr); return 2
     print(json.dumps({'status':'ready' if report['copy_mutation_ready'] else 'refused','checked':report['roundtrip']['checked'],'failed':report['roundtrip']['failed'],'output':str(Path(args.output).expanduser().resolve())}))
     return 0 if report['copy_mutation_ready'] else 3

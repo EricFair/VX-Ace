@@ -22,3 +22,6 @@ __pycache__/
 
 # Local analyzer output
 analysis/
+
+# Local test scratch
+.test-tmp/

@@ -1,8 +1,26 @@
-# RPG Maker VX Ace Developer — v0.10
+# RPG Maker VX Ace Developer — v0.11
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
-v0.10 still does **not** broaden binary write power. It adds dependency-impact analysis before staging and a semantic Project Codex diff after re-indexing, while retaining the v0.9 real-project safety gate.
+Start with **[VXACE_MASTER.md](VXACE_MASTER.md)** for the complete settings, capability matrix, commands, safety contract, and evidence. The machine-readable defaults are in `vxace-master.json`.
+
+```bash
+python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR
+```
+
+v0.11 adds this read-only master workflow, observed-schema/reference inspection, and an explicitly selected Python data backend for the existing narrow copy-only writer. The master configuration selects Python; individual validator/patcher commands retain their Ruby default unless `--backend python` is specified. Existing project-wide and per-target byte gates remain mandatory. Structural writes remain disabled.
+
+Real-project validation found modern-Ruby float formatting differences that failed seven of sixteen files; the pinned Python codec preserves all sixteen exactly. See `references/real-project-validation-v0.11.md` for results and limitations. User project data is not included in the repository.
+
+## Independent experimental Python codec audit
+
+The first incremental upstream adoption adds a separate read-only audit, using a pinned MIT-declared codec subset from `azureknight63/rpgvxace-mcp`:
+
+```bash
+python tools/vxace_codec_audit.py PROJECT --output NEW_EXTERNAL_REPORT_DIR
+```
+
+This audit needs only Python 3.10+, refuses mismatches and codec warnings, and writes reports outside the source. It never grants mutation readiness or replaces the production selected-backend validator/patcher gates. See `references/upstream-adoption.md` for the adoption backlog, promotion gates and limitations, and `tools/_vendor/NOTICE.md` for provenance.
 
 ## What v0.10 adds
 
@@ -152,7 +170,7 @@ python tools/vxace_semantic_diff.py BEFORE_INDEX AFTER_INDEX --json semantic-dif
 
 ## Automated validation
 
-The v0.8 GitHub Actions baseline passed the complete **38-test** toolchain. The v0.9 suite reached **45 automated tests**. v0.10 adds seven impact/semantic-verification tests for an intended **52-test** suite.
+The v0.8 GitHub Actions baseline passed **38 tests**, v0.9 reached **45**, and v0.10 reached **52**. The expanded v0.11 local suite passes **136 tests**. CI now runs on Ubuntu and Windows; consult the latest Actions run for its actual status.
 
 Run all suites with:
 
@@ -173,7 +191,7 @@ python tools/run_tests.py
 
 ## Current limitation
 
-The validator is ready for real user-owned projects, but the repository itself still has only synthetic-fixture evidence. A real project must actually be run through the validator before we can claim real-project round-trip validation.
+The v0.11 release records real-project evidence for one small editor-produced VX Ace project and a disposable-copy runtime smoke test. This does not establish compatibility with arbitrary custom projects; validate every project snapshot against the selected backend.
 
 Broader structural writes—event command insertion/deletion, event page creation/removal, arbitrary schema changes—remain disabled until that evidence exists.
 
