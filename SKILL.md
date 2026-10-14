@@ -1,6 +1,6 @@
 # RPG Maker VX Ace Developer
 
-Version: 0.9.0
+Version: 0.10.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -86,6 +86,26 @@ Use source truth in this order: extraction status -> Codex routing -> exact `ana
 
 Codex classifications are heuristic. Never invent stage meanings that are not evidenced by the project.
 
+## Dependency impact preflight — v0.10
+
+Before approving a concrete patch against a fresh index, run:
+
+```bash
+python tools/vxace_impact.py PROJECT_INDEX --spec patch.json --json impact.json --markdown impact.md
+```
+
+Treat the result as evidence, not proof of completeness. Review graph relationships for event targets, script collision/save-hook evidence, and explicit coverage limitations. A high-risk collision or unexpected dependency is a stop-and-investigate signal. Database targets are verified directly, but full database-object dependency edges are not yet complete.
+
+After a staged copy is re-indexed, run:
+
+```bash
+python tools/vxace_semantic_diff.py BEFORE_INDEX AFTER_INDEX --json semantic-diff.json --markdown semantic-diff.md
+```
+
+Unexpected added/removed/changed systems, state machines, graph relationships, or script ownership/collision metadata are review stop signals. A clean semantic diff still does not replace VX Ace runtime testing.
+
+See `references/impact-analysis.md` and `workflows/impact-review.md`.
+
 ## Patch planning
 
 ```bash
@@ -133,14 +153,14 @@ Choose the owning runtime object, define old-save behavior, inspect other save h
 
 ## Current capability boundary
 
-v0.9 includes engine knowledge, native patterns, compatibility analysis, Project Reader, Project Codex, proposal planning, byte-verified disposable-copy mutation, pre/post index diffing, and a project-wide real-project validation harness.
+v0.10 includes engine knowledge, native patterns, compatibility analysis, Project Reader, Project Codex, proposal planning, byte-verified disposable-copy mutation, project-wide real-project validation, pre-mutation dependency-impact analysis, normalized index diffing, and post-mutation semantic Codex diffing.
 
-Repository CI had a green 38-test v0.8 baseline; v0.9 adds seven validator tests for an intended 45-test suite.
+Repository CI passed the 45-test v0.9 toolchain. v0.10 adds seven impact/semantic-verification tests for an intended 52-test suite.
 
 Real user-owned project validation is still external evidence that must actually be collected. Until then, broader structural mutation stays disabled.
 
 ## Next milestones
 
 - run v0.9 validator against real user-owned VX Ace projects and document pass/refusal cases;
-- v0.10+: guarded structural event editing, richer schema/type checks, stronger script preflight, deeper dependency/Codex semantic diffing;
+- v0.11+: guarded structural event editing, richer schema/type checks, stronger script preflight, and deeper call-resolution tooling;
 - v1.0: validated specialist with real-project evidence and documented failure modes/rollback.
