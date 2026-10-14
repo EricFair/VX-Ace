@@ -5,7 +5,7 @@ import argparse, hashlib, json, os, re, shutil, subprocess, sys
 from collections import defaultdict
 from pathlib import Path
 
-VERSION = "0.6.0"
+VERSION = "0.12.0"
 DB_FILES = {
     "Actors.rvdata2":"actors.json","Classes.rvdata2":"classes.json","Skills.rvdata2":"skills.json",
     "Items.rvdata2":"items.json","Weapons.rvdata2":"weapons.json","Armors.rvdata2":"armors.json",
@@ -93,6 +93,11 @@ def ctx(kind,file,c):
         if p and isinstance(p[0],int): d["common_event_id"]=p[0]
         try: d["command_index"]=int(p[p.index("list")+1])
         except (ValueError,IndexError,TypeError): pass
+    elif kind=="troop":
+        if p and isinstance(p[0],int): d['troop_id']=p[0]
+        for marker,name,add in (('pages','page',1),('list','command_index',0)):
+            try: d[name]=int(p[p.index(marker)+1])+add
+            except (ValueError,IndexError,TypeError): pass
     return d
 
 
@@ -229,6 +234,7 @@ def read_project(project,output,ruby=None,bridge=None,run_compat=True,run_codex=
             sets.append(("map",dest.name,cs)); maps.append({"map_id":mid,"file":dest.name,"event_command_count":len(cs)})
         except Exception as e: errors.append({"file":p.name,"error":str(e)})
     if "CommonEvents.rvdata2" in decoded: sets.append(("common_event","common-events.json",commands(decoded["CommonEvents.rvdata2"])) )
+    if "Troops.rvdata2" in decoded: sets.append(("troop","troops.json",commands(decoded["Troops.rvdata2"])))
     order=[]; sp=data/"Scripts.rvdata2"
     if sp.is_file():
         try:

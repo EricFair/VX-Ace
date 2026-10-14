@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "_vendor"))
 from rpgvxace_mcp import marshal_rb
 from rpgvxace_mcp.rubytypes import RubyObject, RubyString, RubyHash, RubySymbol, Table, Color, Tone
 
-VERSION = "0.11.0"
+VERSION = "0.12.0"
 MAX_BYTES = 64 * 1024 * 1024
 
 
@@ -145,7 +145,12 @@ def command_holder(root, mutation):
 def apply(root, spec):
     mutation = spec["mutation"]
     kind = spec["type"]
-    if kind == "database":
+    if kind == 'system_version':
+        if not isinstance(root,RubyObject) or root.cls!='RPG::System': raise ValueError('Native System required for version update')
+        old=root.get('version_id'); integer(old,'version id'); integer(mutation.get('expected_version'),'expected version')
+        if old >= 2**31-1 or old != mutation.get('expected_version'): raise ValueError('Project version is stale or exhausted')
+        root.set('version_id',old+1)
+    elif kind == "database":
         owner = object_by_id(root, mutation["id"])
         field = mutation["field"]
         if not isinstance(field, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", field):
@@ -170,6 +175,10 @@ def apply(root, spec):
             raise ValueError("Python database edits are scalar-only")
         owner.ivars[key] = convert(value, old)
     elif kind == "event":
+        from vxace_event_structure import ACTIONS, apply as structural_apply
+        if mutation.get('action') in ACTIONS:
+            structural_apply(root, mutation, convert, object_by_id)
+            return
         holder = command_holder(root, mutation)
         commands = holder.get("list") if isinstance(holder, RubyObject) else None
         index = integer(mutation["command_index"], "command index")

@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v0.11
+# RPG Maker VX Ace Developer — v0.12
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -8,7 +8,9 @@ Start with **[VXACE_MASTER.md](VXACE_MASTER.md)** for the complete settings, cap
 python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR
 ```
 
-v0.11 adds this read-only master workflow, observed-schema/reference inspection, and an explicitly selected Python data backend for the existing narrow copy-only writer. The master configuration selects Python; individual validator/patcher commands retain their Ruby default unless `--backend python` is specified. Existing project-wide and per-target byte gates remain mandatory. Structural writes remain disabled.
+v0.12 adds guarded event command insertion/deletion and conditioned map/troop page cloning/deletion through the Python copy backend. Exact native fingerprints, compound-command boundaries, repeating-trigger refusals, automatic native project-version advancement, mandatory re-index/semantic review and post-copy validation protect these transactions. See [the structural workflow](references/event-structure.md) and [native runtime evidence](references/real-project-validation-v0.12.md).
+
+The master workflow remains read-only and selects Python. Individual validator/patcher commands retain their Ruby default unless `--backend python` is specified. Project-wide and per-target byte gates remain mandatory.
 
 Real-project validation found modern-Ruby float formatting differences that failed seven of sixteen files; the pinned Python codec preserves all sixteen exactly. See `references/real-project-validation-v0.11.md` for results and limitations. User project data is not included in the repository.
 
@@ -170,7 +172,7 @@ python tools/vxace_semantic_diff.py BEFORE_INDEX AFTER_INDEX --json semantic-dif
 
 ## Automated validation
 
-The v0.8 GitHub Actions baseline passed **38 tests**, v0.9 reached **45**, and v0.10 reached **52**. The expanded v0.11 local suite passes **136 tests**. CI now runs on Ubuntu and Windows; consult the latest Actions run for its actual status.
+The v0.8 baseline had **38 tests**, v0.9 **45**, v0.10 **52**, and v0.11 **136**. The expanded v0.12 suite has **159 tests**. CI runs on Ubuntu and Windows; consult the latest Actions run for its actual status.
 
 Run all suites with:
 
@@ -191,8 +193,8 @@ python tools/run_tests.py
 
 ## Current limitation
 
-The v0.11 release records real-project evidence for one small editor-produced VX Ace project and a disposable-copy runtime smoke test. This does not establish compatibility with arbitrary custom projects; validate every project snapshot against the selected backend.
+The v0.12 release records actual editor/playtest evidence for command and page insertion/deletion, map/common/battle behavior, and loading a pre-deletion save into the edited copy. This is limited to one small editor-produced VX Ace project; validate every project snapshot and review custom runtime/save hooks.
 
-Broader structural writes—event command insertion/deletion, event page creation/removal, arbitrary schema changes—remain disabled until that evidence exists.
+New branch/script-command construction, repeating-trigger structure edits, final-page deletion, arbitrary schema changes, database entry authoring and map/tile editing remain unsupported. See [supported edits and refusal rules](references/event-structure.md).
 
 See `references/impact-analysis.md`, `workflows/impact-review.md`, `references/project-validation.md`, `workflows/real-project-validation.md`, `references/copy-mutation.md`, and `workflows/verified-copy-mutation.md`.

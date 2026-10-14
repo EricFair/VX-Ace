@@ -1,5 +1,7 @@
 # Verified Copy Mutation — v0.8
 
+Historical foundation: v0.11 adds an explicit Python backend and v0.12 adds [guarded command/page structure edits](event-structure.md) through that backend. The v0.8 limitations below describe that original release; the linked workflow defines the current structural subset and mandatory gates.
+
 v0.8 introduces the first mutation-capable layer, but it is intentionally restricted to **disposable project copies**.
 
 ## Safety contract

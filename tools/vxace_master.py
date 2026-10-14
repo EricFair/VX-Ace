@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SAFE_POLICY = {
     "original_project_writes": False, "mutation_mode": "disposable-copy-only",
     "project_wide_byte_gate": True, "immediate_target_byte_gate": True,
-    "fresh_index_required": True, "structural_writes": False, "runtime_review_required": True,
+    "fresh_index_required": True, "structural_writes": "guarded-events-only", "runtime_review_required": True,
 }
 
 
@@ -62,7 +62,7 @@ def workflow(project, output, ruby, config):
         validation = output / "validation/validation.json"
         ready = validation.is_file() and json.loads(validation.read_text(encoding="utf-8"))["copy_mutation_ready"]
         ok = completed and unchanged and ready and all(s["exit_code"] == 0 for s in stages)
-        summary = {"version": "0.11.0", "status": "pass" if ok else "review_required", "stages": stages,
+        summary = {"version": "0.12.0", "status": "pass" if ok else "review_required", "stages": stages,
                    "source_unchanged": unchanged, "selected_backend": config["validation_backend"],
                    "copy_mutation_ready": bool(ready and unchanged), "mutation_performed": False,
                    "runtime_compatibility_proven": False}

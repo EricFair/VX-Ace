@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, json
 from pathlib import Path
 
-VERSION = "0.10.0"
+VERSION = "0.12.0"
 DB_FILES = {
     "actors":"actors.json","classes":"classes.json","skills":"skills.json","items":"items.json",
     "weapons":"weapons.json","armors":"armors.json","enemies":"enemies.json","troops":"troops.json",
@@ -71,24 +71,31 @@ def script_impact(index, scripts, change):
         "limitations":["Static ownership/collision evidence may miss metaprogramming and dynamic dispatch."],
     }
 
-def event_impact(graph, maps, change):
+def event_impact(graph, maps, change, index=None):
     loc=change.get("locator") or {}
+    mutation=change.get('mutation') or {}
+    if mutation.get('action')=='insert_page':
+        loc=dict(loc); loc['page']=mutation.get('template_page')
     if all(k in loc for k in ("map_id","event_id","page")):
         mid,eid,page=(int(loc[k]) for k in ("map_id","event_id","page"))
         exact=map_page(maps,mid,eid,page)
         if not exact: raise ValueError(f"map event page not found: map {mid}, event {eid}, page {page}")
         node=f"map:{mid}:event:{eid}:page:{page}"
-        return {"kind":"event","scope":"map","target":exact,"graph_node":node,"dependencies":graph_neighbors(graph,node),"severity":"medium"}
+        return {"kind":"event","scope":"map","target":exact,"graph_node":node,"dependencies":graph_neighbors(graph,node),"severity":"high" if mutation.get('action') in {'insert_page','delete_page'} else "medium",'structural_action':mutation.get('action'),'requested_locator':change.get('locator')}
     if "common_event_id" in loc:
         cid=int(loc["common_event_id"]); node=f"common_event:{cid}"
         nodes={n.get("id"):n for n in graph.get("nodes",[]) if isinstance(n,dict)}
-        if node not in nodes: raise ValueError(f"common event not found in codex graph: {cid}")
-        return {"kind":"event","scope":"common_event","target":nodes[node],"graph_node":node,"dependencies":graph_neighbors(graph,node),"severity":"medium"}
+        target=nodes.get(node)
+        if not target and index is not None: target,error=database_object(index,'common-events',cid)
+        if not target: raise ValueError(f"common event not found in project evidence: {cid}")
+        return {"kind":"event","scope":"common_event","target":target,"graph_node":node,"dependencies":graph_neighbors(graph,node),"severity":"medium"}
     if "troop_id" in loc:
         tid=int(loc["troop_id"]); node=f"troop:{tid}"
         nodes={n.get("id"):n for n in graph.get("nodes",[]) if isinstance(n,dict)}
-        if node not in nodes: raise ValueError(f"troop not found in codex graph: {tid}")
-        return {"kind":"event","scope":"troop","target":nodes[node],"graph_node":node,"dependencies":graph_neighbors(graph,node),"severity":"medium",
+        target=nodes.get(node)
+        if not target and index is not None: target,error=database_object(index,'troops',tid)
+        if not target: raise ValueError(f"troop not found in project evidence: {tid}")
+        return {"kind":"event","scope":"troop","target":target,"graph_node":node,"dependencies":graph_neighbors(graph,node),"severity":"high" if mutation.get('action') in {'insert_page','delete_page'} else "medium",
                 "limitations":["Troop page/command dependency extraction is less complete than map-event dependency extraction."]}
     raise ValueError("event locator requires map_id/event_id/page, common_event_id, or troop_id")
 
@@ -113,7 +120,7 @@ def build(index: Path, spec_path: Path):
     for change in spec["changes"]:
         kind=change.get("kind")
         if kind=="script": impacts.append(script_impact(index,scripts,change))
-        elif kind=="event": impacts.append(event_impact(graph,maps,change))
+        elif kind=="event": impacts.append(event_impact(graph,maps,change,index))
         elif kind=="database": impacts.append(database_impact(index,change))
         else: raise ValueError(f"unsupported change kind: {kind}")
     high=sum(1 for x in impacts if x.get("severity")=="high")

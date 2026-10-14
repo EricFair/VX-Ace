@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.0 — Guarded native event structure editing
+
+- Insert/delete atomic command units in map/common/troop events using exact native list fingerprints; preserve terminators, continuation groups, balanced blocks and label targets.
+- Clone conditioned map/troop pages from verified same-owner templates or delete a verified page while retaining one. Acknowledge page priority changes; refuse repeating triggers and unsupported schemas/commands.
+- Require the explicit Python copy backend, fresh references, full source/clone inventories, project-wide/per-target gates, mandatory re-index, structural/normalized/semantic diffs and complete post-copy validation. Failed transactions remove partial copies and report cleanup errors.
+- Advance the copied native `System.version_id` so default old-save loading reloads edited maps; save files remain untouched.
+- Index troop command sets with distinct troop/page contexts. Add native snapshot export, structural workflow documentation, and 23 structural/transaction tests (159 total).
+- Record actual VX Ace map/common/battle insertion, deletion and older-save tests on disposable copies; see `references/real-project-validation-v0.12.md` for evidence and limits.
+
 ## 0.11.0 — Master workflow and real-project-backed Python data backend
 
 - Added `VXACE_MASTER.md`, fixed safe defaults in `vxace-master.json`, and a read-only `vxace_master.py` workflow that combines validation, codec auditing, indexing/Codex, observed schema, reference lint, and original-file hash verification.

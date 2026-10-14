@@ -83,6 +83,8 @@ def build_graph(switches, variables, callers, battles, transfers, catalog):
             node(nid, "event_page", label, map_id=k[1], event_id=k[2], page=k[3], map_name=catalog["map_names"].get(k[1], "")); return nid
         if k[0] == "common_event":
             nid = f"common_event:{k[1]}"; node(nid, "common_event", catalog["common_event_names"].get(k[1], "") or nid, common_event_id=k[1]); return nid
+        if k[0] == 'troop':
+            nid=f'troop:{k[1]}:page:{k[2]}'; node(nid,'troop_page',nid,troop_id=k[1],page=k[2]); return nid
         nid = ":".join(str(x) for x in k); node(nid, "context", nid); return nid
     for s in switches:
         rid=f"switch:{s.get('id')}"; node(rid,"switch",s.get("name") or rid,id_number=s.get("id"))

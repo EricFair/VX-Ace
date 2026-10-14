@@ -1,6 +1,11 @@
+---
+name: rpg-maker-vx-ace-developer
+description: Analyze, validate, debug, and safely stage RPG Maker VX Ace database, event, and RGSS3 changes using project evidence and disposable copies.
+---
+
 # RPG Maker VX Ace Developer
 
-Version: 0.11.0
+Version: 0.12.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -137,7 +142,7 @@ Required mutation behavior:
 - failed apply/re-index -> delete partial copy, retain failure audit;
 - successful copy -> re-index, diff, review, then test in VX Ace.
 
-Supported mutation remains intentionally narrow: uniquely anchored RGSS3 source replacement, existing database fields, and parameters of existing map/common/troop event commands. No arbitrary schema changes or event/page insertion/deletion yet.
+Supported mutation includes uniquely anchored RGSS3 source replacement, existing database fields, existing command parameters, and guarded event command/page insertion/deletion. For structural work read [references/event-structure.md](references/event-structure.md): use the explicit Python copy backend, exact native fingerprints, indivisible command boundaries, conditioned template pages and mandatory post-copy validation. Repeating triggers, new script/branch construction and deleting the final page are refused. Structural transactions advance the copy's native project version so default old-save loading reloads the map; review custom save hooks and test older saves.
 
 ## Persistence
 
@@ -155,14 +160,14 @@ Choose the owning runtime object, define old-save behavior, inspect other save h
 
 ## Current capability boundary
 
-v0.11 includes engine knowledge, native patterns, compatibility analysis, Project Reader, Project Codex, proposal planning, byte-verified disposable-copy mutation, project-wide validation, dependency-impact analysis, normalized/semantic diffing, the read-only master workflow, observed schema/reference inspection and an explicitly selected Python data backend.
+v0.12 adds guarded structural command/page edits and distinct troop-page analysis to the existing engine knowledge, native patterns, compatibility analysis, Project Reader/Codex, planning, byte-verified copy mutation, validation, impact analysis, diffs, read-only master workflow and schema/reference inspection.
 
-The local v0.11 suite passes 136 tests. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
+The expanded suite has 159 tests. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
 
-Real-project evidence is recorded for one small editor-produced project and a disposable-copy display-name smoke test. It is limited evidence, not blanket compatibility. Broader structural mutation stays disabled.
+Real-project evidence is recorded in [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md). It covers a small editor-produced project and disposable native map/common/battle/save scenarios; it does not establish compatibility with arbitrary customized games. Structural operations outside the documented subset remain disabled.
 
 ## Next milestones
 
-- run v0.9 validator against real user-owned VX Ace projects and document pass/refusal cases;
-- v0.12+: separately validated structural event editing, richer schema/type checks, stronger script preflight, and deeper call-resolution tooling;
+- validate additional user-owned project snapshots and document pass/refusal cases;
+- expand structural editing only with separate schema, dependency and native runtime evidence; improve script preflight and call resolution;
 - v1.0: validated specialist with real-project evidence and documented failure modes/rollback.

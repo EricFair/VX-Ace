@@ -20,7 +20,7 @@ Adopt useful capabilities incrementally under **our** rules: VX Ace first, fresh
 | Cross-project text/command search | Adapt to our external index | Provenance per hit; bounded output and regex work; never evaluate scripts |
 | MCP tools/resources interface | Adapter after read-only APIs stabilize | Default read-only; stdio protocol tests; mutation requests route through our planner/copy patcher |
 | Database entry creation/deletion | Deferred | Real-project production validation; dependency review; clone-only schema/type checks and rollback |
-| Event/page/command structural authoring and DSL | Deferred | Real-project production validation; exact targets; command structure checks; runtime test copies |
+| Event/page/command structural authoring and DSL | Partial in v0.12 | Guarded native command units and conditioned template pages implemented in our Python copy chain; broad DSL/branch/script authoring deferred. See `event-structure.md` and native evidence |
 | Map create/delete/resize and map-tree updates | Deferred | Multi-file clone transaction; tile preservation and reference linting; runtime checks |
 | Tile read/paint/fill and region-layer operations | Read diagnostics before writes | Correct Ace Table dimensions/layers; untouched cells preserved; copy-only edit tests |
 | Script-slot creation/reordering | Deferred | Script order/dependencies/save hooks; unambiguous targets; compatibility and runtime tests |

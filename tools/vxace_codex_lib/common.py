@@ -55,6 +55,8 @@ def ctx_key(ctx):
         return ("map", ctx.get("source_map_id", ctx.get("map_id")), ctx.get("event_id"), ctx.get("page"))
     if ctx.get("kind") == "common_event":
         return ("common_event", ctx.get("common_event_id"))
+    if ctx.get('kind') == 'troop':
+        return ('troop',ctx.get('troop_id'),ctx.get('page'))
     return (ctx.get("kind", "unknown"), ctx.get("file"))
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, difflib, hashlib, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
-VERSION='0.11.0'
+VERSION='0.12.0'
 def mutator_command(ruby, mutator, *args):
     return [sys.executable if mutator.suffix == '.py' else ruby, str(mutator), *map(str, args)]
 DB_FILES={'actors':'Actors.rvdata2','classes':'Classes.rvdata2','skills':'Skills.rvdata2','items':'Items.rvdata2','weapons':'Weapons.rvdata2','armors':'Armors.rvdata2','enemies':'Enemies.rvdata2','troops':'Troops.rvdata2','states':'States.rvdata2','animations':'Animations.rvdata2','tilesets':'Tilesets.rvdata2','common-events':'CommonEvents.rvdata2','common_events':'CommonEvents.rvdata2','system':'System.rvdata2','map-infos':'MapInfos.rvdata2','map_infos':'MapInfos.rvdata2'}
@@ -80,7 +80,10 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             out.append({'kind':'database','target':'Data/'+DB_FILES[table],'ruby_spec':{'type':'database','mutation':{'id':loc['id'],'field':mut['field'],'value':mut.get('value')}},'description':c.get('description',''),'locator':loc,'mutation':mut})
         elif kind=='event':
             action=mut.get('action')
-            if action not in {'set_parameter','set_parameters'}: raise ValueError(f'event change #{n} unsupported mutation.action')
+            structural={'insert_commands','delete_commands','insert_page','delete_page'}
+            if action not in {'set_parameter','set_parameters'} | structural: raise ValueError(f'event change #{n} unsupported mutation.action')
+            if sum(k in loc for k in ('map_id','common_event_id','troop_id')) != 1: raise ValueError('event locator must select exactly one scope')
+            if set(mut) & {'scope','event_id','troop_id','common_event_id','page','command_index'}: raise ValueError('mutation cannot override event locator fields')
             if 'map_id' in loc:
                 scope='map'; target=f"Data/Map{int(loc['map_id']):03d}.rvdata2"; base={'scope':scope,'event_id':loc.get('event_id'),'page':loc.get('page'),'command_index':loc.get('command_index')}
             elif 'common_event_id' in loc:
@@ -88,6 +91,9 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             elif 'troop_id' in loc:
                 scope='troop'; target='Data/Troops.rvdata2'; base={'scope':scope,'troop_id':loc.get('troop_id'),'page':loc.get('page'),'command_index':loc.get('command_index')}
             else: raise ValueError(f'event change #{n} needs map/common-event/troop locator')
+            if action in {'insert_page','delete_page'}:
+                if scope=='common_event' or 'command_index' in loc: raise ValueError('Page edits require map/troop page locators without command indexes')
+                base.pop('command_index',None)
             if any(v is None for k,v in base.items() if k not in {'scope'}): raise ValueError(f'event change #{n} locator incomplete')
             base.update(mut)
             out.append({'kind':'event','target':target,'ruby_spec':{'type':'event','mutation':base},'description':c.get('description',''),'locator':loc,'mutation':mut})
@@ -99,6 +105,17 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if copy_root.resolve() not in target.parents: raise ValueError(f'target escapes copy: {rel}')
     if not target.is_file(): raise FileNotFoundError(rel)
     before_raw=sha256(target); before_sem=inspect_file(ruby,mutator,target)['semantic_sha256']
+    mutation=change.get('ruby_spec',{}).get('mutation',{})
+    structural_action=mutation.get('action') in {'insert_commands','delete_commands','insert_page','delete_page'}
+    def structural_snapshot(file,after=False):
+        from vxace_python_mutator import load,object_by_id
+        from vxace_event_structure import snapshot,owner_for
+        root,_=load(file); loc=dict(mutation)
+        if loc['scope']!='common_event':
+            pages=owner_for(root,loc,object_by_id).get('pages')
+            loc['page']=min(loc['page'],len(pages)) if after else (loc.get('template_page',loc['page']) if loc['action']=='insert_page' else loc['page'])
+        return {'snapshot_page':loc.get('page'),**snapshot(root,loc,object_by_id)}
+    before_structure=structural_snapshot(target) if structural_action else None
     specfile=audit_dir/f'mutation-{index:03d}.json'; dump_json(specfile,change['ruby_spec'])
     tmp=target.with_suffix(target.suffix+'.new')
     p=run(mutator_command(ruby,mutator,'mutate',target,tmp,specfile))
@@ -107,6 +124,10 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if before_sem==after_sem: raise RuntimeError(f'mutation produced no semantic change: {rel}')
     os.replace(tmp,target)
     rec={'kind':change['kind'],'target':rel,'description':change.get('description',''),'before_sha256':before_raw,'after_sha256':after_raw,'before_semantic_sha256':before_sem,'after_semantic_sha256':after_sem}
+    if structural_action:
+        after_structure=structural_snapshot(target,True)
+        rec['structural']={'action':mutation['action'],'locator':change['locator'],'before':before_structure,'after':after_structure}
+        rec['diff']=''.join(difflib.unified_diff(json.dumps(before_structure,ensure_ascii=False,indent=2).splitlines(True),json.dumps(after_structure,ensure_ascii=False,indent=2).splitlines(True),fromfile='source-event-snapshot',tofile='staged-event-snapshot'))
     if change['kind']=='script':
         idxroot=change.get('_index_root')
         if idxroot:
@@ -138,8 +159,23 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
     if freshness['status']!='fresh': raise RuntimeError('STALE_INDEX:'+json.dumps(freshness))
     source_before=current_inventory(project)
     spec=load_json(spec_path); changes=normalize_changes(index,spec)
+    structural=[c for c in changes if c.get('mutation',{}).get('action') in {'insert_commands','delete_commands','insert_page','delete_page'}]
+    if structural:
+        if no_reindex: raise ValueError('Structural edits require post-copy re-indexing and semantic verification')
+        if mutator.resolve() != (Path(__file__).resolve().parent/'vxace_python_mutator.py'):
+            raise ValueError('Structural edits require the explicitly selected Python backend')
+        from vxace_event_structure import validate_project_references
+        for c in structural: validate_project_references(index,c['ruby_spec']['mutation'])
+        system=load_json(index/'database/system.json')
+        version=system.get('version_id')
+        if type(version) is not int or not 0 <= version < 2**31-1: raise ValueError('Verified native System.version_id required for structural edits')
+        changes.append({'kind':'system_version','target':'Data/System.rvdata2','description':'Advance the native project version so existing saves reload the edited map',
+                        'ruby_spec':{'type':'system_version','mutation':{'expected_version':version}}})
     for c in changes: c['_index_root']=str(index)
     audit_dir.mkdir(parents=True)
+    if structural:
+        from vxace_impact import build as build_impact
+        dump_json(audit_dir/'structural-impact.json',build_impact(index,spec_path))
     # Programmatic project-wide gate for the exact selected backend, in addition
     # to the immediate per-target semantic and raw-byte gates below.
     from vxace_project_validator import validate
@@ -152,6 +188,7 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         preflights.append(roundtrip_preflight(ruby,mutator,project/safe_rel(rel)))
     shutil.copytree(project,copy_root)
     try:
+        if current_inventory(copy_root)!=source_before: raise RuntimeError('clone inventory differs from the verified source snapshot')
         applied=[]
         for i,c in enumerate(changes,1): applied.append(apply_one(ruby,mutator,copy_root,c,audit_dir,i))
         source_after=current_inventory(project); src_problems=[]
@@ -172,12 +209,24 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
                 p=run([sys.executable,str(diff_tool),str(index),str(post),'--json',str(j),'--markdown',str(m)])
                 if p.returncode: raise RuntimeError('index diff failed: '+p.stderr.strip())
                 index_diff=json.loads(p.stdout)
+            if structural:
+                semantic_tool=Path(__file__).resolve().parent/'vxace_semantic_diff.py'
+                p=run([sys.executable,str(semantic_tool),str(index),str(post),'--json',str(audit_dir/'semantic-diff.json'),'--markdown',str(audit_dir/'semantic-diff.md')])
+                if p.returncode: raise RuntimeError('structural semantic verification failed: '+p.stderr.strip())
+                post_validation=validate(copy_root,audit_dir/'post-validation',ruby,mutator,skip_script_syntax=True,backend='python')
+                if not post_validation['copy_mutation_ready']: raise RuntimeError('post-copy project validation failed')
+        if current_inventory(project)!=source_before: raise RuntimeError('SOURCE_CHANGED: source changed during final verification')
         result={'version':VERSION,'title':str(spec.get('title') or 'VX Ace staged patch'),'status':'ok','source_project_omitted_from_persistent_output':True,'freshness':freshness,'roundtrip_preflight':preflights,'changes':applied,'source_integrity_after':source_integrity,'copy_path':str(copy_root),'reindex':reindex,'index_diff':index_diff,'rollback':{'strategy':'delete staged project copy','source_project_modified':False}}
         dump_json(audit_dir/'audit.json',result); (audit_dir/'audit.md').write_text(render_audit(result),encoding='utf-8')
         return result
     except Exception as exc:
-        if copy_root.exists(): shutil.rmtree(copy_root,ignore_errors=True)
-        dump_json(audit_dir/'failure.json',{'version':VERSION,'status':'failed','reason':str(exc),'staged_copy_removed':True,'source_project_modified_by_tool':False})
+        cleanup_error=None
+        try:
+            if copy_root.exists(): shutil.rmtree(copy_root)
+        except OSError as cleanup_exc: cleanup_error=str(cleanup_exc)
+        removed=not copy_root.exists()
+        dump_json(audit_dir/'failure.json',{'version':VERSION,'status':'failed','reason':str(exc),'staged_copy_removed':removed,'cleanup_error':cleanup_error,'source_project_modified_by_tool':False})
+        if not removed: raise RuntimeError('Invalid staged copy could not be removed; see failure.json') from exc
         raise
 
 def main(argv=None)->int:

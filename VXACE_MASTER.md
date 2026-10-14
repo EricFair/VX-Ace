@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v0.11.0
+# VX Ace Masterfile — v0.12.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -13,7 +13,7 @@ The authoritative entry point for this specialist toolchain: recommended setting
 - Failure: refuse; never downgrade a mismatch, warning, ambiguous target or stale source to a permissive warning.
 - Preserve original game files and private/proprietary scripts. Do not commit user projects, extracted defaults, saves, or raw private reports.
 
-The master runner does not perform mutations. Its safety settings are validated against a fixed policy; a configuration file cannot enable original-project or structural writes.
+The master runner does not perform mutations. Its safety settings are validated against a fixed policy; a configuration file cannot enable original-project writes or unrestricted structural editing. `structural_writes: "guarded-events-only"` describes the separately invoked copy patcher, not a master-runner write permission.
 
 ## One-command read-only workflow
 
@@ -71,8 +71,9 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Patch proposals | Freshness, exact unique script anchors, structured database/event proposals, regression checks and rollback guidance |
 | Dependency impact | Exact target review, event graph relationships, script collision and save-hook evidence; incomplete dependency coverage is disclosed |
 | Verified copy patching | Existing scalar database fields, existing map/common/troop command parameters and unique script replacements; backend-specific limits apply |
+| Guarded event structure | Python copy backend: atomic command insertion/deletion and conditioned same-owner map/troop page cloning/deletion; exact native hashes, repeating-trigger refusal, native project-version advancement, mandatory post-copy validation |
 | Change review | Source hashes, before/after byte and semantic hashes, re-index, normalized diff, semantic Codex diff |
-| Actual editor/runtime verification | User-authorized disposable-copy smoke tests; evidence in `references/real-project-validation-v0.11.md` |
+| Actual editor/runtime verification | Disposable map/common/battle insertion/deletion and old-save loading; evidence in `references/real-project-validation-v0.12.md` |
 
 ## Exact individual commands
 
@@ -160,9 +161,9 @@ A release is complete when its documented scope is implemented, tests pass, real
 
 ## Remaining boundaries
 
-Structural event/page/command insertion and deletion, map creation/resizing, tile painting, database entry creation/deletion, arbitrary raw writes, save migration, encrypted archives, and VX/RGSS2 remain outside this release. MCP transport, RTP-aware asset checks, richer event-logic lint and bounded full-project search remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
+Structural edits outside [the guarded event workflow](references/event-structure.md), map creation/resizing, tile painting, database entry creation/deletion, arbitrary raw writes, general save migration, encrypted archives, and VX/RGSS2 remain outside this release. MCP transport, RTP-aware asset checks, richer event-logic lint and bounded full-project search remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
 
-Do not run broad unsupported writes merely because one project passed validation. One small real project and one display-name smoke test establish limited evidence. Further changes need their own fixtures, type/schema checks, dependency review and runtime scenarios.
+Do not run broad unsupported writes merely because one project passed validation. The recorded native scenarios establish limited evidence. Further changes need their own fixtures, type/schema checks, dependency review and runtime scenarios. For supported event insertion/deletion, use [references/event-structure.md](references/event-structure.md), including exact snapshot commands, transaction fields and old-save behavior.
 
 ## Supporting files
 
@@ -171,4 +172,6 @@ Do not run broad unsupported writes merely because one project passed validation
 - [`references/upstream-adoption.md`](references/upstream-adoption.md): full staged capability inventory.
 - [`tools/_vendor/NOTICE.md`](tools/_vendor/NOTICE.md): pinned codec provenance and license declarations.
 - [`references/real-project-validation-v0.11.md`](references/real-project-validation-v0.11.md): actual release evidence and limits.
+- [`references/real-project-validation-v0.12.md`](references/real-project-validation-v0.12.md): structural editing and native runtime evidence.
+- [`references/event-structure.md`](references/event-structure.md): supported event edits, exact commands, preconditions and refusal rules.
 - [`CHANGELOG.md`](CHANGELOG.md): v0.1 through current release history.
