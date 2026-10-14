@@ -1,10 +1,34 @@
-# RPG Maker VX Ace Developer — v0.9
+# RPG Maker VX Ace Developer — v0.10
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
-v0.9 does **not** broaden write power. It adds the missing real-project safety gate: a read-only validator that can measure whether the current Marshal tooling can round-trip every `.rvdata2` file in an actual project byte-for-byte before copy mutation is considered safe.
+v0.10 still does **not** broaden binary write power. It adds dependency-impact analysis before staging and a semantic Project Codex diff after re-indexing, while retaining the v0.9 real-project safety gate.
 
-## What v0.9 adds
+## What v0.10 adds
+
+### `tools/vxace_impact.py`
+
+Before staging a reviewed patch, verify its target and known blast radius:
+
+```bash
+python tools/vxace_impact.py PROJECT_INDEX --spec patch.json \
+  --json impact.json --markdown impact.md
+```
+
+The report uses the current Project Codex to surface map-event graph relationships, script ownership/collision/save-hook evidence, exact database targets, and explicit coverage limitations.
+
+### `tools/vxace_semantic_diff.py`
+
+After a staged copy has been re-indexed, compare project meaning rather than only changed normalized files:
+
+```bash
+python tools/vxace_semantic_diff.py BEFORE_INDEX AFTER_INDEX \
+  --json semantic-diff.json --markdown semantic-diff.md
+```
+
+It reports added/removed/changed Codex systems, state machines, graph nodes/edges, and script ownership/collision metadata. Unexpected semantic changes are a review stop signal.
+
+Both tools are analysis-only and do not relax any mutation gate.
 
 ### `tools/vxace_project_validator.py`
 
@@ -56,13 +80,19 @@ Project Reader + Codex
 Compatibility Analyzer
         │
         ▼
+Impact Analyzer  ← v0.10 dependency review
+        │
+        ▼
 Patch Planner
         │
         ▼
 Copy Patcher  ← still rechecks each targeted file
         │
         ▼
-Post-index + diff
+Post-index + raw diff
+        │
+        ▼
+Semantic Codex diff  ← v0.10 meaning review
         │
         ▼
 VX Ace editor/runtime testing
@@ -108,11 +138,21 @@ python tools/vxace_copy_patcher.py PROJECT_INDEX \
 
 The original project remains a non-write target.
 
+### Dependency impact analyzer
+
+```bash
+python tools/vxace_impact.py PROJECT_INDEX --spec patch.json --json impact.json --markdown impact.md
+```
+
+### Semantic Codex diff
+
+```bash
+python tools/vxace_semantic_diff.py BEFORE_INDEX AFTER_INDEX --json semantic-diff.json --markdown semantic-diff.md
+```
+
 ## Automated validation
 
-The v0.8 GitHub Actions baseline passed the complete **38-test** toolchain. v0.9 adds seven project-validator tests, including an integration test that runs the real validator against the repository's synthetic VX Ace fixture using the real bridge and mutator.
-
-The intended v0.9 total is **45 automated tests**.
+The v0.8 GitHub Actions baseline passed the complete **38-test** toolchain. The v0.9 suite reached **45 automated tests**. v0.10 adds seven impact/semantic-verification tests for an intended **52-test** suite.
 
 Run all suites with:
 
@@ -122,7 +162,7 @@ python tools/run_tests.py
 
 ## Safety model
 
-- validation, indexing, compatibility analysis, and planning are read-only;
+- validation, indexing, compatibility analysis, impact analysis, semantic diffing, and planning are read-only;
 - original project mutation remains disabled;
 - all mutation happens on a new disposable clone;
 - stale indexes are hard failures;
@@ -133,8 +173,8 @@ python tools/run_tests.py
 
 ## Current limitation
 
-The validator is now ready for real user-owned projects, but the repository itself still has only synthetic-fixture evidence. A real project must actually be run through the validator before we can claim real-project round-trip validation.
+The validator is ready for real user-owned projects, but the repository itself still has only synthetic-fixture evidence. A real project must actually be run through the validator before we can claim real-project round-trip validation.
 
 Broader structural writes—event command insertion/deletion, event page creation/removal, arbitrary schema changes—remain disabled until that evidence exists.
 
-See `references/project-validation.md`, `workflows/real-project-validation.md`, `references/copy-mutation.md`, and `workflows/verified-copy-mutation.md`.
+See `references/impact-analysis.md`, `workflows/impact-review.md`, `references/project-validation.md`, `workflows/real-project-validation.md`, `references/copy-mutation.md`, and `workflows/verified-copy-mutation.md`.
