@@ -42,7 +42,20 @@ The complete 38-test v0.8 toolchain passed GitHub Actions.
 
 The tool is ready to run against real user-owned VX Ace projects, but a repository test fixture is not a substitute for that evidence. Before broadening mutation, record results from one or more real projects containing diverse maps, animations, tilesets, scripts, `Table`, `Color`, `Tone`, `Rect`, and third-party/custom serialized data.
 
-## v0.10+ — Controlled structural editing / deeper impact analysis
+## v0.10 — Dependency impact + semantic verification — COMPLETE
+
+- added evidence-first patch impact analysis against Codex graph/map/script/database outputs;
+- exact target verification before reporting impact;
+- high-risk escalation for script collision/save-hook evidence;
+- explicit completeness limits for database and troop dependency coverage;
+- added semantic before/after Codex diff for systems, state machines, graph nodes/edges, and script metadata;
+- added seven analysis tests and full-suite CI wiring.
+
+### Still gated on real-project validation
+
+Broader structural mutation remains disabled until v0.9 is actually run on user-owned VX Ace projects and the results are documented.
+
+## v0.11+ — Controlled structural editing / deeper resolution
 
 Only after real-project validation evidence:
 
@@ -52,8 +65,6 @@ Only after real-project validation evidence:
 - script syntax preflight integrated into patch application;
 - deeper Script-command -> Ruby ownership resolution;
 - patch specs linked to exact Codex evidence IDs;
-- dependency-impact summaries before mutation;
-- semantic Codex before/after diffing;
 - stronger source-lease/concurrency handling;
 - optional pure-Python Marshal backend research.
 
