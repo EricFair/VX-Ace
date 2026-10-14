@@ -15,3 +15,10 @@ RGSS*.dll
 Thumbs.db
 *.tmp
 *.bak
+
+# Python tooling noise
+__pycache__/
+*.py[cod]
+
+# Local analyzer output
+analysis/

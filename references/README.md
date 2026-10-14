@@ -10,3 +10,4 @@ Use the smallest relevant reference first.
 - `data-and-save-lifecycle.md` — database loading, save contents, migrations, old-save safety.
 - `scene-window-lifecycle.md` — scene transitions, window responsibilities, UI lifetime.
 - `battle-system.md` — battle subsystem routing and collision hotspots.
+- `script-compatibility-index.md` — v0.4 analyzer entities, risk model, and agent review procedure.

@@ -35,3 +35,7 @@ Maximum score 2 if a proposed autorun has no explicit termination condition or a
 Maximum score 2 if a linear mutually exclusive progression system is modeled with independent switches without addressing contradictory states.
 
 Maximum score 2 if the answer recommends continuous parallel polling for a one-time reaction that can be owned by the event which changes the state, without explaining why polling is required.
+
+Maximum score 2 if an answer treats a static compatibility finding as proof of incompatibility without inspecting load order, aliases, or the involved implementations.
+
+Maximum score 2 if script-order-sensitive compatibility advice assumes alphabetical/file-system order when the actual VX Ace Script Editor order is available or required.

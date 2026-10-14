@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0 — RGSS3 compatibility analyzer
+
+- Added executable read-only RGSS3 static analyzer.
+- Added class/module reopening and duplicate method indexes.
+- Added alias/alias_method detection and conservative collision severity.
+- Added `$imported` key definition/read/load-order analysis.
+- Added constant/global write candidates, save-hook detection, and note-parser detection.
+- Added JSON and Markdown reports plus `--fail-on-high`.
+- Added synthetic fixtures and 12 automated unit tests.
+- Added compatibility scan workflow and script compatibility reference.
+- Expanded benchmark from 45 to 60 scenarios.
+
 ## 0.3.0 — Practical native design patterns
 
 - Added practical pattern library for one-time/gated events, quests, cutscenes, state ownership, database mechanics, damage formulas, event anti-patterns, and performance.

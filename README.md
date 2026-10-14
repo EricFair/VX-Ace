@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v0.3
+# RPG Maker VX Ace Developer — v0.4
 
 A specialist skill/agent knowledge base for developing, debugging, and eventually modifying **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -19,6 +19,21 @@ v0.3 adds a practical design layer on top of the v0.2 engine architecture:
 - native-feature design and event-debugging workflows;
 - a 45-scenario v0.3 benchmark with stricter scoring caps.
 
+## What v0.4 adds
+
+v0.4 adds the first executable project-analysis tooling:
+
+- `tools/rgss3_analyzer.py` — read-only static RGSS3 compatibility analyzer;
+- class/module reopening index;
+- method collision detection with alias-chain awareness;
+- `$imported` dependency/load-order checks;
+- constant/global write collision candidates;
+- save-hook and note-parser detection;
+- JSON + Markdown reports;
+- synthetic unit-test fixtures and automated tests;
+- a dedicated compatibility-scan workflow;
+- benchmark expansion to 60 scenarios.
+
 ## Repository layout
 
 ```text
@@ -30,6 +45,9 @@ v0.3 adds a practical design layer on top of the v0.2 engine architecture:
 ├── ROADMAP.md
 ├── VERSION
 ├── references/        # engine architecture/lifecycle knowledge
+├── tools/
+│   ├── rgss3_analyzer.py
+│   └── README.md
 ├── patterns/          # practical VX Ace design patterns and anti-patterns
 ├── workflows/         # repeatable feature/debug/compatibility procedures
 └── tests/             # competency benchmarks and scoring
@@ -40,7 +58,7 @@ v0.3 adds a practical design layer on top of the v0.2 engine architecture:
 1. **Engineering behavior** — strict VX Ace/RGSS3 scope and safe development procedure.
 2. **Engine knowledge** — class ownership, lifecycle, events, battle, UI, save/load. Complete enough for v0.2.
 3. **Practical design patterns** — native event/database patterns and escalation criteria. **v0.3 is here.**
-4. **Compatibility indexing** — automatic class/method/script-order collision analysis. Planned v0.4.
+4. **Compatibility indexing** — automatic class/method/script-order collision analysis. **v0.4 is here.**
 5. **Project Reader** — read-only extraction/indexing of real `.rvdata2` projects. Planned v0.5.
 6. **Project Codex** — system/quest/map/dependency understanding. Planned v0.6.
 7. **Agentic patching** — reversible modifications with diffs and tests. Planned v0.7+.
@@ -62,4 +80,4 @@ v0.3 adds a practical design layer on top of the v0.2 engine architecture:
 
 ## Near-term target
 
-The next milestone, **v0.4**, will stop being purely documentation-driven: it will define and prototype an indexer for Ruby script class reopenings, aliases, overrides, `$imported` flags, and script-order dependencies. That becomes the foundation for automated compatibility reports before the v0.5 Project Reader.
+The next milestone is **v0.5: Project Reader** — a read-only extractor that can turn a legally accessible VX Ace project into normalized database, map/event, script-order, and reference indexes. v0.4 provides the script-analysis component that the reader will call after extracting the Scripts archive.

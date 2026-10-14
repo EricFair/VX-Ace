@@ -1,24 +1,27 @@
 # Roadmap
 
-Completed: v0.3 practical native event/database pattern layer.
+Completed: v0.4 RGSS3 compatibility analyzer.
 
-## v0.4 — Script compatibility analysis
+## v0.4 — Script compatibility analysis ✅
 
-Target: reliably reason about third-party script collisions.
+Delivered:
 
-Planned additions:
-
-- parser/index of class reopenings;
-- method alias/override inventory;
-- script-order dependency graph;
-- `$imported` and dependency convention detection;
-- configuration/note-tag surface inventory;
-- conflict severity scoring;
-- compatibility report format.
+- executable read-only static analyzer;
+- parser/index of class and module reopenings;
+- method definition and alias inventory;
+- duplicate-method collision candidates with conservative severity;
+- Script Editor order support through `order.json`;
+- `$imported` definition/read/load-order checks;
+- constant/global write collision candidates;
+- save-hook and note-parser detection;
+- JSON and Markdown reports;
+- `--fail-on-high` pipeline mode;
+- synthetic fixtures and automated unit tests;
+- compatibility scan workflow and benchmark scenarios.
 
 ## v0.5 — Project Reader prototype
 
-Target: ingest a real VX Ace project read-only.
+Target: ingest a real VX Ace project **read-only**.
 
 Planned outputs:
 
@@ -29,7 +32,7 @@ Planned outputs:
 - map-transfer graph;
 - troop-event references;
 - extracted Scripts order and Ruby files;
-- script method/class index;
+- v0.4 compatibility analysis invoked automatically;
 - hashes/provenance manifest.
 
 ## v0.6 — Project Codex
