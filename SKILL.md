@@ -1,6 +1,6 @@
 # RPG Maker VX Ace Developer
 
-Version: 0.6.0
+Version: 0.7.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -18,6 +18,8 @@ Optimize for the **least invasive maintainable VX Ace-native solution**, compati
 5. Never invent project-specific IDs, script APIs, load order, switch names, or variable meanings.
 6. Treat third-party scripts as dependencies with license, order, method-overlap, and save-data implications.
 7. Do not redistribute proprietary default engine scripts; store original derived documentation instead.
+8. Never plan or apply a project-specific patch from a stale index. Re-index after source changes.
+9. v0.7 is proposal-only: do not write `.rvdata2` or claim a structural event/database proposal was automatically applied.
 
 ## Architecture routing
 
@@ -134,7 +136,6 @@ Static analysis may miss `eval`, `class_eval`, `module_eval`, `define_method`, d
 
 See `references/script-compatibility-index.md` and `workflows/compatibility-scan.md`.
 
-
 ## Project Reader + Codex preflight
 
 When a real VX Ace project is available, prefer generating a fresh project index before answering project-specific architecture/debugging questions:
@@ -159,6 +160,50 @@ If the reader reports partial extraction, explicitly mark project knowledge as i
 
 See `references/project-reader.md`, `references/project-codex.md`, `workflows/project-ingestion.md`, and `workflows/codex-review.md`.
 
+## Project-aware patch planning — v0.7
+
+For a concrete change against an indexed project, use the patch planner only after regenerating or otherwise verifying a fresh index:
+
+```bash
+python tools/vxace_patch_planner.py PROJECT_INDEX \
+  --project PATH_TO_PROJECT \
+  --spec patch-spec.json \
+  --output patch-plan/
+```
+
+### Freshness is mandatory
+
+The planner compares every source file in `manifest.json` against the current project using SHA-256. If any recorded file is missing or changed, treat the index as stale and **refuse the patch plan** until the Project Reader is run again.
+
+Never work around a stale-index refusal by guessing that the changed file is unrelated. Re-index so IDs, event pages, script order, codex evidence, and compatibility findings all reflect one consistent source snapshot.
+
+### Script patch rules
+
+For RGSS3 changes:
+
+- target an exact extracted script path from `scripts/order.json`;
+- use an exact search block that appears once and only once;
+- refuse zero-match and multi-match anchors rather than fuzzy-patching;
+- inspect `analysis/script-compatibility.json` and all overlapping definitions/aliases before approving a touched method;
+- generate a unified diff and review it before manual application;
+- preserve Script Editor order and dependency requirements.
+
+### Event/database patch rules
+
+In v0.7, event and database changes are **structured proposals only**. Use verified locators such as map/event/page, common-event ID, troop ID, or database table/object ID, but do not serialize them back into `.rvdata2` automatically.
+
+Apply these proposals manually in the VX Ace editor or defer them to a future writer whose binary round-trip fidelity has been proven.
+
+### After a change is applied
+
+1. run the generated project-specific regression checklist;
+2. test save/load and lifecycle boundaries where relevant;
+3. regenerate the Project Reader index and Codex;
+4. compare post-change facts/relationships with the pre-change plan;
+5. use the new index for every subsequent project-aware change.
+
+See `references/patch-planning.md` and `workflows/project-aware-patching.md`.
+
 ## Persistence discipline
 
 For new persistent state:
@@ -181,10 +226,11 @@ For substantial feature requests:
 3. identify authoritative state owner;
 4. inspect project scripts/events touching the area;
 5. run compatibility preflight when extracted scripts are available;
-6. implement minimally;
-7. state installation/order/configuration;
-8. test normal, edge, transition, and save/load cases;
-9. provide rollback for nontrivial changes.
+6. if working against a real project, verify index freshness and produce a reviewed patch plan;
+7. implement minimally;
+8. state installation/order/configuration;
+9. test normal, edge, transition, and save/load cases;
+10. provide rollback for nontrivial changes and re-index after application.
 
 ## Debugging workflow
 
@@ -193,33 +239,35 @@ For substantial feature requests:
 3. identify likely subsystem owner;
 4. trace switches/variables/self-switches/battler/scene/map state;
 5. inspect relevant scripts and load order;
-6. use analyzer output as supporting evidence where available;
+6. use analyzer/codex output as supporting evidence where available;
 7. form a falsifiable hypothesis;
 8. make the smallest diagnostic/fix;
-9. regression-test adjacent behavior.
+9. regression-test adjacent behavior;
+10. regenerate project evidence after any applied change.
 
 For runtime exceptions prioritize exception class, message, script/line, call stack, expected vs actual object/value, recent changes, and script order.
 
 ## Project-aware behavior
 
-When an extracted project index or codex exists, it is the source of truth for project-specific facts. Prefer verified symbolic names plus IDs, for example:
+When an extracted project index or codex exists, it is the source of truth for project-specific facts only while it matches the current source snapshot. Prefer verified symbolic names plus IDs, for example:
 
 - Switch 48 — `Boss Defeated`
 - Variable 21 — `Broken Crown Quest State`
 - Map 17 — `Royal City`
 
-If data is missing, mark the fact as unknown/placeholder rather than fabricating it.
+If data is missing, stale, or incomplete, mark the fact as unknown/placeholder rather than fabricating it.
 
 ## Source hierarchy
 
 Prefer, in order:
 
-1. user's actual project data/code;
-2. legally accessible default VX Ace scripts/built-in Help;
-3. official RPG Maker documentation;
-4. established technical references/reproducible findings;
-5. third-party script documentation for its own API;
-6. forum/community anecdotes only after independent verification.
+1. user's actual current project data/code;
+2. a fresh Project Reader index and exact normalized/extracted evidence;
+3. legally accessible default VX Ace scripts/built-in Help;
+4. official RPG Maker documentation;
+5. established technical references/reproducible findings;
+6. third-party script documentation for its own API;
+7. forum/community anecdotes only after independent verification.
 
 Label exact claims as verified, architecture-level, or hypothesis when uncertainty matters.
 
@@ -229,12 +277,14 @@ Label exact claims as verified, architecture-level, or hypothesis when uncertain
 - Preserve third-party license/credit headers.
 - Do not assert commercial-use permission without terms establishing it.
 - Project extraction is read-only by default.
-- Keep generated indexes separate from source project data.
+- Patch planning is proposal-only in v0.7.
+- Keep generated indexes and plans separate from source project data.
+- Block stale-index patches and unsafe path traversal.
 - Do not publish user projects or third-party script corpora without explicit authorization/right to do so.
 
 ## Current capability boundary
 
-v0.6 includes:
+v0.7 includes:
 
 - engine architecture/lifecycle references;
 - practical database/event design patterns;
@@ -243,11 +293,16 @@ v0.6 includes:
 - `.rvdata2` database/map normalization through an inert Ruby Marshal bridge;
 - Scripts archive extraction in Script Editor order;
 - switch/variable/self-switch/common-event/transfer/battle/event-script indexes;
-- variable operand/comparison metadata for better progression analysis;
+- variable operand/comparison metadata for progression analysis;
 - evidence-first Project Codex generation;
 - quest/state-machine, boss-gate, cutscene, and common-event subsystem candidates;
 - relationship graph, per-map dependency catalog, and script ownership/collision catalog;
-- 26 passing automated tooling tests across analyzer + reader + codex.
+- proposal-only project-aware patch planner;
+- SHA-256 stale-index protection;
+- exact/unique script-anchor enforcement and unified diff generation;
+- structural event/database patch proposals without binary writes;
+- path-traversal rejection, regression checklist generation, and rollback guidance;
+- 5 dedicated patch-planner tests in addition to the existing 26 analyzer/reader/codex tests.
 
 It does not yet include:
 
@@ -256,10 +311,10 @@ It does not yet include:
 - semantic stage labels without explicit evidence;
 - full event Script-command -> Ruby method resolution;
 - verified binary round-trip writing;
-- autonomous project patching.
+- automatic application of script/event/database patch plans;
+- autonomous mutation of user projects.
 
 ## Next milestones
 
-- v0.7 — reversible project-aware patch workflow with stale-index protection, diffs, and regression tests;
-- v0.8+ — proven round-trip editing path and deeper semantic/call-resolution tooling;
+- v0.8+ — proven round-trip editing on copies, post-patch index/codex diffing, stronger static validation, and deeper semantic/call-resolution tooling;
 - v1.0 — validated specialist against real projects and the full benchmark.
