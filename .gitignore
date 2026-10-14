@@ -1,0 +1,17 @@
+# Generated project-reader output
+project-index/
+
+# Local VX Ace projects / engine data should never be committed accidentally
+Data/
+Graphics/
+Audio/
+*.rvdata2
+*.rgss3a
+Game.exe
+RGSS*.dll
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
