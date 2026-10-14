@@ -100,6 +100,14 @@ python tools/vxace_map_audit.py PROJECT_INDEX --project PROJECT --output NEW_EXT
 
 Reports native Table/tileset structure, sheet routing, tile usage, static tile-only directional flags, regions and shadows. See [coverage and refusal rules](../references/map-tile-audit.md). This is not a tile writer, image validator or runtime movement proof.
 
+## Read-only asset references — v0.15
+
+```powershell
+python tools/vxace_asset_audit.py PROJECT_INDEX --project PROJECT --output NEW_EXTERNAL_REPORT --rtp "C:/Explicit/Path/To/rtp"
+```
+
+The RTP argument is optional. Unresolved references without it remain uncertain; no RTP is guessed or installed. See [asset audit coverage and limits](../references/asset-audit.md).
+
 ## Tests
 
 ```bash

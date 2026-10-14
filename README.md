@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v0.14
+# RPG Maker VX Ace Developer — v0.15
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -8,7 +8,9 @@ Start with **[VXACE_MASTER.md](VXACE_MASTER.md)** for the complete settings, cap
 python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR
 ```
 
-v0.14 adds [read-only map tile audits](references/map-tile-audit.md) with native Table/tileset validation, atlas/autotile routing, static passage flags, regions and shadows. It also includes an [original native-tested quest example](examples/oakfall/README.md) and [playable verification workflow](workflows/playable-slice-verification.md). Tile writing, runtime movement proof and asset validation remain outside the audit.
+v0.15 adds [indexed graphics/audio presence and casing checks](references/asset-audit.md), with project-first lookup, an explicit optional RTP root and uncertainty when RTP is absent. It does not decode assets, evaluate scripts or repair files.
+
+v0.14 introduced [read-only map tile audits](references/map-tile-audit.md), an [original native-tested quest example](examples/oakfall/README.md) and a [playable verification workflow](workflows/playable-slice-verification.md). Tile writing and runtime movement proof remain outside the audit.
 
 v0.13 introduced bounded literal text/command search and conservative event-logic diagnostics against fresh external indexes. See [commands and limits](references/search-and-event-diagnostics.md).
 
@@ -176,7 +178,7 @@ python tools/vxace_semantic_diff.py BEFORE_INDEX AFTER_INDEX --json semantic-dif
 
 ## Automated validation
 
-The v0.8 baseline had **38 tests**, v0.9 **45**, v0.10 **52**, v0.11 **136**, v0.12 **159**, and v0.13 **184**. The v0.14 suite has **199 tests**, adding 13 map audit tests and two master configuration checks. CI runs on Ubuntu and Windows; consult the latest Actions run for actual status and platform-specific skips.
+The v0.8 baseline had **38 tests**, v0.9 **45**, v0.10 **52**, v0.11 **136**, v0.12 **159**, v0.13 **184**, and v0.14 **199**. The v0.15 suite has **219 tests**, adding 18 asset checks and two master configuration checks. CI runs on Ubuntu and Windows; consult the latest Actions run for actual status and platform-specific skips.
 
 Run all suites with:
 

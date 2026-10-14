@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.15.0 — Explicit RTP-aware read-only asset checks
+
+- Collect native indexed graphics/audio references and exact evidence without executing scripts; resolve project files before an optional explicit unpacked RTP root.
+- Report actual filename/folder/extension casing, missing versus unresolved-without-RTP, opaque/unsafe names, format ambiguity and unverified extensions. Do not treat RTP tileset text sidecars as competing graphics.
+- Bound reference walks, catalogs and reports; refuse linked/escaping inputs, invalid RTP roots, malformed recognized commands, stale source/indexes and changing asset names/metadata. No automatic repair or file copying.
+- Enable the read-only master stage and optional `--rtp`; preserve older custom configurations and separate asset review from mutation byte readiness.
+- Add 18 asset tests and two master configuration checks (219 total). Verify all 290 indexed references of the private playable copy against the known installed RTP; keep project/assets/reports private.
+
 ## 0.14.0 — Read-only map tile audits and a native-tested playable example
 
 - Inspect fresh normalized map Tables and native tileset flags, ordinary B–E/A5 atlas positions, autotile kind/shape, regions, shadows and optional static cell passage. Unsupported tile gaps/empty sheet references require review. No map writer, runtime movement or image-existence claims.

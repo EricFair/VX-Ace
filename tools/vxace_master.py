@@ -27,10 +27,12 @@ def settings(path):
             raise ValueError("Feature flags must be booleans")
     if type(value.get('map_tile_audit', False)) is not bool:
         raise ValueError('Map audit feature flag must be boolean')
+    if type(value.get('asset_audit', False)) is not bool:
+        raise ValueError('Asset audit feature flag must be boolean')
     return value
 
 
-def workflow(project, output, ruby, config):
+def workflow(project, output, ruby, config, rtp=None):
     config = settings(config)
     project, output = Path(project).resolve(), Path(output).resolve()
     if project.is_file() and project.suffix.lower() == ".rvproj2":
@@ -62,13 +64,17 @@ def workflow(project, output, ruby, config):
             stage('event-lint','vxace_event_lint.py',[output/'index','--project',project,'--output',output/'event-lint'])
         if reader == 0 and config.get('map_tile_audit', False):
             stage('map-audit','vxace_map_audit.py',[output/'index','--project',project,'--output',output/'map-audit'])
+        if reader == 0 and config.get('asset_audit', False):
+            args = [output/'index','--project',project,'--output',output/'asset-audit']
+            if rtp is not None: args += ['--rtp', rtp]
+            stage('asset-audit','vxace_asset_audit.py',args)
         completed = True
     finally:
         unchanged = current_inventory(project) == before
         validation = output / "validation/validation.json"
         ready = validation.is_file() and json.loads(validation.read_text(encoding="utf-8"))["copy_mutation_ready"]
         ok = completed and unchanged and ready and all(s["exit_code"] == 0 for s in stages)
-        summary = {"version": "0.14.0", "status": "pass" if ok else "review_required", "stages": stages,
+        summary = {"version": "0.15.0", "status": "pass" if ok else "review_required", "stages": stages,
                    "source_unchanged": unchanged, "selected_backend": config["validation_backend"],
                    "copy_mutation_ready": bool(ready and unchanged), "mutation_performed": False,
                    "runtime_compatibility_proven": False}
@@ -76,7 +82,7 @@ def workflow(project, output, ruby, config):
         lines = ["# VX Ace master report", "", f"Status: **{summary['status']}**",
                  f"Original files unchanged: **{unchanged}**", "Mutation performed: **False**", ""]
         lines += [f"- {s['name']}: exit {s['exit_code']}" for s in stages]
-        lines += ["", "See validation/, codec-audit/, index/codex/, inspection/, event-lint/ and map-audit/ for enabled evidence.",
+        lines += ["", "See validation/, codec-audit/, index/codex/, inspection/, event-lint/, map-audit/ and asset-audit/ for enabled evidence.",
                   "A pass does not authorize mutation or prove RGSS3 runtime behavior."]
         (output / "master-report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return summary
@@ -88,11 +94,12 @@ def main(argv=None):
     parser.add_argument("--output", required=True)
     parser.add_argument("--ruby", default=__import__("shutil").which("ruby"))
     parser.add_argument("--config", default=str(ROOT / "vxace-master.json"))
+    parser.add_argument('--rtp', help='Explicit unpacked RTP root for the optional asset audit')
     args = parser.parse_args(argv)
     try:
         if not args.ruby:
             raise ValueError("Ruby is required for extraction and separate syntax diagnostics")
-        result = workflow(args.project, args.output, args.ruby, args.config)
+        result = workflow(args.project, args.output, args.ruby, args.config, args.rtp)
         print(json.dumps(result))
         return 0 if result["status"] == "pass" else 3
     except Exception as exc:

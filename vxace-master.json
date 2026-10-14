@@ -1,5 +1,5 @@
 {
-  "version": "0.14.0",
+  "version": "0.15.0",
   "engine": "VX Ace",
   "runtime_target": "RGSS3 / Ruby 1.9.2",
   "validation_backend": "python",
@@ -7,6 +7,7 @@
   "observed_schema_and_reference_lint": true,
   "event_logic_lint": true,
   "map_tile_audit": true,
+  "asset_audit": true,
   "safety": {
     "original_project_writes": false,
     "mutation_mode": "disposable-copy-only",

@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v0.14.0
+# VX Ace Masterfile — v0.15.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -27,6 +27,8 @@ With an explicit host Ruby:
 python tools/vxace_master.py "C:/Games/MyVXACEProject" --output "C:/VXACE-Reports/MyGame-run-001" --ruby "C:/Ruby32/bin/ruby.exe"
 ```
 
+For a game using installed RTP, add `--rtp "C:/Explicit/Path/To/rtp"` to check indexed graphics/audio references against that known directory. Without it, unresolved references are reported as uncertain and may require review. No RTP is installed or copied automatically.
+
 Use a project folder or `.rvproj2` file. Do not run the placeholders literally. The default settings file is resolved relative to the installed toolchain, not the current directory. Override it with `--config PATH`; fixed safety constraints remain mandatory.
 
 ```text
@@ -38,6 +40,7 @@ Original game (read-only)
   → observed class/field schema + reference inspection
   → conservative event-logic diagnostics
   → static map tile/tileset diagnostics
+  → indexed graphics/audio presence and casing, with optional explicit RTP
   → full original-file inventory recheck
   → master report
 ```
@@ -54,6 +57,7 @@ report/
   inspection/inspection.json / inspection.md
   event-lint/event-lint.json / event-lint.md
   map-audit/map-audit.json / map-audit.md
+  asset-audit/asset-audit.json / asset-audit.md
   stage stdout/stderr logs
 ```
 
@@ -75,6 +79,7 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Event-logic diagnostics | Local labels, continuations, terminators, unconditional map-page shadows and possible highest unconditional autorun locks; opaque behavior stays uncertain |
 | Bounded project search | Literal text/native code filters across indexed events, database, map metadata and ordered script lines; exact evidence and honest pagination |
 | Read-only map tile audit | Native Table/tileset shape, sheet routing, ordinary atlas cells/autotile kinds, static directional flags, regions and shadows; excludes runtime movement, asset validation and map mutation |
+| Indexed asset references | Project-first graphics/audio filename presence/casing with optional explicit RTP; no image/audio decoding, scripted assets, archive extraction or automatic repairs |
 | Patch proposals | Freshness, exact unique script anchors, structured database/event proposals, regression checks and rollback guidance |
 | Dependency impact | Exact target review, event graph relationships, script collision and save-hook evidence; incomplete dependency coverage is disclosed |
 | Verified copy patching | Existing scalar database fields, existing map/common/troop command parameters and unique script replacements; backend-specific limits apply |
@@ -83,6 +88,14 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Actual editor/runtime verification | Structural edit/old-save evidence in v0.12; search locations, hidden page selection, terminating cutscene and counted autorun restart in `references/real-project-validation-v0.13.md` |
 
 ## Exact individual commands
+
+Check indexed assets using a known RTP root:
+
+```powershell
+python tools/vxace_asset_audit.py PROJECT_INDEX --project PROJECT --output NEW_EXTERNAL_REPORT --rtp "C:/Explicit/Path/To/rtp"
+```
+
+See [asset audit coverage and uncertainty](references/asset-audit.md).
 
 Inspect map tiles or one cell from a fresh index:
 

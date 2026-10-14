@@ -5,7 +5,7 @@ description: Analyze, validate, debug, and safely stage RPG Maker VX Ace databas
 
 # RPG Maker VX Ace Developer
 
-Version: 0.14.0
+Version: 0.15.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -168,7 +168,9 @@ v0.13 adds bounded index search and conservative event diagnostics. For locating
 
 v0.14 adds [read-only map tile audits](references/map-tile-audit.md): native Table/tileset validation, sheet coordinates, static directional flags, regions and shadows. Runtime events/scripts and asset existence remain outside that static report. The master includes the audit; it does not enable tile mutation.
 
-The expanded suite has 199 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
+v0.15 adds [read-only graphics/audio reference checks](references/asset-audit.md), with explicit optional RTP fallback, filename casing, exact evidence and uncertainty when RTP is absent. File presence does not prove image decoding/audio playback, and scripted/dynamic assets remain outside the report.
+
+The expanded suite has 219 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
 
 Real-project evidence is recorded in [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md). It covers a small editor-produced project and disposable native map/common/battle/save scenarios; it does not establish compatibility with arbitrary customized games. Structural operations outside the documented subset remain disabled.
 

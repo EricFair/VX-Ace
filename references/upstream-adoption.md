@@ -15,14 +15,14 @@ Adopt useful capabilities incrementally under **our** rules: VX Ace first, fresh
 | Python-native Marshal codec and opaque values | Batch 1: isolated read-only codec audit, implemented | Pinned conformance suite; refusal and immutability tests; then cross-backend and real-project comparisons |
 | Observed per-project schema, unknown-field reporting | v0.11: observed class/field/type report; unknown-field classification remains future work | Compare observations against fresh normalized data; preserve evidence paths and unknowns |
 | Broken-reference and transfer-coordinate linting | v0.11: direct transfer, common-event and troop reference checks | Known-valid/invalid project fixtures; variable-designated transfers distinguished from direct transfers |
-| RTP-aware graphics/audio validation, case mismatches | Later read-only batch | Actual RTP discovery or explicit external RTP; missing RTP reported as uncertainty, no mass false errors |
+| RTP-aware graphics/audio validation, case mismatches | v0.15: read-only presence/casing batch | Explicit external RTP; absent RTP remains uncertain; native reference evidence and sidecar regression; decoding/dynamic assets deferred |
 | Event-page shadowing, autorun and label linting | v0.13: conservative read-only batch | Complete flags, highest unconditional map page, local labels and continuations; native cutscene/shadow fixtures, opaque behavior disclosed |
 | Cross-project text/command search | v0.13: external-index literal search | Exact evidence per hit; bounded input/walk/output, full selected-scope counts and pagination; regex deferred; never evaluate scripts |
 | MCP tools/resources interface | Adapter after read-only APIs stabilize | Default read-only; stdio protocol tests; mutation requests route through our planner/copy patcher |
 | Database entry creation/deletion | Deferred | Real-project production validation; dependency review; clone-only schema/type checks and rollback |
 | Event/page/command structural authoring and DSL | Partial in v0.12 | Guarded native command units and conditioned template pages implemented in our Python copy chain; broad DSL/branch/script authoring deferred. See `event-structure.md` and native evidence |
 | Map create/delete/resize and map-tree updates | Deferred | Multi-file clone transaction; tile preservation and reference linting; runtime checks |
-| Tile read/paint/fill and region-layer operations | Read diagnostics before writes | Correct Ace Table dimensions/layers; untouched cells preserved; copy-only edit tests |
+| Tile read/paint/fill and region-layer operations | v0.14: read-only tile/region diagnostics; painting deferred | Native Table shape, atlas/autotile routing, static flags; no tile writer or runtime movement proof |
 | Script-slot creation/reordering | Deferred | Script order/dependencies/save hooks; unambiguous targets; compatibility and runtime tests |
 | Codec encoding preservation and code-page reporting | Codec bytes retained now; presentation later | UTF-8/CP932/CP1252 fixtures; explicit uncertainty; no guessed lossy conversion |
 | Per-file stale checks, backups, dry runs, logs | Retain our freshness/plans/audit/clone controls; adapt useful diagnostics | Do not replace source immutability with in-place backups or confuse per-file atomicity with whole-patch transactions |
