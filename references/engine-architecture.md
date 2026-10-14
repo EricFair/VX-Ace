@@ -12,7 +12,7 @@ VX Ace projects use database and map data loaded into runtime objects. The agent
 - scenes/windows that present and manipulate runtime state;
 - persistent save data versus temporary state.
 
-Key categories to map in v0.2:
+Key categories in the engine map:
 
 - actors and classes;
 - skills and items;
@@ -56,7 +56,7 @@ The skill must distinguish:
 
 The engine includes manager-style modules for responsibilities such as scene flow, data/save handling, battle, sound/audio, and other shared functionality.
 
-v0.2 must verify exact public methods and lifecycle ordering against the default script corpus before treating them as stable APIs.
+Verify exact methods and lifecycle ordering against the relevant default/project code before treating implementation details as stable extension points.
 
 ## 5. Extension points
 

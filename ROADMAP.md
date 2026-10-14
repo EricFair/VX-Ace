@@ -1,17 +1,6 @@
 # Roadmap
 
-## v0.3 — Event and database patterns
-
-Target: make the agent excellent at choosing native VX Ace solutions before scripting.
-
-Planned additions:
-
-- reusable event patterns: one-time rewards, doors/keys, quest stages, cutscenes, shops, conditional NPCs, region-based logic;
-- autorun/parallel anti-pattern catalog;
-- switch/variable naming and ownership conventions;
-- state/skill/equipment trait patterns;
-- damage-formula boundaries and when to graduate to RGSS3;
-- benchmark expansion with event-debugging cases.
+Completed: v0.3 practical native event/database pattern layer.
 
 ## v0.4 — Script compatibility analysis
 

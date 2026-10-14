@@ -77,3 +77,14 @@ The v0.2 architecture was cross-checked against public representations of these 
 - `BattleManager` coordinates battle phases and win/loss processing.
 
 Exact method behavior should still be checked against the user's installed/default scripts when a patch depends on implementation details.
+
+## v0.3 verification notes
+
+The v0.3 pattern layer was checked against legally accessible public VX Ace script examples to verify architecture boundaries such as:
+
+- `Game_Action` owning action setup and target generation;
+- `Game_Battler#make_damage_value` evaluating the database formula before standard element/physical/magical/recovery/critical/variance/guard processing;
+- actor trait aggregation including actor, class, equipment, and states;
+- enemy trait aggregation including enemy data and states.
+
+These checks are used as provenance for original summaries. Default engine source is not copied into this repository.

@@ -1,7 +1,7 @@
 # RPG Maker VX Ace Developer
 
-Version: 0.2.0
-Status: Engine-architecture specialist skill
+Version: 0.3.0
+Status: Practical VX Ace development specialist skill
 Target: RPG Maker VX Ace, RGSS3, Ruby 1.9.2-compatible scripting
 
 ## Mission
@@ -136,6 +136,56 @@ When adding persistent state:
 
 See `references/data-and-save-lifecycle.md`.
 
+## Practical native-pattern layer — v0.3
+
+Before writing RGSS3, consult the patterns library when the request resembles a common VX Ace design problem.
+
+### State ownership rules
+
+Use these defaults unless project evidence argues otherwise:
+
+- local one-event persistence -> self switch;
+- global boolean fact -> named switch;
+- mutually exclusive linear progression -> named variable with documented stages;
+- battler-local temporary combat effect -> state;
+- passive actor/class/equipment/enemy modifier -> database trait when a native trait expresses it;
+- complex structured/persistent system state -> `Game_*` or custom subsystem with explicit save strategy.
+
+Do not multiply global switches for local state, and do not encode one linear state machine as many independent booleans unless the states can coexist.
+
+### Event design rules
+
+- Every autorun must have a provable termination path.
+- Treat map transfer as a lifecycle boundary: persist the next stage before transfer and continue from the destination map rather than assuming the old event will continue.
+- Use page conditions for durable alternate event states; use conditional branches for interaction-time decisions within the same state.
+- Prefer event-driven state changes over permanent parallel polling.
+- Parallel processes are acceptable when continuous independent behavior is genuinely required; gate them and reduce update frequency where possible.
+- When debugging an event, identify the active page and trigger before inspecting the visible command list.
+
+### Database-first rules
+
+Before scripting a battler mechanic, check whether actor/class/equipment/enemy/state traits or skill/item effects already express it.
+
+For actors, trait-bearing sources include actor, class, equipment, and states; for enemies, enemy data plus states. Use this mental model to avoid redundant custom stats.
+
+### Damage-formula discipline
+
+Treat the damage formula as the base-value expression. Standard engine processing subsequently applies its normal modifier pipeline. Do not reimplement element, physical/magical, critical, variance, or guard logic inside formulas unless intentionally replacing that behavior.
+
+Do not hide broad side effects in formulas. Custom targeting belongs in the action/targeting layer; custom damage phases belong at the precise relevant battler/action extension point.
+
+### Escalation test
+
+Graduate from native events/database configuration to RGSS3 when one or more are true:
+
+- the same nontrivial logic is duplicated across many events/skills;
+- custom targeting/timing/UI is required;
+- structured data has invariants that switches/variables cannot safely express;
+- editor representation has become harder to maintain than a well-encapsulated script;
+- performance requires centralization/caching rather than many per-frame event checks.
+
+See `patterns/` and `workflows/native-feature-design.md`.
+
 ## Required response workflow for feature requests
 
 For substantial feature work, reason according to this sequence:
@@ -210,13 +260,14 @@ For an exact implementation claim, distinguish:
 - Do not claim permission for commercial use unless the relevant script's license/terms establish it.
 - Keep future project extraction read-only by default and separate generated indexes from source project data.
 
-## Current capability boundary — v0.2
+## Current capability boundary — v0.3
 
-This version contains a structured engine architecture map, data/save lifecycle model, event/interpreter model, scene/window model, battle-system routing guide, compatibility review workflow, and an expanded benchmark.
+This version contains the v0.2 engine architecture plus a practical native-pattern library covering one-time/gated events, quest state machines, cutscenes, switch/variable ownership, database traits/states/skills/equipment, damage-formula boundaries, event anti-patterns, and update/performance discipline. It also contains dedicated native-feature and event-debugging workflows and a 45-scenario v0.3 benchmark.
 
 It still does **not** contain:
 
 - a complete method-by-method copy of the default script corpus;
+- automated class/method collision indexing across a real project's extracted scripts;
 - an automated `.rvdata2` parser/project extractor;
 - a generated project codex;
 - safe round-trip editing of VX Ace binary project data.
@@ -225,7 +276,6 @@ When exact engine implementation details are uncertain, inspect the relevant def
 
 ## Planned next milestones
 
-- v0.3: Event/database implementation patterns and anti-patterns library.
 - v0.4: Deeper script compatibility/dependency analysis with collision indexing.
 - v0.5: VX Ace project extractor specification and prototype.
 - v0.6: Project codex generator.

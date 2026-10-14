@@ -1,6 +1,6 @@
 # Workflow — Project Ingestion (Design Specification)
 
-This is the target behavior for the future VX Ace project reader. v0.2 refines the output contract; implementation begins in v0.5.
+This is the target behavior for the future VX Ace project reader. The output contract is defined here; implementation begins in v0.5.
 
 ## Safety boundary
 

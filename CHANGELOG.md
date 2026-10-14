@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 — Practical native design patterns
+
+- Added practical pattern library for one-time/gated events, quests, cutscenes, state ownership, database mechanics, damage formulas, event anti-patterns, and performance.
+- Added native-feature-design and event-debugging workflows.
+- Added explicit state ownership, autorun termination, transfer handoff, and database-first rules to `SKILL.md`.
+- Expanded competency testing to 45 v0.3 scenarios and strengthened automatic score caps for brittle native-event designs.
+- Kept engine-source verification as provenance only; no proprietary default script corpus is redistributed.
+
 ## 0.2.0
 
 - Added explicit engine-layer mental model to `SKILL.md`.

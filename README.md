@@ -1,20 +1,23 @@
-# RPG Maker VX Ace Developer — v0.2
+# RPG Maker VX Ace Developer — v0.3
 
-A specialist skill/agent knowledge base for developing and debugging **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
+A specialist skill/agent knowledge base for developing, debugging, and eventually modifying **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
-The long-term goal is a project-aware development agent that can inspect a VX Ace project, understand its maps/events/database/scripts, design a safe implementation, patch source where appropriate, and produce a concrete regression test plan.
+The long-term goal is a project-aware development agent that can inspect a VX Ace project, understand its maps/events/database/scripts, design the least invasive implementation, patch source where appropriate, and return a concrete regression test plan.
 
-## What v0.2 adds
+## What v0.3 adds
 
-v0.2 moves beyond behavioral instructions and gives the skill an explicit engine mental model:
+v0.3 adds a practical design layer on top of the v0.2 engine architecture:
 
-- core class and subsystem ownership map;
-- boot, scene, UI, map/event, battle, and save-data lifecycles;
-- event interpreter behavior and page-priority rules;
-- persistence and old-save compatibility guidance;
-- script collision/compatibility review workflow;
-- expanded 30-scenario benchmark;
-- source/provenance policy that avoids redistributing proprietary default engine scripts.
+- one-time rewards, locked doors, boss gates, conditional NPCs, reusable common-event patterns;
+- quest state-machine conventions and state-transition ownership;
+- cutscene/autorun/transfer/skip patterns;
+- switch, variable, and self-switch architecture;
+- database-first guidance for traits, states, skills, items, classes, equipment, and enemies;
+- damage-formula boundaries and escalation rules;
+- event anti-pattern catalog;
+- event/per-frame performance discipline;
+- native-feature design and event-debugging workflows;
+- a 45-scenario v0.3 benchmark with stricter scoring caps.
 
 ## Repository layout
 
@@ -25,64 +28,38 @@ v0.2 moves beyond behavioral instructions and gives the skill an explicit engine
 ├── SOURCES.md
 ├── CHANGELOG.md
 ├── ROADMAP.md
-├── references/
-│   ├── engine-architecture.md
-│   ├── core-class-map.md
-│   ├── rgss3-compatibility.md
-│   ├── events-and-database.md
-│   ├── map-event-interpreter.md
-│   ├── data-and-save-lifecycle.md
-│   ├── scene-window-lifecycle.md
-│   └── battle-system.md
-├── workflows/
-│   ├── feature-development.md
-│   ├── debugging.md
-│   ├── script-compatibility-review.md
-│   └── project-ingestion.md
-└── tests/
-    ├── benchmark-v0.1.md
-    ├── benchmark-v0.2.md
-    └── scoring-rubric.md
+├── VERSION
+├── references/        # engine architecture/lifecycle knowledge
+├── patterns/          # practical VX Ace design patterns and anti-patterns
+├── workflows/         # repeatable feature/debug/compatibility procedures
+└── tests/             # competency benchmarks and scoring
 ```
 
-## Development strategy
+## Current development layers
 
-### Layer 1 — Engineering behavior
-Make the model reason like a VX Ace developer before adding a huge knowledge corpus.
+1. **Engineering behavior** — strict VX Ace/RGSS3 scope and safe development procedure.
+2. **Engine knowledge** — class ownership, lifecycle, events, battle, UI, save/load. Complete enough for v0.2.
+3. **Practical design patterns** — native event/database patterns and escalation criteria. **v0.3 is here.**
+4. **Compatibility indexing** — automatic class/method/script-order collision analysis. Planned v0.4.
+5. **Project Reader** — read-only extraction/indexing of real `.rvdata2` projects. Planned v0.5.
+6. **Project Codex** — system/quest/map/dependency understanding. Planned v0.6.
+7. **Agentic patching** — reversible modifications with diffs and tests. Planned v0.7+.
 
-### Layer 2 — Engine knowledge
-Build a structured reference of default architecture, lifecycle, ownership, data structures, and common extension points. **v0.2 is here.**
-
-### Layer 3 — Project understanding
-Build tooling to extract `.rvdata2` data and the Scripts archive into a searchable project index.
-
-### Layer 4 — Project codex
-Create higher-level relationships between maps, events, switches, variables, common events, troops, scripts, and game systems.
-
-### Layer 5 — Agentic editing
-Allow a coding agent to inspect a project, propose a patch, modify extracted source safely, update the project codex, and return a concrete test plan.
-
-## Design principles
+## Core principles
 
 - VX Ace only unless another engine is explicitly requested.
-- Prefer the database/event system when scripting is unnecessary.
-- Never silently emit MV/MZ JavaScript.
-- Treat exact project IDs as data, not guesses.
-- Inspect load order and reopened methods before declaring script compatibility.
-- Treat save compatibility as part of feature design.
-- Keep proprietary/default engine source out of this repository; store original summaries and references instead.
+- Prefer the database/event system when it is the clearest maintainable solution.
+- Every durable state has an owner.
+- Every autorun has a stop condition.
+- Transfers/cutscenes hand off through durable state rather than assumed interpreter continuation.
+- Linear quest progression uses an explicit state machine rather than contradictory switch piles.
+- Native traits/effects are checked before inventing RGSS3 stats.
+- Damage formulas express base-value logic, not an entire hidden subsystem.
+- Script compatibility requires overlap/load-order inspection.
+- Persistent script state requires old-save behavior.
+- Project IDs are verified, never invented.
+- Proprietary/default engine source is not redistributed in this repository.
 
-## Definition of success
+## Near-term target
 
-A successful VX Ace agent should be able to answer not just “how do I write this Ruby?” but questions such as:
-
-- Should this mechanic be an event or a script?
-- What subsystem actually owns this behavior?
-- Will this conflict with an installed battle script?
-- Why does this event fail after a map transfer?
-- Which switch actually gates this quest?
-- Does this new property survive save/load and old saves?
-- Can this feature be added without replacing a large default method?
-- Which project references must be inspected before changing it?
-
-The benchmark in `tests/` measures these abilities progressively.
+The next milestone, **v0.4**, will stop being purely documentation-driven: it will define and prototype an indexer for Ruby script class reopenings, aliases, overrides, `$imported` flags, and script-order dependencies. That becomes the foundation for automated compatibility reports before the v0.5 Project Reader.
