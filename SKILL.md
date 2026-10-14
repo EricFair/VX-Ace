@@ -1,6 +1,6 @@
 # RPG Maker VX Ace Developer
 
-Version: 0.4.0
+Version: 0.5.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -93,7 +93,7 @@ When scripting:
 
 If a full override is necessary, identify the class/module, method, reason, order requirement, and compatibility risks.
 
-## v0.4 compatibility-analyzer preflight
+## Compatibility-analyzer preflight
 
 For a project with multiple custom RGSS3 scripts, run:
 
@@ -133,6 +133,27 @@ Before changing a flagged method:
 Static analysis may miss `eval`, `class_eval`, `module_eval`, `define_method`, dynamic aliases, and other metaprogramming.
 
 See `references/script-compatibility-index.md` and `workflows/compatibility-scan.md`.
+
+## v0.5 project-reader preflight
+
+When a real VX Ace project is available, prefer generating a fresh project index before answering project-specific architecture/debugging questions:
+
+```bash
+python tools/vxace_project_reader.py PATH_TO_PROJECT
+```
+
+The v0.5 reader is read-only. It extracts normalized database/map data, Script Editor order/source, event-reference indexes, and compatibility reports into a separate directory. It does **not** execute project scripts and does **not** write `.rvdata2`.
+
+Use generated project facts in this order:
+
+1. `project.json` for extraction completeness/errors;
+2. `analysis/event-references.json` and dedicated indexes for cross-event relationships;
+3. `analysis/script-compatibility.json` plus actual extracted script source/order for RGSS3 overlap;
+4. normalized map/database JSON for exact page/data inspection.
+
+If the reader reports partial extraction, explicitly mark project knowledge as incomplete. Regenerate the index after project changes rather than assuming IDs, event paths, or script order are still current.
+
+See `references/project-reader.md` and `workflows/project-ingestion.md`.
 
 ## Persistence discipline
 
@@ -209,23 +230,28 @@ Label exact claims as verified, architecture-level, or hypothesis when uncertain
 
 ## Current capability boundary
 
-v0.4 includes:
+v0.5 includes:
 
 - engine architecture/lifecycle references;
 - practical database/event design patterns;
-- 60-scenario benchmark sequence;
-- executable static RGSS3 compatibility analyzer with 12 unit tests.
+- executable static RGSS3 compatibility analyzer with 12 unit tests;
+- read-only VX Ace Project Reader prototype;
+- `.rvdata2` database/map normalization through an inert Ruby Marshal bridge;
+- Scripts archive extraction in Script Editor order;
+- switch/variable/self-switch/common-event/transfer/battle/event-script indexes;
+- automatic compatibility analysis integration;
+- 18 passing tooling tests across analyzer + reader.
 
 It does not yet include:
 
-- automated `.rvdata2` project extraction;
-- project codex generation;
+- a pure-Python Marshal backend;
+- comprehensive extraction of every event-command reference type;
+- automatic project codex generation;
 - verified binary round-trip writing;
 - autonomous project patching.
 
 ## Next milestones
 
-- v0.5 — read-only VX Ace Project Reader prototype;
-- v0.6 — Project Codex generator;
+- v0.6 — Project Codex generator + broader relationship indexing;
 - v0.7 — reversible project-aware patch workflow;
 - v1.0 — validated specialist against real projects and the full benchmark.

@@ -88,3 +88,17 @@ The v0.3 pattern layer was checked against legally accessible public VX Ace scri
 - enemy trait aggregation including enemy data and states.
 
 These checks are used as provenance for original summaries. Default engine source is not copied into this repository.
+
+## v0.5 Project Reader research references
+
+### `azureknight63/rpgvxace-mcp`
+
+https://github.com/azureknight63/rpgvxace-mcp
+
+MIT-licensed independent implementation demonstrating that VX/VX Ace Ruby Marshal 4.8 data can be parsed directly in Python without a Ruby runtime. Its public documentation reports byte-for-byte round-trip validation on a real VX Ace project. v0.5 uses this as an architectural comparison/reference; its source code is **not vendored** into this repository. A future pure-Python backend may adapt MIT-licensed ideas/code only with explicit attribution and license preservation.
+
+### Historical VX Ace Marshal/YAML conversion examples
+
+Public historical Ruby examples such as aoitaku's VX Ace `.rvdata2` conversion work document the common RGSS `Table`, `Color`, and `Tone` user-marshal payload shapes. v0.5's bridge uses inert equivalents to make project data readable for analysis.
+
+The bridge is analysis-only and is not presented as a binary round-trip writer.

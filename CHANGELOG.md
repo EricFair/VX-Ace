@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0
+
+- Added `tools/vxace_project_reader.py`, a read-only VX Ace project indexing prototype.
+- Added `tools/rvdata2_bridge.rb` for inert Ruby Marshal decoding without executing project scripts.
+- Added normalized database and map JSON extraction.
+- Added `Scripts.rvdata2` extraction with preserved Script Editor order.
+- Added source inventory with SHA-256 hashes and absolute-path omission by default.
+- Added switch/variable read-write indexes, self-switch writes, common-event callers, map transfers, battle/troop links, and event Script blocks.
+- Added symbolic name resolution for switches, variables, maps, common events, and troops.
+- Integrated the v0.4 compatibility analyzer into project ingestion.
+- Added exact map/event/page/command provenance where standard event structure is present.
+- Added six end-to-end project-reader tests; total tooling tests are now 18.
+- Added Project Reader architecture/reference documentation and updated ingestion workflow.
+- Reader refuses to place generated output inside the source project.
+
 ## 0.4.0 — RGSS3 compatibility analyzer
 
 - Added executable read-only RGSS3 static analyzer.

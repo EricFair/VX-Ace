@@ -1,166 +1,66 @@
-# Workflow — Project Ingestion (Design Specification)
+# Workflow — Project Ingestion (v0.5)
 
-This is the target behavior for the future VX Ace project reader. The output contract is defined here; implementation begins in v0.5.
+## Objective
 
-## Safety boundary
+Produce a read-only project index from a legally accessible RPG Maker VX Ace project and use it as the source of truth for project-specific reasoning.
 
-Input must be a legally accessible RPG Maker VX Ace project directory.
+## 1. Preserve the source
 
-The reader is **read-only by default**. It must not modify `.rvdata2`, the Scripts archive, assets, or the original project.
+Before analysis:
 
-Generated output goes into a separate directory and records source hashes/provenance.
+- do not edit `Data/*.rvdata2`;
+- do not edit `Scripts.rvdata2`;
+- do not put generated output inside the source project;
+- do not execute extracted scripts;
+- keep the original project backed up independently when later editing is introduced.
 
-## Stage 1 — Inventory
+## 2. Run the reader
 
-Produce:
-
-- project file inventory;
-- Data file inventory;
-- map inventory;
-- script inventory and execution order;
-- third-party script candidates;
-- likely frameworks (battle/menu/save/input/etc.);
-- asset inventory only when relevant;
-- source hashes for reproducibility.
-
-## Stage 2 — Extract structured data
-
-Target normalized outputs:
-
-```text
-project-index/
-├── manifest.json
-├── project.json
-├── database/
-│   ├── actors.json
-│   ├── classes.json
-│   ├── skills.json
-│   ├── items.json
-│   ├── weapons.json
-│   ├── armors.json
-│   ├── enemies.json
-│   ├── troops.json
-│   ├── states.json
-│   ├── animations.json
-│   ├── common-events.json
-│   ├── tilesets.json
-│   ├── system.json
-│   └── map-infos.json
-├── maps/
-│   ├── map-001.json
-│   └── ...
-├── scripts/
-│   ├── order.json
-│   ├── 001-name.rb
-│   └── ...
-└── analysis/
-    ├── switches.json
-    ├── variables.json
-    ├── self-switch-writes.json
-    ├── event-references.json
-    ├── common-event-callers.json
-    ├── map-transfers.json
-    ├── battle-troop-links.json
-    ├── database-references.json
-    ├── script-calls-from-events.json
-    ├── class-reopenings.json
-    ├── method-definitions.json
-    ├── method-aliases.json
-    ├── script-dependencies.json
-    └── script-collisions.json
+```bash
+python tools/vxace_project_reader.py PATH_TO_PROJECT
 ```
 
-## Stage 3 — Normalize event commands
+Use `--output` for a specific external destination and `--ruby` if Ruby is not on `PATH`.
 
-Each event page should retain:
+## 3. Inspect `project.json`
 
-- map/event/page identity;
-- page priority/order;
-- page conditions;
-- trigger;
-- movement settings;
-- command list in original order;
-- human-readable command summary;
-- raw numeric command code/parameters for lossless analysis where legally appropriate;
-- referenced switches/variables/items/actors/maps/common events/troops/scripts.
+Check:
 
-The reader should not flatten away control-flow indentation because branches/loops depend on it.
+- decoded database files;
+- map count;
+- extracted script count;
+- compatibility-analysis status;
+- extraction errors.
 
-## Stage 4 — Build relationships
+A partial extraction must not be treated as complete project knowledge.
 
-Index relationships such as:
+## 4. Use symbolic project indexes
 
-- switch reads/writes;
-- variable reads/writes;
-- self-switch writes by `[map_id,event_id,letter]`;
-- common-event calls;
-- map transfers;
-- battle/troop event references;
-- database object references;
-- script calls in event commands;
-- class reopenings;
-- method aliases/overrides;
-- `$imported` dependency checks;
-- save-content additions;
-- note-tag consumers where detectable.
+For project questions, prefer generated sources in this order:
 
-## Stage 5 — Build project codex
+1. `analysis/event-references.json` for cross-event relationships;
+2. dedicated switch/variable/common-event/transfer/battle indexes;
+3. `analysis/script-compatibility.json` for script overlap;
+4. normalized `maps/*.json` for page/command inspection;
+5. normalized `database/*.json` for database details;
+6. extracted scripts in actual `scripts/order.json` order.
 
-Generate human-readable systems instead of forcing the model to reread every raw event.
+## 5. Verify before changing
 
-Example:
+A reader finding is evidence, not permission to patch automatically.
 
-```text
-QUEST: Broken Crown
-State: Variable 21
-Start: Map 17 / Event 4
-Boss: Troop 28
-Completion switch: 48
-Related common event: 14
-Related scripts: QuestSystem, QuestNotifications
-```
+Before implementation:
 
-Every statement in the codex should link back to source IDs/files so the agent can verify it.
+- trace the exact map/event/page or common event;
+- inspect relevant RGSS3 definitions in real load order;
+- verify all IDs/names from the index;
+- identify save compatibility;
+- produce a concrete regression test.
 
-## Stage 6 — Compatibility index
+## 6. Refresh after project changes
 
-For Ruby scripts, build a symbol table including:
+The project index is a snapshot. If the project changes, regenerate it rather than assuming hashes, event paths, or script order remain valid.
 
-```text
-script order
-class/module reopened
-method defined
-method aliased
-constant changed
-$imported key
-required dependency
-save hook
-note-tag parser
-```
+## 7. Publication boundary
 
-Generate collision candidates when multiple scripts touch the same core method.
-
-Collision detection is a warning system, not automatic proof of incompatibility.
-
-## Integrity rules
-
-- extraction is read-only;
-- preserve original IDs and script order;
-- record hashes before analysis;
-- never rewrite `.rvdata2` directly without a verified backup/round-trip strategy;
-- keep generated indexes separate from original project data;
-- do not publish the user's project data or third-party scripts by default;
-- preserve credits/license headers when extracted scripts are used locally;
-- keep a manifest mapping every normalized output to its original source.
-
-## Future writer requirements
-
-Before allowing automated edits:
-
-1. prove parse -> serialize round-trip fidelity on copies;
-2. maintain backups and hashes;
-3. show a human-readable diff;
-4. refuse to write when the source changed since extraction;
-5. validate script syntax where possible;
-6. generate a regression test plan;
-7. support rollback.
+Do not upload extracted project scripts, normalized project data, or third-party scripts to a public repository unless the user explicitly requests publication and has the right to publish that material.

@@ -111,3 +111,28 @@ python -m unittest discover -s tests/tooling -v
 ```
 
 The test fixtures are synthetic original code and do not contain RPG Maker default scripts.
+
+## VX Ace Project Reader — v0.5
+
+```bash
+python tools/vxace_project_reader.py PATH_TO_PROJECT
+```
+
+The reader creates a separate normalized project index and automatically runs `rgss3_analyzer.py` after extracting `Scripts.rvdata2`.
+
+Key properties:
+
+- read-only source handling;
+- source SHA-256 inventory;
+- inert Marshal decoding through `rvdata2_bridge.rb`;
+- no execution of extracted project scripts;
+- normalized database/maps;
+- Script Editor order preservation;
+- switch/variable/event relationship indexes;
+- symbolic ID-to-name resolution.
+
+By default the output is a sibling of the source project (`ProjectName-project-index`). The reader refuses to emit generated files inside the source project.
+
+### Current dependency
+
+v0.5 requires an external Ruby executable for Marshal decoding. This is intentionally isolated behind the bridge so a future pure-Python backend can replace it without changing the project-index contract.
