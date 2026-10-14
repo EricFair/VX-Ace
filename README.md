@@ -1,103 +1,82 @@
-# RPG Maker VX Ace Developer — v0.8
+# RPG Maker VX Ace Developer — v0.9
 
-A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, planning, and now **safely staging verified changes** to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
+A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
-v0.8 is the first mutation-capable release, but it remains deliberately conservative: **the original VX Ace project is never modified**. Changes are applied only to a disposable clone after exact round-trip checks pass.
+v0.9 does **not** broaden write power. It adds the missing real-project safety gate: a read-only validator that can measure whether the current Marshal tooling can round-trip every `.rvdata2` file in an actual project byte-for-byte before copy mutation is considered safe.
 
-## What v0.8 adds
+## What v0.9 adds
 
-### `tools/rvdata2_mutator.rb`
+### `tools/vxace_project_validator.py`
 
-A constrained Marshal mutator for copy-only workflows. It can:
-
-- inspect supported `.rvdata2` structures and produce a normalized semantic hash;
-- perform a no-op load/dump round trip;
-- patch one existing database field on a verified object ID;
-- modify parameters on an existing map/common/troop event command;
-- patch one uniquely anchored extracted RGSS3 script back into `Scripts.rvdata2`.
-
-It does **not** execute extracted project scripts.
-
-### `tools/vxace_copy_patcher.py`
-
-The transactional staging layer. Before writing anything, it:
-
-1. verifies the Project Reader index still exactly matches the source project;
-2. treats changed, missing, and newly added source files as a stale-index failure;
-3. performs a no-op round trip on every targeted `.rvdata2` file;
-4. requires the no-op output to be both semantically equivalent **and byte-for-byte identical**;
-5. clones the project to a new path;
-6. applies mutations only to that clone;
-7. verifies the original source hashes remain unchanged;
-8. re-runs the Project Reader on the clone by default;
-9. generates an audit and normalized before/after index diff.
-
-If apply or re-index verification fails after staging begins, the partial staged copy is automatically deleted and a failure audit is retained.
-
-### `tools/vxace_index_diff.py`
-
-Compares normalized Project Reader output across database, maps, scripts, analysis, and codex data so unexpected secondary changes are visible.
-
-## Copy-mutation usage
-
-First generate a **fresh** project index:
+Run it directly against a VX Ace project:
 
 ```bash
-python tools/vxace_project_reader.py "C:/Games/MyVXACEProject"
+python tools/vxace_project_validator.py "C:/Games/MyVXACEProject" \
+  --output "C:/Validation/MyVXACEProject"
 ```
 
-Prepare a reviewed mutation spec:
+The validator:
 
-```json
-{
-  "title": "Quest gate fix",
-  "changes": [
-    {
-      "kind": "script",
-      "script_path": "014_Quest_System.rb",
-      "search": "old exact block",
-      "replace": "reviewed replacement block"
-    },
-    {
-      "kind": "database",
-      "locator": {"table": "actors", "id": 4},
-      "mutation": {"field": "name", "value": "Alicia"}
-    },
-    {
-      "kind": "event",
-      "locator": {"map_id": 17, "event_id": 4, "page": 2, "command_index": 8},
-      "mutation": {"action": "set_parameter", "parameter_index": 2, "value": 1}
-    }
-  ]
-}
-```
+- scans every `Data/*.rvdata2` file;
+- performs a no-op load/dump using the current `rvdata2_mutator.rb` into temporary files only;
+- requires raw SHA-256 equality for each round-trip result;
+- marks the project `copy_mutation_ready=true` only when **every** discovered `.rvdata2` file passes;
+- never writes to the source project;
+- refuses validation output inside the source project;
+- extracts `Scripts.rvdata2` through the read-only bridge and runs `ruby -c` on each Script Editor entry as a separate diagnostic.
 
-Stage the patch into a clone:
+The script syntax result is intentionally **not** the mutation gate: host-Ruby parsing can catch obvious corruption but does not prove Ruby 1.9.2/RGSS3 runtime compatibility.
 
-```bash
-python tools/vxace_copy_patcher.py PROJECT_INDEX \
-  --project "C:/Games/MyVXACEProject" \
-  --spec patch.json \
-  --copy "C:/Games/MyVXACEProject-v08-test" \
-  --audit "C:/Games/MyVXACEProject-v08-audit"
-```
-
-The default audit contains:
+Outputs:
 
 ```text
-audit/
-├── audit.json
-├── audit.md
-├── mutation-001.json
-├── ...
-├── post-index/
-├── index-diff.json
-└── index-diff.md
+validation/
+├── validation.json
+└── validation.md
 ```
 
-The original game is not changed. Rollback is deleting the staged copy.
+Exit codes:
 
-## Full toolchain
+- `0` — all `.rvdata2` files passed the byte-identical gate;
+- `3` — one or more files failed; copy mutation should be refused;
+- `2` — configuration/tool/validation error.
+
+## Recommended real-project sequence
+
+```text
+Real VX Ace project
+        │
+        ▼
+Project Validator  ← v0.9 project-wide gate
+        │
+        ▼
+Project Reader + Codex
+        │
+        ▼
+Compatibility Analyzer
+        │
+        ▼
+Patch Planner
+        │
+        ▼
+Copy Patcher  ← still rechecks each targeted file
+        │
+        ▼
+Post-index + diff
+        │
+        ▼
+VX Ace editor/runtime testing
+```
+
+A project-level validator pass never disables the per-target v0.8 round-trip gate.
+
+## Existing toolchain
+
+### Read-only Project Reader + Codex
+
+```bash
+python tools/vxace_project_reader.py PROJECT
+```
 
 ### Compatibility analyzer
 
@@ -106,18 +85,6 @@ python tools/rgss3_analyzer.py extracted-scripts/ \
   --order scripts/order.json \
   --json analysis/script-compatibility.json \
   --markdown analysis/script-compatibility.md
-```
-
-### Project Reader + Codex
-
-```bash
-python tools/vxace_project_reader.py PROJECT
-```
-
-### Project Codex only
-
-```bash
-python tools/vxace_codex.py PROJECT_INDEX
 ```
 
 ### Proposal-only patch planner
@@ -139,65 +106,35 @@ python tools/vxace_copy_patcher.py PROJECT_INDEX \
   --audit AUDIT_DIR
 ```
 
-## Safety model
+The original project remains a non-write target.
 
-- project scripts are extracted but never executed;
-- Project Reader is read-only;
-- source files are SHA-256 inventoried;
-- stale indexes are hard failures;
-- exact unique script anchors are required;
-- direct source-project writes are forbidden;
-- copy/audit output paths cannot live inside the source project;
-- a targeted `.rvdata2` file must first prove an **exact byte-identical no-op round trip**;
-- database mutations may modify only fields that already exist;
-- event mutations may modify only parameters on existing commands;
-- failed staged mutations are transactional: the partial copy is deleted;
-- the staged copy is re-indexed and diffed by default;
-- opening/testing the clone in the real VX Ace editor/runtime is still required before human promotion.
+## Automated validation
 
-## Development layers
+The v0.8 GitHub Actions baseline passed the complete **38-test** toolchain. v0.9 adds seven project-validator tests, including an integration test that runs the real validator against the repository's synthetic VX Ace fixture using the real bridge and mutator.
 
-1. Engineering behavior and strict VX Ace scope.
-2. Engine architecture and lifecycle knowledge.
-3. Native event/database design patterns.
-4. RGSS3 compatibility analysis.
-5. Read-only Project Reader.
-6. Evidence-first Project Codex.
-7. Reversible project-aware patch planning.
-8. **Byte-verified mutation on disposable copies. v0.8 is here.**
-9. Broader structural editing only after real-project validation and stronger round-trip evidence.
+The intended v0.9 total is **45 automated tests**.
 
-## Automated tests
-
-v0.7 contained 31 analyzer/reader/codex/patch-planner tests. v0.8 adds **7 mutation tests** covering:
-
-- byte-identical no-op round trips across the synthetic VX Ace fixture;
-- script + database + map-event mutation on a clone;
-- source-project immutability;
-- stale-index refusal;
-- copy/audit containment rejection;
-- prevention of unknown database-field creation;
-- normalized index diffing.
-
-Run every suite with:
+Run all suites with:
 
 ```bash
 python tools/run_tests.py
 ```
 
-The new v0.8 mutation suite passes locally. A fresh integrated run of all pre-existing suites should still be performed in a complete checkout/CI environment.
+## Safety model
 
-## Important limitations
+- validation, indexing, compatibility analysis, and planning are read-only;
+- original project mutation remains disabled;
+- all mutation happens on a new disposable clone;
+- stale indexes are hard failures;
+- every targeted `.rvdata2` must pass an exact no-op byte round-trip immediately before mutation;
+- v0.9 additionally provides a project-wide preflight across all `.rvdata2` files;
+- host-Ruby syntax checking is diagnostic only;
+- staged copies are re-indexed/diffed and must still be tested in actual RPG Maker VX Ace.
 
-v0.8 is **not** a general-purpose VX Ace binary editor.
+## Current limitation
 
-- real user-owned projects have not yet been validated across a broad sample;
-- byte-identical no-op round trip is required per target file, otherwise mutation is refused;
-- event/page/command insertion and deletion are disabled;
-- arbitrary database schema changes are disabled;
-- save-file editing/migration is disabled;
-- dynamic Ruby/metaprogramming can evade static compatibility analysis;
-- a pure-Python Marshal backend does not exist yet;
-- human review and in-engine testing remain mandatory.
+The validator is now ready for real user-owned projects, but the repository itself still has only synthetic-fixture evidence. A real project must actually be run through the validator before we can claim real-project round-trip validation.
 
-See `references/copy-mutation.md`, `workflows/verified-copy-mutation.md`, `references/project-reader.md`, and `references/project-codex.md`.
+Broader structural writes—event command insertion/deletion, event page creation/removal, arbitrary schema changes—remain disabled until that evidence exists.
+
+See `references/project-validation.md`, `workflows/real-project-validation.md`, `references/copy-mutation.md`, and `workflows/verified-copy-mutation.md`.
