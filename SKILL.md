@@ -81,7 +81,7 @@ See `references/project-validation.md` and `workflows/real-project-validation.md
 
 ## Project Reader + Codex
 
-Use `VXACE_MASTER.md` and `vxace-master.json` as the master entry points. `python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR` runs the read-only release workflow with an explicitly selected Python data backend. Individual validator/patcher commands still default to Ruby; use `--backend python` to select the new backend. Readiness is specific to the selected backend and current snapshot. The standalone experimental codec audit is not a production gate. Structural writes remain disabled. See `references/upstream-adoption.md` and the real-project evidence document.
+Use `VXACE_MASTER.md` and `vxace-master.json` as the master entry points. Resolve tool/reference paths relative to this installed skill directory, not the user's current working directory. `python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR` runs the read-only release workflow with an explicitly selected Python data backend. Individual validator/patcher commands still default to Ruby; use `--backend python` to select the new backend. Readiness is specific to the selected backend and current snapshot. The standalone experimental codec audit is not a production gate. Only the guarded structural event subset in `references/event-structure.md` is enabled; other structural writes remain disabled. See `references/upstream-adoption.md` and the real-project evidence document.
 
 Generate fresh evidence before project-specific work:
 
