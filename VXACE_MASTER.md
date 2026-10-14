@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v0.12.0
+# VX Ace Masterfile — v0.13.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -36,6 +36,7 @@ Original game (read-only)
   → Ruby Project Reader and normalized index
   → script compatibility analysis + Project Codex
   → observed class/field schema + reference inspection
+  → conservative event-logic diagnostics
   → full original-file inventory recheck
   → master report
 ```
@@ -50,6 +51,7 @@ report/
   index/manifest.json / project.json
   index/database/ / maps/ / scripts/ / analysis/ / codex/
   inspection/inspection.json / inspection.md
+  event-lint/event-lint.json / event-lint.md
   stage stdout/stderr logs
 ```
 
@@ -68,12 +70,14 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Independent codec audit | Read-only subprocess audit with per-file timeout, size cap, warning refusal and Data inventory comparison; does not itself grant mutation readiness |
 | Observed schema | Classes, field types, object counts and sample evidence locations from our normalized index; no invented fields |
 | Reference lint | Direct map transfers, coordinate bounds, common-event/troop targets, extraction errors; partial coverage is explicit |
+| Event-logic diagnostics | Local labels, continuations, terminators, unconditional map-page shadows and possible highest unconditional autorun locks; opaque behavior stays uncertain |
+| Bounded project search | Literal text/native code filters across indexed events, database, map metadata and ordered script lines; exact evidence and honest pagination |
 | Patch proposals | Freshness, exact unique script anchors, structured database/event proposals, regression checks and rollback guidance |
 | Dependency impact | Exact target review, event graph relationships, script collision and save-hook evidence; incomplete dependency coverage is disclosed |
 | Verified copy patching | Existing scalar database fields, existing map/common/troop command parameters and unique script replacements; backend-specific limits apply |
 | Guarded event structure | Python copy backend: atomic command insertion/deletion and conditioned same-owner map/troop page cloning/deletion; exact native hashes, repeating-trigger refusal, native project-version advancement, mandatory post-copy validation |
 | Change review | Source hashes, before/after byte and semantic hashes, re-index, normalized diff, semantic Codex diff |
-| Actual editor/runtime verification | Disposable map/common/battle insertion/deletion and old-save loading; evidence in `references/real-project-validation-v0.12.md` |
+| Actual editor/runtime verification | Structural edit/old-save evidence in v0.12; search locations, hidden page selection, terminating cutscene and counted autorun restart in `references/real-project-validation-v0.13.md` |
 
 ## Exact individual commands
 
@@ -90,6 +94,8 @@ Index and inspect:
 ```powershell
 python tools/vxace_project_reader.py PROJECT --output EXTERNAL_INDEX
 python tools/vxace_inspect.py EXTERNAL_INDEX --output NEW_EXTERNAL_INSPECTION
+python tools/vxace_event_lint.py EXTERNAL_INDEX --project PROJECT --output NEW_EVENT_REPORT
+python tools/vxace_search.py EXTERNAL_INDEX --project PROJECT --text "quest text" --output NEW_SEARCH
 ```
 
 Prepare a concrete reviewed patch:
@@ -161,7 +167,7 @@ A release is complete when its documented scope is implemented, tests pass, real
 
 ## Remaining boundaries
 
-Structural edits outside [the guarded event workflow](references/event-structure.md), map creation/resizing, tile painting, database entry creation/deletion, arbitrary raw writes, general save migration, encrypted archives, and VX/RGSS2 remain outside this release. MCP transport, RTP-aware asset checks, richer event-logic lint and bounded full-project search remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
+Structural edits outside [the guarded event workflow](references/event-structure.md), map creation/resizing, tile painting, database entry creation/deletion, arbitrary raw writes, general save migration, encrypted archives, and VX/RGSS2 remain outside this release. MCP transport, RTP-aware asset checks, regex search and deeper control-flow/recursion analysis remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
 
 Do not run broad unsupported writes merely because one project passed validation. The recorded native scenarios establish limited evidence. Further changes need their own fixtures, type/schema checks, dependency review and runtime scenarios. For supported event insertion/deletion, use [references/event-structure.md](references/event-structure.md), including exact snapshot commands, transaction fields and old-save behavior.
 
@@ -174,4 +180,6 @@ Do not run broad unsupported writes merely because one project passed validation
 - [`references/real-project-validation-v0.11.md`](references/real-project-validation-v0.11.md): actual release evidence and limits.
 - [`references/real-project-validation-v0.12.md`](references/real-project-validation-v0.12.md): structural editing and native runtime evidence.
 - [`references/event-structure.md`](references/event-structure.md): supported event edits, exact commands, preconditions and refusal rules.
+- [`references/search-and-event-diagnostics.md`](references/search-and-event-diagnostics.md): fresh-index search, lint, coverage and resource limits.
+- [`references/real-project-validation-v0.13.md`](references/real-project-validation-v0.13.md): read-only batch and native-copy evidence.
 - [`CHANGELOG.md`](CHANGELOG.md): v0.1 through current release history.

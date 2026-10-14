@@ -126,5 +126,9 @@ class ReleaseSafetyTests(unittest.TestCase):
         result = master.workflow(project, self.base / "report", shutil.which("ruby"), ROOT / "vxace-master.json")
         self.assertTrue(result["source_unchanged"])
         self.assertFalse(result["mutation_performed"])
-        self.assertEqual([x["name"] for x in result["stages"]], ["validation", "codec-audit", "reader", "inspection"])
+        self.assertEqual([x["name"] for x in result["stages"]], ["validation", "codec-audit", "reader", "inspection", "event-lint"])
+        # The old synthetic fixture omits troop pages. Serialization readiness
+        # must not turn incomplete event analysis into a clean master report.
+        self.assertEqual(result['stages'][-1]['exit_code'],2)
+        self.assertEqual(result['status'],'review_required')
         self.assertTrue(result["copy_mutation_ready"])

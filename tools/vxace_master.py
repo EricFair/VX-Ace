@@ -22,7 +22,7 @@ def settings(path):
         raise ValueError("Master settings cannot weaken the fixed VX Ace safety contract")
     if value.get("validation_backend") not in ("ruby", "python"):
         raise ValueError("Unsupported validation backend")
-    for feature in ("python_codec_audit", "observed_schema_and_reference_lint"):
+    for feature in ("python_codec_audit", "observed_schema_and_reference_lint", "event_logic_lint"):
         if type(value.get(feature)) is not bool:
             raise ValueError("Feature flags must be booleans")
     return value
@@ -56,13 +56,15 @@ def workflow(project, output, ruby, config):
         reader = stage("reader", "vxace_project_reader.py", [project, "--output", output / "index", "--ruby", ruby])
         if reader == 0 and config["observed_schema_and_reference_lint"]:
             stage("inspection", "vxace_inspect.py", [output / "index", "--output", output / "inspection"])
+        if reader == 0 and config['event_logic_lint']:
+            stage('event-lint','vxace_event_lint.py',[output/'index','--project',project,'--output',output/'event-lint'])
         completed = True
     finally:
         unchanged = current_inventory(project) == before
         validation = output / "validation/validation.json"
         ready = validation.is_file() and json.loads(validation.read_text(encoding="utf-8"))["copy_mutation_ready"]
         ok = completed and unchanged and ready and all(s["exit_code"] == 0 for s in stages)
-        summary = {"version": "0.12.0", "status": "pass" if ok else "review_required", "stages": stages,
+        summary = {"version": "0.13.0", "status": "pass" if ok else "review_required", "stages": stages,
                    "source_unchanged": unchanged, "selected_backend": config["validation_backend"],
                    "copy_mutation_ready": bool(ready and unchanged), "mutation_performed": False,
                    "runtime_compatibility_proven": False}
@@ -70,7 +72,7 @@ def workflow(project, output, ruby, config):
         lines = ["# VX Ace master report", "", f"Status: **{summary['status']}**",
                  f"Original files unchanged: **{unchanged}**", "Mutation performed: **False**", ""]
         lines += [f"- {s['name']}: exit {s['exit_code']}" for s in stages]
-        lines += ["", "See validation/, codec-audit/, index/codex/ and inspection/ for evidence.",
+        lines += ["", "See validation/, codec-audit/, index/codex/, inspection/ and event-lint/ for evidence.",
                   "A pass does not authorize mutation or prove RGSS3 runtime behavior."]
         (output / "master-report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return summary

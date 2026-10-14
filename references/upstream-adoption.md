@@ -16,8 +16,8 @@ Adopt useful capabilities incrementally under **our** rules: VX Ace first, fresh
 | Observed per-project schema, unknown-field reporting | v0.11: observed class/field/type report; unknown-field classification remains future work | Compare observations against fresh normalized data; preserve evidence paths and unknowns |
 | Broken-reference and transfer-coordinate linting | v0.11: direct transfer, common-event and troop reference checks | Known-valid/invalid project fixtures; variable-designated transfers distinguished from direct transfers |
 | RTP-aware graphics/audio validation, case mismatches | Later read-only batch | Actual RTP discovery or explicit external RTP; missing RTP reported as uncertainty, no mass false errors |
-| Event-page shadowing, autorun and label linting | Later read-only batch | Terminating cutscene fixtures; highest valid page semantics; conservative claims |
-| Cross-project text/command search | Adapt to our external index | Provenance per hit; bounded output and regex work; never evaluate scripts |
+| Event-page shadowing, autorun and label linting | v0.13: conservative read-only batch | Complete flags, highest unconditional map page, local labels and continuations; native cutscene/shadow fixtures, opaque behavior disclosed |
+| Cross-project text/command search | v0.13: external-index literal search | Exact evidence per hit; bounded input/walk/output, full selected-scope counts and pagination; regex deferred; never evaluate scripts |
 | MCP tools/resources interface | Adapter after read-only APIs stabilize | Default read-only; stdio protocol tests; mutation requests route through our planner/copy patcher |
 | Database entry creation/deletion | Deferred | Real-project production validation; dependency review; clone-only schema/type checks and rollback |
 | Event/page/command structural authoring and DSL | Partial in v0.12 | Guarded native command units and conditioned template pages implemented in our Python copy chain; broad DSL/branch/script authoring deferred. See `event-structure.md` and native evidence |

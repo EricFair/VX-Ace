@@ -5,7 +5,7 @@ description: Analyze, validate, debug, and safely stage RPG Maker VX Ace databas
 
 # RPG Maker VX Ace Developer
 
-Version: 0.12.0
+Version: 0.13.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -162,7 +162,9 @@ Choose the owning runtime object, define old-save behavior, inspect other save h
 
 v0.12 adds guarded structural command/page edits and distinct troop-page analysis to the existing engine knowledge, native patterns, compatibility analysis, Project Reader/Codex, planning, byte-verified copy mutation, validation, impact analysis, diffs, read-only master workflow and schema/reference inspection.
 
-The expanded suite has 159 tests. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
+v0.13 adds bounded index search and conservative event diagnostics. For locating text/commands or reviewing labels, hidden pages and autorun risks, read [references/search-and-event-diagnostics.md](references/search-and-event-diagnostics.md). Use fresh source/index checks, exact evidence paths and external reports; opaque behavior remains uncertain. Diagnostic results never authorize automatic fixes or establish general termination.
+
+The expanded suite has 184 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
 
 Real-project evidence is recorded in [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md). It covers a small editor-produced project and disposable native map/common/battle/save scenarios; it does not establish compatibility with arbitrary customized games. Structural operations outside the documented subset remain disabled.
 

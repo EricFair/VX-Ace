@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.13.0 — Bounded search and conservative event diagnostics
+
+- Search fresh external indexes by literal text and/or native command code across events, database, map metadata and ordered script lines; return exact evidence, bounded excerpts, complete selected-scope counts and honest pagination. No regex or game-code evaluation.
+- Diagnose missing local labels, duplicate labels, orphan continuations, root terminators, unconditional map-page shadows and possible highest unconditional autorun locks. Unknown condition flags and opaque calls/scripts remain explicit uncertainty; no automatic fixes.
+- Add shared bounded index access, strict external-output/freshness checks, input/source integrity rechecks, linked/escaping path refusal and complete-result refusal on budget/incomplete-data failures.
+- Enable event diagnostics in the read-only master; preserve the fixed mutation safety policy and distinguish logic review from serialization readiness.
+- Add 25 query/diagnostic checks (184-test suite), independent Ruby reader integration, and native disposable-copy prediction checks. See `references/real-project-validation-v0.13.md` for evidence and platform-specific limits.
+
 ## 0.12.0 — Guarded native event structure editing
 
 - Insert/delete atomic command units in map/common/troop events using exact native list fingerprints; preserve terminators, continuation groups, balanced blocks and label targets.
