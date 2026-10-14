@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0 — Dependency impact and semantic verification
+
+- Added `tools/vxace_impact.py` for evidence-first pre-mutation impact analysis.
+- Added exact map-event/common-event/troop/script/database target verification.
+- Added Codex graph relationship reporting for event targets.
+- Added script ownership, method, alias, `$imported`, save-hook, and collision evidence to impact reports.
+- Added explicit limits where dependency coverage is incomplete instead of claiming completeness.
+- Added `tools/vxace_semantic_diff.py` for before/after Codex system/state/graph/script comparison.
+- Added JSON and Markdown output for both tools.
+- Added seven impact/semantic-diff tests and wired `tests/impact` into the full test runner.
+- Broader structural `.rvdata2` mutation remains gated on actual v0.9 real-project validation.
+
 ## 0.9.0 — Real-project validation harness
 
 - Added `tools/vxace_project_validator.py`.
