@@ -106,6 +106,14 @@ class ReleaseSafetyTests(unittest.TestCase):
         path = self.base / 'older-assets.json'; path.write_text(json.dumps(config))
         self.assertNotIn('asset_audit', master.settings(path))
 
+    def test_master_refuses_rtp_output_before_creating_any_report(self):
+        project = self.base / 'game'; (project / 'Data').mkdir(parents=True)
+        rtp = self.base / 'rtp'; (rtp / 'Graphics').mkdir(parents=True)
+        output = rtp / 'report'
+        with self.assertRaisesRegex(ValueError, 'read-only RTP root'):
+            master.workflow(project, output, sys.executable, ROOT / 'vxace-master.json', rtp)
+        self.assertFalse(output.exists())
+
     def test_inspection_separates_variable_transfers_from_direct_coordinates(self):
         index = self.base / "index"
         (index / "maps").mkdir(parents=True)

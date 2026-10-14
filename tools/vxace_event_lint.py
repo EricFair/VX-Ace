@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 from vxace_index_query import Index, execute
+from vxace_common_event_graph import cycles
 
 FLAGS=('switch1_valid','switch2_valid','variable_valid','self_switch_valid','item_valid','actor_valid')
 CONTINUATIONS={401:101,405:105,408:108,505:205,605:302,655:355}
@@ -22,6 +23,17 @@ def unconditional(page):
 def lint(data):
     if not isinstance(data,Index): data=Index(data)
     findings=[]; lists=commands=0; highest_unconditional={}
+    common_ids=set(); calls=[]; entry_calls=opaque_calls=0
+    if data.path('database/common-events.json').is_file():
+        common=data.json('database/common-events.json')
+        if not isinstance(common,list): raise ValueError('Opaque common-event database')
+        for slot,owner in enumerate(common):
+            data.spend()
+            if owner is None: continue
+            if (not isinstance(owner,dict) or owner.get('__class__')!='RPG::CommonEvent' or
+                type(owner.get('id')) is not int or owner['id']!=slot or slot==0):
+                raise ValueError('Common-event IDs must match native array slots')
+            common_ids.add(slot)
     def emit(code,severity,detail,loc,file,path,**extra):
         if len(findings)>=5000: raise ValueError('Finding budget exceeded; no complete report produced')
         findings.append({'code':code,'severity':severity,'detail':detail,
@@ -40,6 +52,17 @@ def lint(data):
                 emit('opaque_command','warning','Command schema is incomplete; logic coverage is partial',loc,file,where)
                 valid=False; previous=None; continue
             code,indent,p=row['code'],row['indent'],row['parameters']
+            if code==117:
+                if len(p)!=1 or type(p[0]) is not int or p[0]<1:
+                    opaque_calls+=1
+                    emit('opaque_common_event_call','warning','Call target is not one positive native common-event ID; graph coverage is partial',loc,file,where)
+                elif p[0] not in common_ids:
+                    emit('missing_common_event_call','warning','Call target is absent; the default native command performs no child event',loc,file,where,target_common_event_id=p[0])
+                elif loc['scope']=='common_event':
+                    if len(calls)>=10000: raise ValueError('Common-event call graph budget exceeded')
+                    calls.append((loc['common_event_id'],p[0],{'file':file,'path':where,**loc}))
+                else:
+                    entry_calls+=1
             if code in CONTINUATIONS and (previous is None or previous[1]!=indent or previous[0] not in (code,CONTINUATIONS[code])):
                 emit('orphan_continuation','error','Continuation has no matching preceding command at this indent',loc,file,where)
             if code in (118,119):
@@ -82,13 +105,28 @@ def lint(data):
             emit('autorun_runtime_review','info','Highest unconditional autorun contains a possible release or opaque call/script; termination is not proven',loc,file,path)
         else:
             emit('possible_autorun_lock','warning','Highest unconditional autorun has no observed release or opaque command; the default runtime restarts it after completion',loc,file,path)
+    graph_edges={(source,target) for source,target,_ in calls}
+    components=cycles(common_ids,graph_edges,data.spend)
+    for component in components:
+        members=set(component)
+        data.spend(len(calls))
+        evidence=[e for source,target,e in calls if source in members and target in members]
+        first=evidence[0]
+        loc={k:v for k,v in first.items() if k not in ('file','path')}
+        emit('possible_common_event_recursion','warning',
+             'Direct common-event calls form a cycle; conditions, exits and scripts may prevent or bound recursion. Runtime review is required.',
+             loc,first['file'],first['path'],common_event_ids=component,
+             call_sites=len(evidence),call_evidence=evidence[:40],call_evidence_truncated=len(evidence)>40)
     data.unchanged()
-    return {'version':'0.13.0','read_only':True,'mutation_authorized':False,'command_lists_checked':lists,'commands_checked':commands,
+    return {'version':'0.16.0','read_only':True,'mutation_authorized':False,'command_lists_checked':lists,'commands_checked':commands,
+            'common_event_graph':{'nodes':len(common_ids),'direct_call_sites':len(calls),'unique_edges':len(graph_edges),
+                                  'entry_call_sites':entry_calls,'cycle_components':len(components),'opaque_calls':opaque_calls},
             'findings':findings,'counts':dict(Counter(x['severity'] for x in findings)),
-            'coverage_complete':not any(x['code'] in ('opaque_command','opaque_label','unknown_page_conditions') for x in findings),
+            'coverage_complete':not any(x['code'] in ('opaque_command','opaque_label','unknown_page_conditions','opaque_common_event_call') for x in findings),
             'limits':['Default VX Ace semantics only; custom interpreter/page-selection hooks require runtime review.',
                       'Checks root terminators, continuation adjacency, local labels, unconditional map-page shadows and highest unconditional map autoruns.',
-                      'No full branch/control-flow proof, common-event recursion, conditional autorun termination proof, troop-page priority analysis or asset/RTP validation.',
+                      'Direct common-event call cycles are potential recursion, including unused/conditional calls; scripts, reachability and termination are not proven.',
+                      'No full branch/control-flow proof, conditional autorun termination proof, troop-page priority analysis or asset/RTP validation.',
                       'Possible release commands may be unreachable; an info result does not prove termination.',
                       'Every finding is diagnostic only; no automatic fixes or mutation readiness are granted.']}
 

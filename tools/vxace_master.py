@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 from vxace_copy_patcher import current_inventory
+from vxace_index_query import unlinked
 
 ROOT = Path(__file__).resolve().parents[1]
 SAFE_POLICY = {
@@ -35,6 +36,10 @@ def settings(path):
 def workflow(project, output, ruby, config, rtp=None):
     config = settings(config)
     project, output = Path(project).resolve(), Path(output).resolve()
+    if rtp is not None:
+        rtp = unlinked(rtp)
+        if output == rtp or rtp in output.parents:
+            raise ValueError('Master reports must be outside the read-only RTP root')
     if project.is_file() and project.suffix.lower() == ".rvproj2":
         project = project.parent
     if not (project / "Data").is_dir():
@@ -74,7 +79,7 @@ def workflow(project, output, ruby, config, rtp=None):
         validation = output / "validation/validation.json"
         ready = validation.is_file() and json.loads(validation.read_text(encoding="utf-8"))["copy_mutation_ready"]
         ok = completed and unchanged and ready and all(s["exit_code"] == 0 for s in stages)
-        summary = {"version": "0.15.0", "status": "pass" if ok else "review_required", "stages": stages,
+        summary = {"version": "0.16.0", "status": "pass" if ok else "review_required", "stages": stages,
                    "source_unchanged": unchanged, "selected_backend": config["validation_backend"],
                    "copy_mutation_ready": bool(ready and unchanged), "mutation_performed": False,
                    "runtime_compatibility_proven": False}

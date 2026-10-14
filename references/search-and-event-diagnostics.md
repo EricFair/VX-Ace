@@ -1,5 +1,7 @@
 # Read-only search and event diagnostics — v0.13
 
+v0.16 extends the same event linter with [direct common-event call-cycle diagnostics](common-event-cycles.md). Cycles are possible recursion, including conditional or unused calls; no termination proof or automatic fix is implied.
+
 This batch adapts two missing upstream capabilities to our external Project Reader index. It adds no game writer, automatic fix, MCP transport or Ruby execution. The commands require the current source project for freshness/integrity checks and write only new external reports.
 
 ## Generate a fresh index

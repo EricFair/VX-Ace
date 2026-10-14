@@ -9,7 +9,7 @@ from pathlib import Path
 import sys
 from vxace_index_query import Index, execute, unlinked
 
-VERSION = '0.15.0'
+VERSION = '0.16.0'
 MAX_ASSET_FILES = 20000
 MAX_REFERENCES = 10000
 EXTENSIONS = {'Graphics': {'.png', '.jpg', '.jpeg'},
@@ -210,6 +210,10 @@ def main(argv=None):
         project = unlinked(a.project)
         if project.is_file() and project.suffix.lower() == '.rvproj2':
             project = project.parent
+        if a.rtp is not None:
+            rtp = unlinked(a.rtp); output = unlinked(a.output)
+            if output == rtp or rtp in output.parents:
+                raise ValueError('Asset reports must be outside the read-only RTP root')
         result = execute(a.index, project, a.output, lambda data: audit(data, project, a.rtp), 'asset-audit')
         lines = ['# VX Ace asset references', '', 'Presence/casing checks only. See JSON for evidence.', '',
                  'Counts: ' + json.dumps(result['counts']), '']

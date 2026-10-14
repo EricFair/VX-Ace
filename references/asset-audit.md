@@ -8,7 +8,7 @@ python tools/vxace_asset_audit.py PROJECT_INDEX --project PROJECT --output NEW_E
 python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT --rtp "C:/Explicit/Path/To/rtp"
 ```
 
-The RTP root must be a separate directory containing Graphics/ or Audio/. A missing RTP argument leaves unresolved references uncertain; it does not turn a normal RTP-based game into hundreds of proven missing-file errors. Do not guess RTP availability from a registry entry, a successful file name match elsewhere on disk or an installed editor alone. Supply the actual directory when it is known. The standalone command and master require a new external report directory and fresh source/index evidence.
+The RTP root must be a separate directory containing Graphics/ or Audio/. A missing RTP argument leaves unresolved references uncertain; it does not turn a normal RTP-based game into hundreds of proven missing-file errors. Do not guess RTP availability from a registry entry, a successful file name match elsewhere on disk or an installed editor alone. Supply the actual directory when it is known. The standalone command and master require a new external report directory outside the game, index and RTP, with fresh source/index evidence. v0.16 adds explicit RTP-output refusal before report creation.
 
 ## What is checked
 

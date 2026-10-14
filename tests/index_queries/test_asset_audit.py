@@ -142,6 +142,14 @@ class AssetAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Graphics/ or Audio/'):
             audit(self.index, self.game, wrong)
 
+    def test_reports_cannot_write_inside_the_read_only_rtp_root(self):
+        self.asset(self.rtp, 'Graphics/Characters/Hero.png')
+        before = current_inventory(self.rtp)
+        for output in (self.rtp / 'report', self.rtp / 'Graphics/report'):
+            args = [str(self.index), '--project', str(self.game), '--rtp', str(self.rtp), '--output', str(output)]
+            self.assertEqual(main(args), 2); self.assertFalse(output.exists())
+        self.assertEqual(before, current_inventory(self.rtp))
+
     def test_linked_asset_cannot_escape_catalog_root(self):
         target = self.base / 'outside.png'; target.write_bytes(b'outside')
         link = self.rtp / 'Graphics/Characters/Hero.png'; link.parent.mkdir()

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.16.0 — Potential common-event recursion and RTP output protection
+
+- Build bounded direct common-event call graphs inside the existing event linter; report self/mutual cyclic components and exact bounded evidence, excluding acyclic downstream nodes. Track map/troop entry calls separately.
+- Distinguish missing/opaque targets and refuse native ID-slot inconsistencies. Use iterative graph traversal; branches, scripts and runtime reachability/termination remain uncertain.
+- Verify a guarded native CE1↔CE2 fixture through normal nested interpreters, with a private four-entry cap; no unbounded loop or engine-stack certification claim.
+- Refuse asset/master report output inside explicit read-only RTP roots before report creation.
+- Add 15 call-graph tests and two RTP-output regressions (236 total); retain copy-only mutation rules and source/index byte gates.
+
 ## 0.15.0 — Explicit RTP-aware read-only asset checks
 
 - Collect native indexed graphics/audio references and exact evidence without executing scripts; resolve project files before an optional explicit unpacked RTP root.

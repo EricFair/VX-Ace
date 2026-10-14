@@ -5,7 +5,7 @@ description: Analyze, validate, debug, and safely stage RPG Maker VX Ace databas
 
 # RPG Maker VX Ace Developer
 
-Version: 0.15.0
+Version: 0.16.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -170,7 +170,9 @@ v0.14 adds [read-only map tile audits](references/map-tile-audit.md): native Tab
 
 v0.15 adds [read-only graphics/audio reference checks](references/asset-audit.md), with explicit optional RTP fallback, filename casing, exact evidence and uncertainty when RTP is absent. File presence does not prove image decoding/audio playback, and scripted/dynamic assets remain outside the report.
 
-The expanded suite has 219 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
+v0.16 adds [direct common-event cycle diagnostics](references/common-event-cycles.md) to the event linter. Cycles are potential recursion, not proof of nontermination. It also refuses reports inside an explicitly supplied RTP root before writing output.
+
+The expanded suite has 236 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
 
 Real-project evidence is recorded in [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md). It covers a small editor-produced project and disposable native map/common/battle/save scenarios; it does not establish compatibility with arbitrary customized games. Structural operations outside the documented subset remain disabled.
 

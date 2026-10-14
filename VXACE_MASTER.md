@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v0.15.0
+# VX Ace Masterfile — v0.16.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -76,7 +76,7 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Independent codec audit | Read-only subprocess audit with per-file timeout, size cap, warning refusal and Data inventory comparison; does not itself grant mutation readiness |
 | Observed schema | Classes, field types, object counts and sample evidence locations from our normalized index; no invented fields |
 | Reference lint | Direct map transfers, coordinate bounds, common-event/troop targets, extraction errors; partial coverage is explicit |
-| Event-logic diagnostics | Local labels, continuations, terminators, unconditional map-page shadows and possible highest unconditional autorun locks; opaque behavior stays uncertain |
+| Event-logic diagnostics | Local labels, continuations, terminators, unconditional map-page shadows, possible highest unconditional autorun locks and direct common-event call cycles; opaque/control-flow behavior stays uncertain |
 | Bounded project search | Literal text/native code filters across indexed events, database, map metadata and ordered script lines; exact evidence and honest pagination |
 | Read-only map tile audit | Native Table/tileset shape, sheet routing, ordinary atlas cells/autotile kinds, static directional flags, regions and shadows; excludes runtime movement, asset validation and map mutation |
 | Indexed asset references | Project-first graphics/audio filename presence/casing with optional explicit RTP; no image/audio decoding, scripted assets, archive extraction or automatic repairs |
@@ -96,6 +96,8 @@ python tools/vxace_asset_audit.py PROJECT_INDEX --project PROJECT --output NEW_E
 ```
 
 See [asset audit coverage and uncertainty](references/asset-audit.md).
+
+The standalone asset checker and master refuse report directories inside an explicitly supplied RTP root. For the event linter's direct-call cycle graph, see [common-event diagnostics and bounded native evidence](references/common-event-cycles.md).
 
 Inspect map tiles or one cell from a fresh index:
 
