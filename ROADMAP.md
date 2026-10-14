@@ -26,37 +26,52 @@ Evidence-first project understanding: quest/state-machine candidates, boss gates
 
 ## v0.7 — Reversible project-aware patch workflow — COMPLETE
 
-- proposal-only patch planner;
-- source-hash freshness validation against `manifest.json`;
-- stale-index hard refusal;
-- exact/unique RGSS3 search anchors;
-- unified script diffs;
-- structured event/database proposals without binary writes;
-- path-traversal protection;
-- generated regression checklist and rollback guidance;
-- five dedicated patch-planner tests;
-- re-index-after-change workflow.
+Proposal-only patch planner, stale-index refusal, unique RGSS3 anchors, structured event/database proposals, generated regression checks, and rollback guidance.
 
-### Remaining hardening
+## v0.8 — Verified copy mutation — COMPLETE
 
-- validate Reader + Codex + Planner on one or more real user-owned VX Ace projects;
-- add pre/post index snapshot diff tooling;
-- link patch specs more deeply to codex evidence IDs;
-- add stronger RGSS3 syntax/static checks for proposed replacements;
-- expand event-command relationship extraction;
-- add pure-Python Marshal backend so Ruby becomes optional.
+- copy-only Marshal mutation helper;
+- exact byte-identical no-op round-trip gate for every targeted `.rvdata2` file;
+- semantic hash verification in addition to raw SHA-256;
+- transactional project clone patcher;
+- source manifest freshness check now detects changed, missing, and newly added files;
+- script archive replacement through verified Script Editor index + unique anchor;
+- limited existing-field database mutation;
+- limited existing event-command parameter mutation for map/common/troop events;
+- source project hash verification after staging;
+- automatic staged-copy deletion on failed apply/re-index;
+- automatic post-copy Project Reader re-index by default;
+- normalized pre/post index diff tooling;
+- copy/audit containment protections;
+- dedicated mutation safety reference/workflow/benchmark;
+- seven v0.8 mutation tests.
 
-## v0.8+ — Safer mutation and deeper semantics
+### Required validation before broadening mutation
 
-- proven round-trip serialization path on copies;
-- structured event/data editing only after fidelity tests;
-- codex/index diff after applied patches;
-- richer Script-command -> Ruby ownership resolution;
-- automated dependency-impact summaries;
-- apply-time source leases/hashes and backup restore tooling.
+- run the byte-identical round-trip gate on one or more real user-owned VX Ace projects;
+- open mutated copies in the actual VX Ace editor and runtime;
+- test projects containing more diverse `Table`, `Color`, `Tone`, `Rect`, animation, tileset, and third-party/custom serialized data;
+- confirm Scripts archive recompression behaves correctly across real projects;
+- document failure cases where the byte-identical gate refuses a file;
+- perform a full integrated 38-test run in a complete checkout/CI environment.
 
-No binary `.rvdata2` writer should be enabled until round-trip fidelity is proven on copies.
+## v0.9 — Controlled structural editing / deeper impact analysis
+
+Only after v0.8 real-project validation:
+
+- insert/delete event commands with verified control-flow indentation handling;
+- guarded event page creation/removal on disposable copies;
+- richer database-field type/schema validation;
+- script syntax validation before archive mutation;
+- deeper Script-command -> Ruby ownership resolution;
+- patch-spec links to exact Codex evidence IDs;
+- dependency-impact summaries before mutation;
+- post-patch Codex semantic diff, not only file-level index diff;
+- stronger concurrency/source-lease handling;
+- optional pure-Python Marshal backend research.
+
+Direct mutation of the user's original project should remain disabled until a substantially stronger validation record exists.
 
 ## v1.0 — Validated specialist
 
-Validated against the competency benchmark and real VX Ace projects with documented failure modes, safe fallback behavior, and reproducible extraction/codex/patch-plan results.
+Validated against the competency benchmark and real VX Ace projects with documented failure modes, safe fallback behavior, reproducible extraction/codex/patch results, and proven rollback procedures.
