@@ -22,50 +22,41 @@ Read-only project inventory, Marshal decoding, normalized database/maps, Scripts
 
 ## v0.6 — Project Codex — COMPLETE
 
-Evidence-first project understanding on top of normalized indexes:
+Evidence-first project understanding: quest/state-machine candidates, boss gates, cutscenes, common-event subsystems, relationship graph, per-map dependencies, and script ownership/collision catalog.
 
-- quest/story candidates;
-- progression/state-machine candidates;
-- observed constant stage values without invented semantics;
-- boss/battle-gate candidates;
-- autorun/cutscene candidates;
-- reusable common-event candidates;
-- switch/variable/event/common-event/troop/transfer graph;
-- per-map/event/page dependency catalog;
-- script-order/ownership/collision catalog;
-- exact evidence links back to normalized source locations;
-- automatic codex generation during project ingestion.
+## v0.7 — Reversible project-aware patch workflow — COMPLETE
+
+- proposal-only patch planner;
+- source-hash freshness validation against `manifest.json`;
+- stale-index hard refusal;
+- exact/unique RGSS3 search anchors;
+- unified script diffs;
+- structured event/database proposals without binary writes;
+- path-traversal protection;
+- generated regression checklist and rollback guidance;
+- five dedicated patch-planner tests;
+- re-index-after-change workflow.
 
 ### Remaining hardening
 
-- validate reader + codex on one or more real user-owned VX Ace projects;
-- broaden event-command relationship extraction;
-- infer semantic stage labels only from explicit text/comments/conditions, never names alone;
-- improve event Script-command -> Ruby method ownership linking;
-- add index snapshot/diff tooling;
+- validate Reader + Codex + Planner on one or more real user-owned VX Ace projects;
+- add pre/post index snapshot diff tooling;
+- link patch specs more deeply to codex evidence IDs;
+- add stronger RGSS3 syntax/static checks for proposed replacements;
+- expand event-command relationship extraction;
 - add pure-Python Marshal backend so Ruby becomes optional.
 
-## v0.7 — Reversible project-aware patch workflow
+## v0.8+ — Safer mutation and deeper semantics
 
-- plan changes against an indexed project/codex;
-- source-hash freshness checks;
-- generate script patch proposals;
-- event/data patch representations without unsafe binary writes;
-- human-readable diffs;
-- backup/rollback plan;
-- project-specific regression-test generation;
-- refuse stale-index patches.
+- proven round-trip serialization path on copies;
+- structured event/data editing only after fidelity tests;
+- codex/index diff after applied patches;
+- richer Script-command -> Ruby ownership resolution;
+- automated dependency-impact summaries;
+- apply-time source leases/hashes and backup restore tooling.
 
 No binary `.rvdata2` writer should be enabled until round-trip fidelity is proven on copies.
 
-## v0.8+ — Safer project mutation and deeper semantics
-
-- proven round-trip serialization path;
-- structured event/data editing on copies;
-- codex diff after patches;
-- richer script-call resolution;
-- automated dependency-impact summaries.
-
 ## v1.0 — Validated specialist
 
-Validated against the competency benchmark and real VX Ace projects with documented failure modes, safe fallback behavior, and reproducible extraction/codex results.
+Validated against the competency benchmark and real VX Ace projects with documented failure modes, safe fallback behavior, and reproducible extraction/codex/patch-plan results.

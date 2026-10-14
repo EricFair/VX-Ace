@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.0 — Reversible project-aware patch planning
+
+- Added `tools/vxace_patch_planner.py`.
+- Added manifest SHA-256 freshness verification and stale-index hard refusal (exit code 3).
+- Added proposal-only unified diffs for extracted RGSS3 scripts.
+- Script anchors must match exactly once; ambiguous or stale anchors are refused.
+- Added path-traversal rejection for script targets.
+- Added structural event/database patch representations without `.rvdata2` writes.
+- Added generated regression checklists and rollback guidance.
+- Added `references/patch-planning.md` and `workflows/project-aware-patching.md`.
+- Added five patch-planner tests and wired them into `tools/run_tests.py`.
+- Added v0.7 patch-safety benchmark cases.
+
 ## 0.6.0
 
 - Added `tools/vxace_codex.py`, an evidence-first Project Codex generator.

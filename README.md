@@ -1,133 +1,131 @@
-# RPG Maker VX Ace Developer — v0.6
+# RPG Maker VX Ace Developer — v0.7
 
-A specialist skill/agent knowledge base and toolchain for developing, debugging, and analyzing **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
+A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, and safely planning changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
-The long-term target is a project-aware development agent that can understand a real VX Ace project as a connected system: database objects, maps, event pages, switches, variables, common events, troops, scripts, save hooks, dependencies, and higher-level gameplay systems.
+v0.7 adds the first **reversible project-aware patch workflow** on top of the v0.5 Project Reader and v0.6 Project Codex.
 
-## What v0.6 adds
+## What v0.7 adds
 
-v0.6 delivers the first working **Project Codex** on top of the v0.5 Project Reader.
+`tools/vxace_patch_planner.py` consumes a fresh project index plus an explicit patch specification and produces a proposal-only patch plan.
 
-`tools/vxace_project_reader.py` still creates the read-only normalized project index, and now automatically runs `tools/vxace_codex.py` unless `--no-codex` is supplied.
+It can:
 
-The codex can conservatively infer candidates such as:
+- verify every source file still matches the SHA-256 recorded by the Project Reader;
+- refuse stale indexes before planning a change;
+- create unified diffs for extracted RGSS3 scripts;
+- require exact script search blocks to match exactly once;
+- represent event/database changes with verified structural locators;
+- generate domain-specific regression checks and rollback guidance;
+- block path traversal and unsafe target paths.
 
-- quest/story progression systems;
-- staged variable state machines;
-- boss/battle gates;
-- autorun/cutscene events;
-- reusable common-event subsystems.
+It **does not modify the source project** and it does **not** write `.rvdata2`.
 
-Every inference includes confidence, reasons, and exact source evidence. The tool deliberately does **not** invent stage meanings or claim that a heuristic label is guaranteed to match the original designer's intent.
+## Patch-plan usage
 
-## Reader + Codex usage
+First generate a fresh index:
 
 ```bash
 python tools/vxace_project_reader.py "C:/Games/MyVXACEProject"
 ```
 
-Default output is a sibling directory:
+Create a patch specification, for example:
 
-```text
-C:/Games/MyVXACEProject-project-index/
+```json
+{
+  "title": "Quest gate fix",
+  "changes": [
+    {
+      "kind": "script",
+      "script_path": "014_Quest_System.rb",
+      "search": "old exact block",
+      "replace": "reviewed replacement block",
+      "description": "Correct quest-state transition"
+    },
+    {
+      "kind": "event",
+      "locator": {"map_id": 17, "event_id": 4, "page": 3},
+      "proposal": {"intent": "advance verified quest state after reward"}
+    }
+  ]
+}
 ```
 
-Explicit output / Ruby path:
+Generate the plan:
 
 ```bash
-python tools/vxace_project_reader.py PROJECT \
-  --output "C:/Analysis/MyGame-index" \
-  --ruby /path/to/ruby
+python tools/vxace_patch_planner.py PROJECT_INDEX \
+  --project PROJECT \
+  --spec patch-spec.json \
+  --output patch-plan/
 ```
 
-Regenerate the codex independently from an existing index:
-
-```bash
-python tools/vxace_codex.py "C:/Analysis/MyGame-index"
-```
-
-Disable optional passes when needed:
-
-```bash
-python tools/vxace_project_reader.py PROJECT --no-compat --no-codex
-```
-
-## Generated structure
+Outputs:
 
 ```text
-project-index/
-├── manifest.json
-├── project.json
-├── database/
-├── maps/
-├── scripts/
-│   ├── order.json
-│   └── *.rb
-├── analysis/
-│   ├── switches.json
-│   ├── variables.json
-│   ├── self-switch-writes.json
-│   ├── common-event-callers.json
-│   ├── map-transfers.json
-│   ├── battle-troop-links.json
-│   ├── script-calls-from-events.json
-│   ├── event-references.json
-│   ├── script-compatibility.json
-│   └── script-compatibility.md
-└── codex/
-    ├── index.json
-    ├── systems.json
-    ├── state-machines.json
-    ├── graph.json
-    ├── maps.json
-    ├── scripts.json
-    └── summary.md
+patch-plan/
+├── plan.json
+└── plan.md
 ```
 
-## Evidence-first codex behavior
+If any source file has changed since indexing, the planner refuses with exit code `3` and requires re-indexing.
 
-The codex may safely say:
+## Full toolchain
 
-```text
-Variable 21 — QuestStage
-Observed values: 0, 2, 4
-Related Common Event: Advance Quest
-Confidence: high
+### Compatibility analyzer
+
+```bash
+python tools/rgss3_analyzer.py extracted-scripts/ \
+  --order scripts/order.json \
+  --json analysis/script-compatibility.json \
+  --markdown analysis/script-compatibility.md
 ```
 
-It must not turn those values into invented semantics such as `2 = boss defeated` unless actual project evidence supports that mapping.
+### Project Reader + Codex
 
-Use the codex to **route investigation**, then follow its evidence into exact map/event/page/common-event/script sources.
+```bash
+python tools/vxace_project_reader.py PROJECT
+```
+
+The reader creates normalized database/maps/scripts/analysis data and automatically generates the evidence-first codex unless disabled.
+
+### Project Codex only
+
+```bash
+python tools/vxace_codex.py PROJECT_INDEX
+```
+
+### Patch planner
+
+```bash
+python tools/vxace_patch_planner.py PROJECT_INDEX --project PROJECT --spec patch-spec.json --output patch-plan/
+```
 
 ## Safety model
 
-The toolchain remains read-only with respect to the source project.
-
-- project RGSS3 scripts are extracted but never executed;
+- project scripts are extracted but never executed;
 - `.rvdata2` is decoded through the inert Marshal bridge;
 - source files are hashed;
-- generated output is placed outside the source project;
+- generated indexes live outside the source project;
+- Codex inferences preserve evidence/confidence instead of inventing meanings;
+- patch plans require a fresh source/index match;
+- script patches use exact unique anchors;
+- event/database changes remain structural proposals;
 - no binary `.rvdata2` writer is enabled.
-
-v0.6 also fixes source/destination transfer provenance: the analysis preserves the event that initiates a transfer separately from the map it targets.
 
 ## Development layers
 
-1. **Engineering behavior** — strict VX Ace/RGSS3 scope and safe development procedure.
-2. **Engine knowledge** — class ownership, lifecycle, eventing, battle, UI, save/load.
-3. **Practical patterns** — native database/event architecture and escalation criteria.
-4. **Compatibility analysis** — RGSS3 class/method/load-order analysis.
-5. **Project Reader** — real project extraction and deterministic relationship indexes.
-6. **Project Codex** — evidence-first system/state/graph interpretation. **v0.6 is here.**
-7. **Project-aware patching** — reversible change plans/diffs/tests. Planned v0.7+.
+1. Engineering behavior and VX Ace scope.
+2. Engine architecture and lifecycle knowledge.
+3. Native event/database design patterns.
+4. RGSS3 compatibility analysis.
+5. Read-only Project Reader.
+6. Evidence-first Project Codex.
+7. Reversible project-aware patch planning. **v0.7 is here.**
+8. Verified mutation/round-trip editing only after safety gates are proven.
 
 ## Automated tests
 
-v0.6 currently has **26 passing tooling tests**:
-
-- 12 RGSS3 compatibility-analyzer tests;
-- 6 end-to-end Project Reader tests;
-- 8 Project Codex tests.
+The existing v0.6 toolchain has 26 analyzer/reader/codex tests. v0.7 adds **5 patch-planner tests** covering script diffs, stale-index refusal, structural-only event/database proposals, unique-anchor enforcement, and path-traversal rejection.
 
 Run all suites with:
 
@@ -135,18 +133,14 @@ Run all suites with:
 python tools/run_tests.py
 ```
 
-Coverage includes script extraction/order, inert Marshal decoding, RGSS `Table` normalization, event-reference indexing, variable operand/condition preservation, transfer provenance, name resolution, compatibility integration, source-project byte preservation, quest/state-machine inference, boss-gate detection, autorun-cutscene detection, map dependency views, script codex order/collisions, and evidence-only stage handling.
-
 ## Important limitations
 
-v0.6 remains intentionally conservative:
-
 - Ruby is still required for the current Marshal bridge;
-- event-command indexing does not yet cover every possible command/reference shape;
-- codex classification is heuristic and must be verified against source evidence;
+- codex classification is heuristic and evidence must be verified;
 - dynamic Ruby/metaprogramming can evade static analysis;
-- normalized JSON/codex data is for analysis, not binary round-trip editing;
+- the patch planner does not apply changes;
+- normalized JSON/codex data is not a binary editing format;
 - no writer modifies `.rvdata2` yet;
-- real-project validation is still required before v1.0.
+- real-project validation remains required before v1.0.
 
-See `references/project-reader.md`, `references/project-codex.md`, and `SOURCES.md`.
+See `references/project-reader.md`, `references/project-codex.md`, `references/patch-planning.md`, and `workflows/project-aware-patching.md`.
