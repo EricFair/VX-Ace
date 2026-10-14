@@ -148,6 +148,8 @@ Supported mutation includes uniquely anchored RGSS3 source replacement, existing
 
 Choose the owning runtime object, define old-save behavior, inspect other save hooks, test new game/save/load/old save, and never serialize transient graphics/windows/sprites. Current tooling does not edit save files.
 
+For a first playable feature, use [workflows/playable-slice-verification.md](workflows/playable-slice-verification.md). It covers separate delivery/test copies, actual defeat/retry and reward evidence, restart-based save checks, runtime map migration and scenery/passability review. [The Oakfall example](examples/oakfall/README.md) provides original RGSS3 code and bounded native evidence; its seed-specific IDs and data assumptions must be verified before staging.
+
 ## Source hierarchy
 
 1. current user project;
