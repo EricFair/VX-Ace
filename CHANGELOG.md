@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.8.0 — Verified mutation on disposable copies
+
+- Added `tools/rvdata2_mutator.rb`, a constrained Marshal mutator for supported VX Ace data structures.
+- Added normalized semantic inspection/hashing for `.rvdata2` objects.
+- Added exact no-op byte-identical round-trip verification before any staged mutation is allowed.
+- Added `tools/vxace_copy_patcher.py`, a transactional copy-only mutation workflow.
+- Source freshness now rejects changed, missing, and newly added files relative to the Project Reader manifest.
+- Added copy/audit containment checks and refusal to reuse existing output directories.
+- Added script archive mutation using verified Script Editor order plus an exact unique search anchor.
+- Added limited existing-field database mutation; unknown/new instance-variable fields are rejected.
+- Added limited existing event-command parameter mutation for map, common, and troop events.
+- Added source-project hash verification after staged mutation.
+- Failed mutation/re-index removes the partial staged project and retains `failure.json` in the audit directory.
+- Added automatic Project Reader re-indexing of successful staged copies by default.
+- Added `tools/vxace_index_diff.py` for normalized database/map/script/analysis/codex before/after comparison.
+- Added `references/copy-mutation.md` and `workflows/verified-copy-mutation.md`.
+- Added v0.8 mutation safety benchmark scenarios.
+- Added seven v0.8 mutation tests and wired `tests/mutation` into `tools/run_tests.py`.
+- Synthetic fixture `.rvdata2` files round-trip byte-identically in the new mutation tests.
+- Original source projects remain non-writable by the v0.8 workflow.
+
 ## 0.7.0 — Reversible project-aware patch planning
 
 - Added `tools/vxace_patch_planner.py`.
