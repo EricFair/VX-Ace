@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "_vendor"))
 from rpgvxace_mcp import marshal_rb
 from rpgvxace_mcp.rubytypes import RubyObject, RubyString, RubyHash, RubySymbol, Table, Color, Tone
 
-VERSION = "0.12.0"
+VERSION = "0.19.0"
 MAX_BYTES = 64 * 1024 * 1024
 
 
@@ -150,6 +150,9 @@ def apply(root, spec):
         old=root.get('version_id'); integer(old,'version id'); integer(mutation.get('expected_version'),'expected version')
         if old >= 2**31-1 or old != mutation.get('expected_version'): raise ValueError('Project version is stale or exhausted')
         root.set('version_id',old+1)
+    elif kind == 'map_region':
+        from vxace_map_regions import apply as region_apply
+        region_apply(root, mutation)
     elif kind == "database":
         owner = object_by_id(root, mutation["id"])
         field = mutation["field"]

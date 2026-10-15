@@ -22,7 +22,7 @@ Adopt useful capabilities incrementally under **our** rules: VX Ace first, fresh
 | Database entry creation/deletion | Deferred | Real-project production validation; dependency review; clone-only schema/type checks and rollback |
 | Event/page/command structural authoring and DSL | Partial in v0.12 | Guarded native command units and conditioned template pages implemented in our Python copy chain; broad DSL/branch/script authoring deferred. See `event-structure.md` and native evidence |
 | Map create/delete/resize and map-tree updates | Deferred | Multi-file clone transaction; tile preservation and reference linting; runtime checks |
-| Tile read/paint/fill and region-layer operations | v0.14: read-only tile/region diagnostics; painting deferred | Native Table shape, atlas/autotile routing, static flags; no tile writer or runtime movement proof |
+| Tile read/paint/fill and region-layer operations | v0.14: read-only tile/region diagnostics; v0.19: guarded existing region cells; graphic painting deferred | Exact native Table/current-region preconditions, editor IDs0..63, approved-byte preservation, impact, version reload and clone/native save tests; no graphic tile writer |
 | Script-slot creation/reordering | Deferred | Script order/dependencies/save hooks; unambiguous targets; compatibility and runtime tests |
 | Codec encoding preservation and code-page reporting | Codec bytes retained now; presentation later | UTF-8/CP932/CP1252 fixtures; explicit uncertainty; no guessed lossy conversion |
 | Per-file stale checks, backups, dry runs, logs | Retain our freshness/plans/audit/clone controls; adapt useful diagnostics | Do not replace source immutability with in-place backups or confuse per-file atomicity with whole-patch transactions |

@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v0.18.0
+# VX Ace Masterfile — v0.19.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -86,10 +86,17 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Dependency impact | Exact target review, event graph relationships, script collision and save-hook evidence; incomplete dependency coverage is disclosed |
 | Verified copy patching | Existing scalar database fields, existing map/common/troop command parameters and unique script replacements; backend-specific limits apply |
 | Guarded event structure | Python copy backend: atomic command insertion/deletion and conditioned same-owner map/troop page cloning/deletion; exact native hashes, repeating-trigger refusal, native project-version advancement, mandatory post-copy validation |
+| Guarded existing-map regions | Python copy backend: 1..256 unique cells, editor IDs0..63, exact native Table/current-region preconditions; preserve graphics/lower metadata/other fields, review encounter/script consumers, version advance and mandatory postgates |
 | Change review | Source hashes, before/after byte and semantic hashes, re-index, normalized diff, semantic Codex diff |
 | Actual editor/runtime verification | Structural edit/old-save evidence in v0.12; search locations, hidden page selection, terminating cutscene and counted autorun restart in `references/real-project-validation-v0.13.md` |
 
 ## Exact individual commands
+
+Capture exact native region preconditions before a reviewed Python copy patch (see [scope, spec and save requirements](references/map-region-editing.md)):
+
+```powershell
+python tools/vxace_map_regions.py PROJECT_INDEX --project PROJECT --map 1 --cell 8 6 --output NEW_EXTERNAL_SNAPSHOT
+```
 
 Launch the optional read-only MCP adapter from a compatible client with explicit paths (see [setup and protocol limits](references/mcp-read-only.md)):
 

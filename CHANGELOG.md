@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.19.0 — Guarded existing-map region cells
+
+- Add read-only native region snapshots and small `map_region`/`set_regions` operations through the explicit Python disposable-copy workflow; no graphic painting or map structure changes.
+- Require exact complete Table fingerprints, current-region preconditions, 1..256 unique cells and native editor IDs0..63. Preserve all graphic/lower-metadata bytes and unknown map fields/aliases; verify the candidate's exact approved changes.
+- Review native encounter region sets and bounded ordered-script mentions; require fresh evidence, complete project/target byte gates, impact, re-index/semantic diff, post-validation and selected-map audits. Regions and/or event structure advance the native project version once per transaction.
+- Native editor testing caught the difference between stored byte values and the editor's0..63 range. Verify the corrected overlay/runtime, unchanged older-save reload and engine save/full-process-restart load on private disposable copies; no save-file editing or general migration claim.
+- Add 14 region tests (294 total), including independent Ruby fixtures, mixed edits, exact preservation and full staged-copy rollback.
+
 ## 0.18.0 — Optional read-only MCP interface
 
 - Add a stdio-only MCP adapter over existing fresh-index APIs: project summary, bounded literal search and event/map/asset diagnostics, plus a fixed summary resource.

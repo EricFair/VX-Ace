@@ -5,7 +5,7 @@ description: Analyze, validate, debug, and safely stage RPG Maker VX Ace databas
 
 # RPG Maker VX Ace Developer
 
-Version: 0.18.0
+Version: 0.19.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -176,7 +176,9 @@ v0.17 adds optional [PNG header and default-layout observations](references/imag
 
 v0.18 adds an optional [read-only MCP adapter](references/mcp-read-only.md) for compatible clients. Configure explicit project/index paths; all five tools and the fixed summary resource recheck fresh evidence. It never exposes mutations, arbitrary file paths or project-code execution. The normal skill workflow does not require MCP.
 
-The expanded suite has 280 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
+v0.19 adds [guarded existing-map region edits](references/map-region-editing.md): 1..256 unique cells, native editor IDs 0..63, exact Table/current-region preconditions, approved-byte/unknown-field verification and mandatory Python copy/reindex/postgates. Review encounter/script consumers and test older-save map reload. Graphic tiles, shadows and map structure cannot be edited through this operation; master/MCP remain read-only.
+
+The expanded suite has 294 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
 
 Real-project evidence is recorded in [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md). It covers a small editor-produced project and disposable native map/common/battle/save scenarios; it does not establish compatibility with arbitrary customized games. Structural operations outside the documented subset remain disabled.
 

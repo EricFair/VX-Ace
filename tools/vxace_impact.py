@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, json
 from pathlib import Path
 
-VERSION = "0.12.0"
+VERSION = "0.19.0"
 DB_FILES = {
     "actors":"actors.json","classes":"classes.json","skills":"skills.json","items":"items.json",
     "weapons":"weapons.json","armors":"armors.json","enemies":"enemies.json","troops":"troops.json",
@@ -107,6 +107,63 @@ def database_impact(index, change):
     return {"kind":"database","target":target,"severity":"medium","dependencies":[],
             "limitations":["Current Project Codex does not yet build full database-object dependency edges; this is a verified direct target only."]}
 
+def region_impact(index, change):
+    from vxace_index_query import Index
+    from vxace_map_audit import audit
+    from vxace_map_regions import integer
+    loc=change.get('locator')
+    if not isinstance(loc,dict) or set(loc) != {'map_id'}:
+        raise ValueError('Region impact requires exact map_id locator')
+    mid=integer(loc['map_id'],'map ID',1,999999)
+    data=Index(index)
+    report=audit(data,mid)
+    if report['findings']:
+        raise ValueError('Region impact requires a clean selected-map tile audit')
+    root=data.json(f'maps/map-{mid:03d}.json')
+    from vxace_python_mutator import RubyObject, Table
+    from vxace_map_regions import apply as validate_regions
+    normalized=Table(root['width'],root['height'],4,dim=3,data=root['data']['data'])
+    validate_regions(RubyObject('RPG::Map',{'@width':root['width'],'@height':root['height'],'@data':normalized}),change.get('mutation'))
+    encounters=root.get('encounter_list')
+    if not isinstance(encounters,list) or len(encounters)>1000:
+        raise ValueError('Native encounter list missing/opaque or exceeds budget')
+    encounter_rows=[]
+    for number, encounter in enumerate(encounters):
+        if not isinstance(encounter,dict) or encounter.get('__class__')!='RPG::Map::Encounter':
+            raise ValueError('Opaque native encounter entry')
+        regions=encounter.get('region_set')
+        if not isinstance(regions,list) or len(regions)>256 or any(type(x) is not int or not 0<=x<=255 for x in regions):
+            raise ValueError('Opaque encounter region_set')
+        encounter_rows.append({'index':number,'troop_id':encounter.get('troop_id'),
+                               'weight':encounter.get('weight'),'region_set':regions})
+    evidence=[]; mentions=0
+    order=data.json('scripts/order.json')
+    if not isinstance(order,dict) or not isinstance(order.get('scripts'),list):
+        raise ValueError('Ordered script evidence required for region impact')
+    if 'script_count' in data.project and data.project['script_count']!=len(order['scripts']):
+        raise ValueError('Incomplete script order')
+    seen=set()
+    for script in order['scripts']:
+        if not isinstance(script,dict) or not isinstance(script.get('path'),str) or script['path'] in seen:
+            raise ValueError('Opaque/duplicate script order')
+        seen.add(script['path'])
+        file='scripts/'+script['path']
+        for line,text in enumerate(data.text(file).splitlines(),1):
+            data.spend()
+            if 'region_id' in text or 'region_set' in text:
+                mentions+=1
+                if len(evidence)<40:
+                    evidence.append({'file':file,'line':line,'excerpt':text[:200]})
+    data.unchanged()
+    return {'kind':'map_region','target':{'map_id':mid,'width':root['width'],'height':root['height']},
+            'severity':'high','requested_cells':change.get('mutation',{}).get('cells'),
+            'encounters':encounter_rows,'script_region_mentions':mentions,'script_evidence':evidence,
+            'script_evidence_truncated':mentions>len(evidence),
+            'limitations':['Region changes may change native encounter eligibility; review every region_set and custom region consumer.',
+                          'Literal script mentions include definitions/comments and may miss dynamic calls, note tags and external/custom region logic.',
+                          'Native old-save map reload and restart-based persistence testing remain required.']}
+
+
 def build(index: Path, spec_path: Path):
     spec=load(spec_path)
     if not isinstance(spec,dict) or not isinstance(spec.get("changes"),list) or not spec["changes"]:
@@ -122,6 +179,7 @@ def build(index: Path, spec_path: Path):
         if kind=="script": impacts.append(script_impact(index,scripts,change))
         elif kind=="event": impacts.append(event_impact(graph,maps,change,index))
         elif kind=="database": impacts.append(database_impact(index,change))
+        elif kind=='map_region': impacts.append(region_impact(index,change))
         else: raise ValueError(f"unsupported change kind: {kind}")
     high=sum(1 for x in impacts if x.get("severity")=="high")
     return {"impact_version":VERSION,"title":str(spec.get("title") or "VX Ace impact analysis"),"impact_count":len(impacts),

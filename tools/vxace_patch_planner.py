@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, difflib, hashlib, json, sys
 from pathlib import Path
 
-VERSION = "0.7.0"
+VERSION = "0.19.0"
 
 
 def sha256(path: Path) -> str:
@@ -73,7 +73,7 @@ def normalize_spec(spec: dict) -> dict:
         if not isinstance(raw, dict):
             raise ValueError(f"Change #{i} must be an object")
         kind = raw.get("kind")
-        if kind not in {"script", "event", "database"}:
+        if kind not in {"script", "event", "database", "map_region"}:
             raise ValueError(f"Change #{i} has unsupported kind: {kind}")
         item = dict(raw)
         if kind == "script":
@@ -85,6 +85,12 @@ def normalize_spec(spec: dict) -> dict:
             item["search"] = str(item["search"]); item["replace"] = str(item["replace"])
             if not item["search"]:
                 raise ValueError(f"Script change #{i} search block cannot be empty")
+        elif kind == 'map_region':
+            locator=item.get('locator')
+            if not isinstance(locator,dict) or set(locator) != {'map_id'} or type(locator['map_id']) is not int or not 1 <= locator['map_id'] <= 999999:
+                raise ValueError('Region change requires exact map_id locator')
+            if not item.get('proposal'):
+                raise ValueError('Region change requires proposal')
         elif kind == "event":
             locator = item.get("locator")
             if not isinstance(locator, dict) or not any(k in locator for k in ("map_id", "common_event_id", "troop_id")):
@@ -133,6 +139,10 @@ def regression_checks(changes: list[dict]) -> list[str]:
         checks += ["Test the affected event from a fresh map entry, repeated interaction, map transfer away/back, and save/load.","Confirm active event page/trigger and that autoruns terminate or parallels yield as designed."]
     if "database" in kinds:
         checks += ["Test every database object changed in the editor and in-game, including actor/enemy variants where applicable.","Confirm the change does not duplicate native trait/effect or damage-pipeline behavior."]
+    if 'map_region' in kinds:
+        checks += ['Review native encounter region sets and custom region consumers before staging.',
+                   'Verify the region overlay in VX Ace; test new game, older-save map reload and restart-based save/load.',
+                   'Confirm graphic layers and all lower metadata bytes are unchanged; no tile/region resizing is enabled.']
     checks.append("Re-run the Project Reader and compare the new index/codex against the pre-change snapshot.")
     return checks
 
