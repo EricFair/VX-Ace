@@ -25,10 +25,12 @@ FileUtils.mkdir_p(File.dirname(output)); File.binwrite(output, File.binread(inpu
 puts JSON.generate({'status'=>'ok'})
 """
 BRIDGE = """#!/usr/bin/env ruby
-require 'json'
+require 'json'; require 'digest'
 mode,path = ARGV
 abort 'bad mode' unless mode == 'scripts'
-puts JSON.generate({'scripts'=>[{'index'=>0,'name'=>'Good','source'=>\"class A\\nend\\n\"},{'index'=>1,'name'=>'Bad','source'=>\"class B\\n\"}]})
+scripts=[{'index'=>0,'name'=>'Good','source'=>\"class A\\nend\\n\"},{'index'=>1,'name'=>'Bad','source'=>\"class B\\n\"}]
+scripts.each {|s| s['source_bytes']=s['source'].bytesize; s['source_sha256']=Digest::SHA256.hexdigest(s['source']); s['utf8_decodable']=true }
+puts JSON.generate({'scripts'=>scripts})
 """
 
 class ValidatorTests(unittest.TestCase):
@@ -85,6 +87,7 @@ class ValidatorTests(unittest.TestCase):
         report = json.loads((out / "validation.json").read_text())
         self.assertTrue(report["copy_mutation_ready"])
         self.assertEqual(report["script_syntax"]["status"], "failed")
+        self.assertEqual(report["script_syntax"]["failed"], 1)
         self.assertFalse(report["script_syntax"]["ruby_19_compatibility_proven"])
 
     def test_empty_data_directory_is_error(self):

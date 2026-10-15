@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.22.0 — Exact and bounded host syntax diagnostics
+
+- Feed verified UTF-8 bytes directly to host syntax checks, preserving Windows CRLF and mixed endings; record source hashes/counts and refuse inconsistent metadata before parsing.
+- Bound bridge extraction to 30 seconds and each host parse to 10 seconds by default, with a standalone finite 0.1..60-second override. Report timeouts as failed diagnostics; retain the separate byte-round-trip readiness verdict.
+- Add seven regression tests (319 total) for exact parser inputs, integrity/path refusal, deadlines, invalid options and non-execution of authored script side effects.
+- Verify all 126 private seed parser-input hashes against native archive bytes. A deliberate modern-syntax fixture passes host Ruby and fails the actual VX Ace parser on a disposable copy, confirming why native testing remains mandatory; original hashes unchanged.
+
+
 ## 0.21.0 — Exact script bytes and honest extraction refusal
 
 - Preserve verified UTF-8 script bytes and original CRLF/LF/mixed line endings during export; record source SHA-256, byte/newline counts and UTF-8/ASCII observations in script order metadata.

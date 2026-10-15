@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v0.21.0
+# VX Ace Masterfile — v0.22.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 

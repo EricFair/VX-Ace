@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v0.21
+# RPG Maker VX Ace Developer — v0.22
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -7,6 +7,8 @@ Start with **[VXACE_MASTER.md](VXACE_MASTER.md)** for the complete settings, cap
 ```bash
 python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR
 ```
+
+v0.22 adds [exact and bounded host syntax diagnostics](references/project-validation.md): verified UTF-8 parser bytes and source hashes/counts, extraction/parser deadlines and explicit failures. Modern host parsing remains separate from byte readiness and native RGSS3 compatibility; a private native test confirms modern syntax can pass the host and fail VX Ace.
 
 v0.21 fixes [script source-byte fidelity on Windows](references/script-byte-fidelity.md), preserving line endings and verified UTF-8 bytes, recording hashes/counts and keeping multiline anchors exact. Invalid compressed or unsupported source text now produces extraction errors instead of lossy/placeholder code; partial extraction blocks copy mutation.
 
@@ -190,7 +192,7 @@ python tools/vxace_semantic_diff.py BEFORE_INDEX AFTER_INDEX --json semantic-dif
 
 ## Automated validation
 
-The v0.8 baseline had **38 tests**, v0.9 **45**, v0.10 **52**, v0.11 **136**, v0.12 **159**, v0.13 **184**, v0.14 **199**, v0.15 **219**, v0.16 **236**, v0.17 **254**, v0.18 **280**, v0.19 **294**, and v0.20 **307**. The v0.21 suite has **312 tests**, adding five exact script-byte/refusal checks. CI runs on Ubuntu and Windows; consult the latest Actions run for actual status and platform-specific skips.
+The v0.8 baseline had **38 tests**, v0.9 **45**, v0.10 **52**, v0.11 **136**, v0.12 **159**, v0.13 **184**, v0.14 **199**, v0.15 **219**, v0.16 **236**, v0.17 **254**, v0.18 **280**, v0.19 **294**, v0.20 **307**, and v0.21 **312**. The v0.22 suite has **319 tests**, adding seven exact host-parser integrity/deadline/non-execution checks. CI runs on Ubuntu and Windows; consult the latest Actions run for actual status and platform-specific skips.
 
 Run all suites with:
 

@@ -6,9 +6,9 @@ optionally checks extracted RGSS3 script syntax with the selected host Ruby.
 Never writes into the source project.
 """
 from __future__ import annotations
-import argparse, hashlib, json, shutil, subprocess, sys, tempfile
+import argparse, hashlib, json, math, shutil, subprocess, sys, tempfile
 from pathlib import Path
-VERSION = "0.11.0"
+VERSION = "0.22.0"
 
 def mutator_command(ruby, mutator, *args):
     return [sys.executable if mutator.suffix == '.py' else ruby, str(mutator), *map(str, args)]
@@ -37,7 +37,9 @@ def ensure_external_output(project, output):
     if output==project or project in output.parents: raise ValueError('Validation output must be outside the source project')
     return output
 
-def run(cmd): return subprocess.run(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,check=False)
+def run(cmd, timeout=None):
+    return subprocess.run(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,
+                          encoding='utf-8',errors='replace',check=False,timeout=timeout)
 def parse_json_stdout(proc):
     if proc.returncode: raise RuntimeError((proc.stderr or proc.stdout or 'tool failed').strip())
     try: return json.loads(proc.stdout or '{}')
@@ -53,22 +55,34 @@ def roundtrip_file(ruby, mutator, source, temp_dir):
     return {'path':source.name,'status':'pass' if src_hash==out_hash else 'failed','reason':'byte_identical' if src_hash==out_hash else 'byte_mismatch','source_sha256':src_hash,'roundtrip_sha256':out_hash,'byte_identical':src_hash==out_hash,'size':source.stat().st_size}
 
 def extract_scripts(ruby,bridge,scripts_file):
-    payload=parse_json_stdout(run([ruby,str(bridge),'scripts',str(scripts_file)])); scripts=payload.get('scripts')
+    payload=parse_json_stdout(run([ruby,str(bridge),'scripts',str(scripts_file)],timeout=30)); scripts=payload.get('scripts')
     if not isinstance(scripts,list): raise RuntimeError('Bridge response has no scripts array')
     return scripts
 
-def syntax_check_scripts(ruby,bridge,scripts_file,temp_dir):
+def syntax_check_scripts(ruby,bridge,scripts_file,temp_dir,syntax_timeout=10):
     try: scripts=extract_scripts(ruby,bridge,scripts_file)
     except Exception as e: return {'status':'failed','reason':'script_extraction_failed','error':str(e),'scripts':[]}
     temp_dir.mkdir(parents=True,exist_ok=True); results=[]; failures=0
     for item in scripts:
-        index=item.get('index'); name=str(item.get('name') or ''); source=str(item.get('source') or '')
-        if item.get('invalid_entry'):
-            failures+=1; results.append({'index':index,'name':name,'status':'failed','reason':'invalid_archive_entry'}); continue
-        script_path=temp_dir/f'script-{int(index):04d}.rb'; script_path.write_text(source,encoding='utf-8')
-        proc=run([ruby,'-c',str(script_path)]); ok=proc.returncode==0
+        index=item.get('index'); name=str(item.get('name') or '')
+        try:
+            if type(index) is not int or index < 0 or not isinstance(item.get('source'),str) or item.get('invalid_entry'):
+                raise ValueError('Invalid script archive entry')
+            raw=item['source'].encode('utf-8',errors='strict')
+            digest=hashlib.sha256(raw).hexdigest()
+            if item.get('source_bytes')!=len(raw) or item.get('source_sha256')!=digest or item.get('utf8_decodable') is not True:
+                raise ValueError('Script source metadata does not match exact UTF-8 bytes')
+        except (ValueError,UnicodeError) as error:
+            failures+=1; results.append({'index':index,'name':name,'status':'failed','reason':'source_integrity_failed','error':str(error)}); continue
+        script_path=temp_dir/f'script-{index:04d}.rb'; script_path.write_bytes(raw)
+        evidence={'source_sha256':digest,'source_bytes':len(raw),'exact_source_bytes':True}
+        try:
+            proc=run([ruby,'-c',str(script_path)],timeout=syntax_timeout)
+        except subprocess.TimeoutExpired:
+            failures+=1; results.append({'index':index,'name':name,'status':'failed','reason':'host_parse_timeout',**evidence}); continue
+        ok=proc.returncode==0
         failures += 0 if ok else 1
-        results.append({'index':index,'name':name,'status':'pass' if ok else 'failed','stdout':proc.stdout.strip(),'stderr':proc.stderr.strip()})
+        results.append({'index':index,'name':name,'status':'pass' if ok else 'failed','stdout':proc.stdout.strip(),'stderr':proc.stderr.strip(),**evidence})
     return {'status':'pass' if failures==0 else 'failed','checked':len(results),'failed':failures,'host_ruby_parse_only':True,'ruby_19_compatibility_proven':False,'scripts':results}
 
 def render_markdown(report):
@@ -88,7 +102,9 @@ def render_markdown(report):
     lines += ['','## Safety interpretation','', 'A project is copy-mutation-ready only when every discovered `.rvdata2` file round-trips byte-for-byte identically with the current mutator. This report never modifies the source project.','']
     return '\n'.join(lines)
 
-def validate(project_arg,output_arg,ruby_arg=None,mutator_arg=None,bridge_arg=None,skip_script_syntax=False,backend='ruby'):
+def validate(project_arg,output_arg,ruby_arg=None,mutator_arg=None,bridge_arg=None,skip_script_syntax=False,backend='ruby',syntax_timeout=10):
+    if isinstance(syntax_timeout,bool) or not isinstance(syntax_timeout,(int,float)) or not math.isfinite(syntax_timeout) or not 0.1 <= syntax_timeout <= 60:
+        raise ValueError('Syntax timeout must be finite and between 0.1 and 60 seconds')
     project=project_root(project_arg); output=ensure_external_output(project,Path(output_arg)); ruby=find_ruby(ruby_arg); tools=Path(__file__).resolve().parent
     if backend not in {'ruby','python'}: raise ValueError('Unknown backend')
     mutator=Path(mutator_arg).expanduser().resolve() if mutator_arg else tools/('vxace_python_mutator.py' if backend=='python' else 'rvdata2_mutator.rb'); bridge=Path(bridge_arg).expanduser().resolve() if bridge_arg else tools/'rvdata2_bridge.rb'
@@ -98,13 +114,14 @@ def validate(project_arg,output_arg,ruby_arg=None,mutator_arg=None,bridge_arg=No
     if not files: raise RuntimeError('No .rvdata2 files found in Data/')
     with tempfile.TemporaryDirectory(prefix='vxace-validate-') as td:
         temp=Path(td); file_results=[roundtrip_file(ruby,mutator,source,temp/'roundtrip') for source in files]; failures=[x for x in file_results if x['status']!='pass']; script_syntax=None; scripts_file=project/'Data'/'Scripts.rvdata2'
-        if not skip_script_syntax and scripts_file.is_file(): script_syntax=syntax_check_scripts(ruby,bridge,scripts_file,temp/'syntax')
+        if not skip_script_syntax and scripts_file.is_file(): script_syntax=syntax_check_scripts(ruby,bridge,scripts_file,temp/'syntax',syntax_timeout)
     report={'validator_version':VERSION,'backend':backend,'source_path_omitted':True,'source_project_modified':False,'copy_mutation_ready':len(failures)==0,'roundtrip':{'checked':len(file_results),'failed':len(failures),'files':file_results},'script_syntax':script_syntax,'limitations':['Host-Ruby syntax validation is not proof of RGSS3/Ruby 1.9.2 runtime behavior.','Byte-identical round-trip success applies only to files checked by this validator version and selected backend.','Real VX Ace runtime playtesting remains mandatory after any staged copy mutation.']}
     output.mkdir(parents=True,exist_ok=True); (output/'validation.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8'); (output/'validation.md').write_text(render_markdown(report),encoding='utf-8'); return report
 
 def main(argv=None):
-    ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('project'); ap.add_argument('--output',required=True); ap.add_argument('--ruby'); ap.add_argument('--mutator'); ap.add_argument('--bridge'); ap.add_argument('--skip-script-syntax',action='store_true'); ap.add_argument('--backend',choices=['ruby','python'],default='ruby'); args=ap.parse_args(argv)
-    try: report=validate(args.project,args.output,args.ruby,args.mutator,args.bridge,args.skip_script_syntax,args.backend)
+    ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('project'); ap.add_argument('--output',required=True); ap.add_argument('--ruby'); ap.add_argument('--mutator'); ap.add_argument('--bridge'); ap.add_argument('--skip-script-syntax',action='store_true'); ap.add_argument('--backend',choices=['ruby','python'],default='ruby')
+    ap.add_argument('--syntax-timeout',type=float,default=10,help='Per-script host parse deadline, 0.1..60 seconds (default: 10)'); args=ap.parse_args(argv)
+    try: report=validate(args.project,args.output,args.ruby,args.mutator,args.bridge,args.skip_script_syntax,args.backend,args.syntax_timeout)
     except Exception as e: print(f'error: {e}',file=sys.stderr); return 2
     print(json.dumps({'status':'ready' if report['copy_mutation_ready'] else 'refused','checked':report['roundtrip']['checked'],'failed':report['roundtrip']['failed'],'output':str(Path(args.output).expanduser().resolve())}))
     return 0 if report['copy_mutation_ready'] else 3
