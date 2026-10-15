@@ -21,7 +21,7 @@ Before any mutation, the copy patcher must:
 
 This is stricter than merely proving that Ruby can read and rewrite the file. Exact binary identity is the v0.8 admission requirement.
 
-This reference retains the v0.8 baseline contract. Current separately gated additions are [event structure](event-structure.md), [existing-map regions](map-region-editing.md), [inert key-item append](key-item-append.md), and [one native slot before canonical Main](script-slot-insertion.md). Those references define their narrower native schemas, Python-only selection and mandatory postgates; the historical v0.8 refusal list below does not enable or describe those later operations.
+This reference retains the v0.8 baseline contract. Current separately gated additions are [event structure](event-structure.md), [existing-map regions](map-region-editing.md), [inert key-item append](key-item-append.md), [one native slot before canonical Main](script-slot-insertion.md), and [ordinary upper B-E tiles](upper-tile-painting.md). Those references define their narrower native schemas, Python-only selection and mandatory postgates; the historical v0.8 refusal list below does not enable or describe those later operations.
 
 ## Supported mutations
 

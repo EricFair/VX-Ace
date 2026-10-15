@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "_vendor"))
 from rpgvxace_mcp import marshal_rb
 from rpgvxace_mcp.rubytypes import RubyObject, RubyString, RubyHash, RubySymbol, Table, Color, Tone
 
-VERSION = "0.24.0"
+VERSION = "0.25.0"
 MAX_BYTES = 64 * 1024 * 1024
 
 
@@ -142,7 +142,7 @@ def command_holder(root, mutation):
     return pages[index]
 
 
-def apply(root, spec):
+def apply(root, spec, *, source_path=None):
     mutation = spec["mutation"]
     kind = spec["type"]
     if kind == 'system_version':
@@ -150,6 +150,15 @@ def apply(root, spec):
         old=root.get('version_id'); integer(old,'version id'); integer(mutation.get('expected_version'),'expected version')
         if old >= 2**31-1 or old != mutation.get('expected_version'): raise ValueError('Project version is stale or exhausted')
         root.set('version_id',old+1)
+    elif kind == 'map_tile':
+        from vxace_index_query import unlinked
+        if source_path is None:raise ValueError('Upper tile writes require an actual native project source path')
+        source_file=unlinked(source_path)
+        context=spec.get('context')
+        if source_file.parent.name!='Data' or not re.fullmatch(r'Map\d{3,6}\.rvdata2',source_file.name) or not isinstance(context,dict) or set(context)!={'rtp'} or (context['rtp'] is not None and not isinstance(context['rtp'],str)):
+            raise ValueError('Upper tile native path/explicit asset context is unsupported')
+        from vxace_upper_tiles import apply as paint_upper_tiles
+        paint_upper_tiles(root,mutation,source_file.parent.parent,context['rtp'])
     elif kind == 'map_region':
         from vxace_map_regions import apply as region_apply
         region_apply(root, mutation)
@@ -263,7 +272,7 @@ def main(argv=None):
             if Path(args[1]).resolve() == Path(args[2]).resolve():
                 raise ValueError("Input and output must differ")
             if args[0] == "mutate":
-                apply(root, json.loads(Path(args[3]).read_text(encoding="utf-8")))
+                apply(root, json.loads(Path(args[3]).read_text(encoding="utf-8")),source_path=args[1])
             write(root, args[2])
             result = {"status": "ok", "backend": "python", "version": VERSION}
         print(json.dumps(result, ensure_ascii=True))

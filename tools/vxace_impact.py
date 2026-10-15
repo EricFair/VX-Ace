@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, json
 from pathlib import Path
 
-VERSION = "0.24.0"
+VERSION = "0.25.0"
 DB_FILES = {
     "actors":"actors.json","classes":"classes.json","skills":"skills.json","items":"items.json",
     "weapons":"weapons.json","armors":"armors.json","enemies":"enemies.json","troops":"troops.json",
@@ -266,6 +266,42 @@ def slot_impact(index,change):
                           'Review native compilation, editor order, new game, unchanged older saves and restart-based persistence.']}
 
 
+def upper_tile_impact(index,change):
+    from vxace_index_query import Index
+    from vxace_upper_tiles import schema,coordinates
+    from vxace_search import search
+    locator=change.get('locator');mutation=change.get('mutation');schema(mutation)
+    if not isinstance(locator,dict) or set(locator)!={'map_id'}:raise ValueError('Upper tile impact requires exact map_id locator')
+    from vxace_map_regions import integer
+    mid=integer(locator['map_id'],'map ID',1,999999)
+    data=Index(index);native=data.json(f'maps/map-{mid:03d}.json')
+    if not isinstance(native,dict) or native.get('__class__')!='RPG::Map':raise ValueError('Indexed native map required')
+    width=integer(native.get('width'),'map width',1,500);height=integer(native.get('height'),'map height',1,500)
+    table=native.get('data')
+    if not isinstance(table,dict) or table.get('__class__')!='Table' or (table.get('dimensions'),table.get('xsize'),table.get('ysize'),table.get('zsize'))!=(3,width,height,4) or len(table.get('data',[]))!=width*height*4:
+        raise ValueError('Complete indexed native map Table required')
+    rows=[];seen=set()
+    for cell in mutation['cells']:
+        if not isinstance(cell,dict) or set(cell)!={'x','y','expected_tile','value'}:raise ValueError('Unsupported upper tile impact cell')
+        x=integer(cell['x'],'cell x',0,width-1);y=integer(cell['y'],'cell y',0,height-1)
+        if (x,y) in seen:raise ValueError('Duplicate upper tile impact cell')
+        seen.add((x,y));old=integer(cell['expected_tile'],'expected B-E tile',0,1023);value=integer(cell['value'],'new B-E tile',0,1023)
+        if table['data'][x+y*width+2*width*height]!=old or old==value:raise ValueError('Stale or no-op upper tile impact precondition')
+        rows.append({'x':x,'y':y,'layer':2,'before':old,'after':value})
+    if not 1<=len(rows)<=256:raise ValueError('Upper tile impact cell budget exceeded')
+    mentions=[]
+    for marker in ('$data_map','tile_id','layered_tiles','passable?','check_passage','terrain_tag','ladder?','bush?','counter?','damage_floor?'):
+        result=search(data,query=marker,scopes=('scripts','events'),limit=10)
+        mentions.append({'literal':marker,'matches':result['matches'],'evidence':result['hits'],'truncated':result['truncated']})
+    data.unchanged()
+    return {'kind':'map_tile','severity':'high','target':{'map_id':mid,'tileset_id':native.get('tileset_id'),'layer':2},
+            'cells':rows,'tile_consumer_mentions':mentions,
+            'limitations':['Terrain/passability/star/ladder/bush/counter/damage-floor semantics depend on selected native tileset flags and runtime consumers.',
+                          'Literal mentions include definitions/comments and can miss dynamic map replacement or event collision effects.',
+                          'Native Table/tileset/asset hashes and image layout are checked separately by the guarded copy backend.',
+                          'Review native editor rendering, actor passage, old-save map reload and restart-based persistence.']}
+
+
 def build(index: Path, spec_path: Path):
     spec=load(spec_path)
     if not isinstance(spec,dict) or not isinstance(spec.get("changes"),list) or not spec["changes"]:
@@ -284,6 +320,7 @@ def build(index: Path, spec_path: Path):
         elif kind=='map_region': impacts.append(region_impact(index,change))
         elif kind=='database_entry': impacts.append(entry_impact(index,change))
         elif kind=='script_slot': impacts.append(slot_impact(index,change))
+        elif kind=='map_tile': impacts.append(upper_tile_impact(index,change))
         else: raise ValueError(f"unsupported change kind: {kind}")
     high=sum(1 for x in impacts if x.get("severity")=="high")
     return {"impact_version":VERSION,"title":str(spec.get("title") or "VX Ace impact analysis"),"impact_count":len(impacts),

@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v0.24
+# RPG Maker VX Ace Developer — v0.25
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -7,6 +7,8 @@ Start with **[VXACE_MASTER.md](VXACE_MASTER.md)** for the complete settings, cap
 ```bash
 python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR
 ```
+
+v0.25 adds [guarded ordinary upper-layer scenery painting](references/upper-tile-painting.md): exact native map/tileset/asset bindings, bounded B–E cells, preserved ground/shadow/region bytes and mandatory Python copy/postgates. Disposable native editor, blocked/passable movement, unchanged older-save map reload and process-restart checks passed. Ground/autotile painting, fills and map creation remain deferred.
 
 v0.24 adds [one guarded native script slot before canonical Main](references/script-slot-insertion.md): fresh archive/anchor hashes, explicit unused ID/unique name, exact UTF-8 source, complete preservation of old entries/order/bytes, proposed-code impact and mandatory Python copy/postgates. Native editor/compiler/startup/older-save/restart checks passed on disposable copies. Reordering, deletion and customized Main anchors remain disabled.
 
@@ -196,7 +198,7 @@ python tools/vxace_semantic_diff.py BEFORE_INDEX AFTER_INDEX --json semantic-dif
 
 ## Automated validation
 
-The v0.8 baseline had **38 tests**, v0.9 **45**, v0.10 **52**, v0.11 **136**, v0.12 **159**, v0.13 **184**, v0.14 **199**, v0.15 **219**, v0.16 **236**, v0.17 **254**, v0.18 **280**, v0.19 **294**, v0.20 **307**, v0.21 **312**, v0.22 **319**, and v0.23 **336**. The v0.24 suite has **352 tests**, adding 14 slot/preservation/impact/copy tests and two planner-output safety checks. CI runs on Ubuntu and Windows; consult the latest Actions run for actual status and platform-specific skips.
+The v0.8 baseline had **38 tests**, v0.9 **45**, v0.10 **52**, v0.11 **136**, v0.12 **159**, v0.13 **184**, v0.14 **199**, v0.15 **219**, v0.16 **236**, v0.17 **254**, v0.18 **280**, v0.19 **294**, v0.20 **307**, v0.21 **312**, v0.22 **319**, v0.23 **336**, and v0.24 **352**. The v0.25 suite has **364 tests**, adding 12 upper-tile preservation, asset-binding, refusal, impact and copy checks. CI runs on Ubuntu and Windows; consult the latest Actions run for actual status and platform-specific skips.
 
 Run all suites with:
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, difflib, hashlib, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
-VERSION='0.24.0'
+VERSION='0.25.0'
 def mutator_command(ruby, mutator, *args):
     return [sys.executable if mutator.suffix == '.py' else ruby, str(mutator), *map(str, args)]
 DB_FILES={'actors':'Actors.rvdata2','classes':'Classes.rvdata2','skills':'Skills.rvdata2','items':'Items.rvdata2','weapons':'Weapons.rvdata2','armors':'Armors.rvdata2','enemies':'Enemies.rvdata2','troops':'Troops.rvdata2','states':'States.rvdata2','animations':'Animations.rvdata2','tilesets':'Tilesets.rvdata2','common-events':'CommonEvents.rvdata2','common_events':'CommonEvents.rvdata2','system':'System.rvdata2','map-infos':'MapInfos.rvdata2','map_infos':'MapInfos.rvdata2'}
@@ -97,6 +97,14 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             out.append({'kind':'database_entry','target':'Data/Items.rvdata2',
                         'ruby_spec':{'type':'database_entry','mutation':mut},'description':c.get('description',''),
                         'locator':loc,'mutation':mut})
+        elif kind=='map_tile':
+            from vxace_upper_tiles import FIELDS,integer
+            if not isinstance(loc,dict) or set(loc)!={'map_id'}:raise ValueError('Upper tile locator must contain exactly map_id')
+            mid=integer(loc['map_id'],'map ID',1,999999)
+            if not isinstance(mut,dict) or set(mut)!=FIELDS or mut.get('action')!='paint_upper_tiles':raise ValueError('Upper tile edits require the exact paint_upper_tiles schema')
+            out.append({'kind':'map_tile','target':f'Data/Map{mid:03d}.rvdata2',
+                        'ruby_spec':{'type':'map_tile','mutation':mut},'description':c.get('description',''),
+                        'locator':loc,'mutation':mut})
         elif kind=='map_region':
             from vxace_map_regions import integer
             if not isinstance(loc,dict) or set(loc) != {'map_id'}:
@@ -161,6 +169,15 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         from vxace_database_entries import snapshot as entry_snapshot
         before_entry_root=load(target)[0]
         before_entry=entry_snapshot(before_entry_root,mutation['template_id'])
+    before_tile_root=None
+    if change['kind']=='map_tile':
+        from vxace_python_mutator import load
+        from vxace_upper_tiles import snapshot as upper_snapshot
+        before_tile_root=load(target)[0]
+        tile_cells=[{'x':c['x'],'y':c['y']} for c in mutation['cells']]
+        tile_values=sorted({c['value'] for c in mutation['cells']})
+        tile_rtp=change['ruby_spec']['context']['rtp']
+        before_tiles=upper_snapshot(before_tile_root,copy_root,tile_cells,tile_values,tile_rtp)
     before_slot_root=None
     if change['kind']=='script_slot':
         from vxace_python_mutator import load
@@ -178,12 +195,20 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if change['kind']=='database_entry':
         from vxace_database_entries import verify_transition as verify_entry
         verify_entry(before_entry_root,load(tmp)[0],mutation)
+    if change['kind']=='map_tile':
+        from vxace_upper_tiles import verify_transition as verify_upper
+        verify_upper(before_tile_root,load(tmp)[0],mutation)
     if change['kind']=='script_slot':
         from vxace_script_slots import verify_transition as verify_slot
         verify_slot(before_slot_root,load(tmp)[0],mutation)
     if before_sem==after_sem: raise RuntimeError(f'mutation produced no semantic change: {rel}')
     os.replace(tmp,target)
     rec={'kind':change['kind'],'target':rel,'description':change.get('description',''),'before_sha256':before_raw,'after_sha256':after_raw,'before_semantic_sha256':before_sem,'after_semantic_sha256':after_sem}
+    if change['kind']=='map_tile':
+        after_tiles=upper_snapshot(load(target)[0],copy_root,tile_cells,tile_values,tile_rtp)
+        rec['upper_tiles']={'locator':change['locator'],'before':before_tiles,'after':after_tiles,
+                            'only_approved_upper_bytes_changed':True,'ground_regions_shadows_other_fields_unchanged':True}
+        rec['diff']=''.join(difflib.unified_diff(json.dumps(before_tiles,indent=2).splitlines(True),json.dumps(after_tiles,indent=2).splitlines(True),fromfile='source-upper-tiles',tofile='staged-upper-tiles'))
     if structural_action:
         after_structure=structural_snapshot(target,True)
         rec['structural']={'action':mutation['action'],'locator':change['locator'],'before':before_structure,'after':after_structure}
@@ -222,9 +247,14 @@ def render_audit(a:dict)->str:
     lines += ['## Rollback','','Delete the staged project copy. The original source project was not modified.','']
     return '\n'.join(lines)
 
-def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,ruby:str,mutator:Path,reader:Path|None,diff_tool:Path|None,no_reindex:bool=False)->dict:
+def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,ruby:str,mutator:Path,reader:Path|None,diff_tool:Path|None,no_reindex:bool=False,rtp:Path|None=None)->dict:
     index=index.resolve(); project=project.resolve(); copy_root=copy_root.resolve(); audit_dir=audit_dir.resolve()
     if not (project/'Data').is_dir(): raise ValueError('source is not a VX Ace project (missing Data/)')
+    if rtp is not None:
+        from vxace_index_query import unlinked
+        rtp=unlinked(rtp)
+        if any(path==rtp or rtp in path.parents for path in (copy_root,audit_dir)):
+            raise ValueError('Copy and audit outputs must be outside read-only RTP')
     if project==copy_root or project in copy_root.parents: raise ValueError('copy destination may not be inside source project')
     if project==audit_dir or project in audit_dir.parents: raise ValueError('audit destination may not be inside source project')
     if copy_root==audit_dir or copy_root in audit_dir.parents or audit_dir in copy_root.parents: raise ValueError('copy and audit destinations must be separate non-nested paths')
@@ -242,8 +272,27 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
     regions=[c for c in changes if c['kind']=='map_region']
     entries=[c for c in changes if c['kind']=='database_entry']
     slots=[c for c in changes if c['kind']=='script_slot']
-    reload_required=bool(structural or regions)
+    upper_tiles=[c for c in changes if c['kind']=='map_tile']
+    reload_required=bool(structural or regions or upper_tiles)
     post_required=bool(reload_required or entries or slots)
+    if upper_tiles:
+        if len({c['target'] for c in upper_tiles})!=len(upper_tiles) or any(sum(other['target']==c['target'] for other in changes)!=1 for c in upper_tiles):
+            raise ValueError('Use one upper tile operation per map without other mutations to that map')
+        if no_reindex or mutator.resolve()!=(Path(__file__).resolve().parent/'vxace_python_mutator.py'):
+            raise ValueError('Upper tile edits require the explicit Python backend and mandatory post-copy re-indexing')
+        from vxace_upper_tiles import apply as upper_apply,indexed_snapshot as upper_indexed_snapshot
+        from vxace_index_query import Index,unlinked
+        from vxace_python_mutator import load
+        from vxace_map_audit import audit as map_audit
+        for c in upper_tiles:
+            cells=[{'x':cell['x'],'y':cell['y']} for cell in c['mutation']['cells']]
+            values=sorted({cell['value'] for cell in c['mutation']['cells']})
+            tile_data=Index(index)
+            upper_indexed_snapshot(tile_data,project,c['locator']['map_id'],cells,values,rtp)
+            if map_audit(tile_data,c['locator']['map_id'])['findings']:raise ValueError('Selected map has unresolved native tile diagnostics')
+            tile_data.unchanged()
+            upper_apply(load(unlinked(project/c['target']))[0],c['mutation'],project,rtp)
+            c['ruby_spec']['context']={'rtp':str(rtp) if rtp else None}
     if slots:
         if len(slots)!=1 or any(c['target']=='Data/Scripts.rvdata2' and c['kind']!='script_slot' for c in changes):
             raise ValueError('Insert one script slot per transaction without other Scripts mutations')
@@ -335,12 +384,16 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
                 if p.returncode: raise RuntimeError('structural semantic verification failed: '+p.stderr.strip())
                 post_validation=validate(copy_root,audit_dir/'post-validation',ruby,mutator,skip_script_syntax=True,backend='python')
                 if not post_validation['copy_mutation_ready']: raise RuntimeError('post-copy project validation failed')
-                if regions:
+                if regions or upper_tiles:
                     from vxace_map_audit import audit as map_audit
                     from vxace_index_query import Index
-                    reports=[map_audit(Index(post),c['locator']['map_id']) for c in regions]
+                    reports=[map_audit(Index(post),c['locator']['map_id']) for c in regions+upper_tiles]
                     if any(r['findings'] for r in reports): raise RuntimeError('post-copy selected-map tile audit failed')
                     dump_json(audit_dir/'post-map-audit.json',reports)
+        if upper_tiles:
+            from vxace_upper_tiles import asset_context
+            from vxace_python_mutator import load
+            for c in upper_tiles:asset_context(load(copy_root/c['target'])[0],c['mutation'],copy_root,rtp)
         if current_inventory(project)!=source_before: raise RuntimeError('SOURCE_CHANGED: source changed during final verification')
         result={'version':VERSION,'title':str(spec.get('title') or 'VX Ace staged patch'),'status':'ok','source_project_omitted_from_persistent_output':True,'freshness':freshness,'roundtrip_preflight':preflights,'changes':applied,'source_integrity_after':source_integrity,'copy_path':str(copy_root),'reindex':reindex,'index_diff':index_diff,'rollback':{'strategy':'delete staged project copy','source_project_modified':False}}
         dump_json(audit_dir/'audit.json',result); (audit_dir/'audit.md').write_text(render_audit(result),encoding='utf-8')
@@ -357,11 +410,11 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
 
 def main(argv=None)->int:
     here=Path(__file__).resolve().parent
-    ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('index'); ap.add_argument('--project',required=True); ap.add_argument('--spec',required=True); ap.add_argument('--copy',required=True); ap.add_argument('--audit',required=True); ap.add_argument('--ruby',default=shutil.which('ruby')); ap.add_argument('--mutator'); ap.add_argument('--backend',choices=['ruby','python'],default='ruby'); ap.add_argument('--reader',default=str(here/'vxace_project_reader.py')); ap.add_argument('--diff-tool',default=str(here/'vxace_index_diff.py')); ap.add_argument('--no-reindex',action='store_true'); a=ap.parse_args(argv)
+    ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('index'); ap.add_argument('--project',required=True); ap.add_argument('--spec',required=True); ap.add_argument('--copy',required=True); ap.add_argument('--audit',required=True); ap.add_argument('--ruby',default=shutil.which('ruby')); ap.add_argument('--mutator'); ap.add_argument('--backend',choices=['ruby','python'],default='ruby'); ap.add_argument('--reader',default=str(here/'vxace_project_reader.py')); ap.add_argument('--diff-tool',default=str(here/'vxace_index_diff.py')); ap.add_argument('--no-reindex',action='store_true'); ap.add_argument('--rtp'); a=ap.parse_args(argv)
     if a.mutator is None: a.mutator=str(here/('vxace_python_mutator.py' if a.backend=='python' else 'rvdata2_mutator.rb'))
     try:
         if not a.ruby: raise ValueError('Ruby not found; pass --ruby PATH')
-        r=build(Path(a.index),Path(a.project),Path(a.spec),Path(a.copy),Path(a.audit),a.ruby,Path(a.mutator),Path(a.reader),Path(a.diff_tool),a.no_reindex)
+        r=build(Path(a.index),Path(a.project),Path(a.spec),Path(a.copy),Path(a.audit),a.ruby,Path(a.mutator),Path(a.reader),Path(a.diff_tool),a.no_reindex,Path(a.rtp) if a.rtp else None)
     except RuntimeError as e:
         msg=str(e)
         reason='stale_index' if msg.startswith('STALE_INDEX:') else ('source_changed' if msg.startswith('SOURCE_CHANGED:') else 'runtime_error')
