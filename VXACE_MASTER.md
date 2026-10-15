@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v1.2.0
+# VX Ace Masterfile — v1.3.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -222,6 +222,10 @@ python tools/run_tests.py
 CI runs on Ubuntu and Windows with Python 3.11 and Ruby 3.2. Local release validation uses Python 3.12.14 and portable Ruby 3.2.11 on Windows. Executable tests cover both narrow writer backends, project gates, conformance, master policy, the generated fixture and existing analysis/planning workflows. See the versioned evidence document for actual counts and outcomes.
 
 A release is complete when its documented scope is implemented, tests pass, real-project evidence is recorded honestly, original hashes are unchanged, staged edits are reviewed/tested, and the repository is updated. This is not a claim that every upstream feature or all possible VX Ace projects are supported.
+
+## Comparing observed schemas
+
+For custom class/field/type observations relative to an explicit baseline project, use [the read-only schema comparison](references/schema-comparison.md). Both project/index pairs must be fresh and reports external. Review exact evidence and content coverage; differences do not authorize unknown writes. The standalone comparison leaves master policy and MCP unchanged.
 
 ## Blank-map creation
 

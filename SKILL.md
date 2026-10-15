@@ -5,7 +5,7 @@ description: Analyze, validate, debug, and safely stage RPG Maker VX Ace databas
 
 # RPG Maker VX Ace Developer
 
-Version: 1.2.0
+Version: 1.3.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -182,7 +182,7 @@ v0.20 adds [append-only inert native key items](references/key-item-append.md) f
 
 v0.21 fixes [exact UTF-8 script exports and multiline anchors](references/script-byte-fidelity.md), preserving original line-ending bytes on Windows and recording source hashes/counts. Re-index old evidence; construct exact anchors from byte-preserving UTF-8 reads. Invalid compressed/non-UTF-8 source refuses complete extraction rather than producing lossy text or placeholder code; extraction errors block copy admission.
 
-The expanded suite has 420 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
+The expanded suite has 431 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
 
 Real-project evidence is recorded in [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md). It covers a small editor-produced project and disposable native map/common/battle/save scenarios; it does not establish compatibility with arbitrary customized games. Structural operations outside the documented subset remain disabled.
 
@@ -201,6 +201,9 @@ For a visible new dialogue NPC, v0.27 adds [optional bound character graphics](r
 For native one-time map rewards, v1.0 adds [guarded constant gold/item grants](references/one-time-event-rewards.md). Require an exact blank lower page and a higher literal-only self-switch page, native Items/hash/context checks, one change per Python copy transaction and final context/candidate postgates. Native caps and external self-switch/gain/save hooks remain project-specific concerns; test grant, repeat interaction, inventory, old save and restart.
 
 ## Release scope
+
+v1.3 adds [baseline-relative observed schema comparison](references/schema-comparison.md). Supply two explicitly chosen fresh project/index pairs; review target-only classes/fields, absent observations and changed normalized type sets with exact evidence. Content coverage can explain differences; the result never supplies a universal schema, declares unknown fields safe/invalid, executes scripts or authorizes mutation. Both sources/read indexes and resource limits are checked.
+
 
 v1.2 adds [one guarded blank-map append](references/blank-map-append.md). Bind actual native template/tree/inventory/tileset hashes, use the next maximum static ID and an inert template, preserve all existing maps/tree entries/System and create an empty event hash. Require the explicit Python single-change copy chain and mandatory postgates. Review dynamic map/save consumers and test native editor, transfer, collision-aware movement, old save and full-process restart. No resize/delete/reparent/ID reuse or transfer authoring is enabled.
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0 — Baseline-relative observed schema comparison
+
+- Add a standalone bounded read-only comparison of class/field/normalized-type observations against an explicitly selected fresh baseline, with exact evidence and object/field/type counts on both sides.
+- Bind both manifests and source inventories, refuse stale/incomplete/linked/changed inputs or contained/existing outputs, and bound traversal/evidence/source reads/report size. No automatic compatibility verdict, field repair or new write capability.
+- Add 11 focused tests (431 total), a private native-project no-shape-drift comparison and an independent authored Ruby custom-field fixture. See [commands, evidence and limits](references/schema-comparison.md).
+
 ## 1.2.0 — Guarded blank-map append
 
 - Append one root-level empty map from exact inert native template/tree/inventory/tileset context, next maximum static ID and unique literal name. Preserve existing maps, tree entries, System/version and saves.

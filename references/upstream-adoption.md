@@ -13,7 +13,7 @@ Adopt useful capabilities incrementally under **our** rules: VX Ace first, fresh
 | Capability missing or narrower here | Adoption decision | Acceptance evidence |
 | --- | --- | --- |
 | Python-native Marshal codec and opaque values | Batch 1: isolated read-only codec audit, implemented | Pinned conformance suite; refusal and immutability tests; then cross-backend and real-project comparisons |
-| Observed per-project schema, unknown-field reporting | v0.11: observed class/field/type report; unknown-field classification remains future work | Compare observations against fresh normalized data; preserve evidence paths and unknowns |
+| Observed per-project schema, unknown-field reporting | v0.11: observed class/field/type report; v1.3: baseline-relative class/field/type comparison; universal unknown-field classification remains future work | Compare both fresh project/index pairs with exact evidence, coverage caveats, source/index integrity and fixed budgets; differences never authorize unknown writes |
 | Broken-reference and transfer-coordinate linting | v0.11: direct transfer, common-event and troop reference checks | Known-valid/invalid project fixtures; variable-designated transfers distinguished from direct transfers |
 | RTP-aware graphics/audio validation, case mismatches | v0.15: read-only presence/casing; v0.17: optional PNG header/layout observations | Explicit external RTP; absent RTP remains uncertain; bounded header checks and native frame comparisons; full decoding/dynamic assets deferred |
 | Event-page shadowing, autorun and label linting | v0.13: conservative read-only batch | Complete flags, highest unconditional map page, local labels and continuations; native cutscene/shadow fixtures, opaque behavior disclosed |

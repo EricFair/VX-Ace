@@ -78,3 +78,6 @@ Validated against the full competency benchmark and real VX Ace projects with do
 ## Released post-1.0 milestones
 
 v1.0 and v1.1 are complete releases. v1.2 is the separately bounded [blank-map append](references/blank-map-append.md) milestone. Broader map operations remain future work; they never reopen the closed v1.0 scope.
+
+
+v1.2 is complete. v1.3 separately adds [read-only baseline-relative schema comparison](references/schema-comparison.md), without widening mutation or reopening earlier release scope.
