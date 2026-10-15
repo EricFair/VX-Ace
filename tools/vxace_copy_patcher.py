@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, difflib, hashlib, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
-VERSION='0.27.0'
+VERSION='1.0.0'
 def mutator_command(ruby, mutator, *args):
     return [sys.executable if mutator.suffix == '.py' else ruby, str(mutator), *map(str, args)]
 DB_FILES={'actors':'Actors.rvdata2','classes':'Classes.rvdata2','skills':'Skills.rvdata2','items':'Items.rvdata2','weapons':'Weapons.rvdata2','armors':'Armors.rvdata2','enemies':'Enemies.rvdata2','troops':'Troops.rvdata2','states':'States.rvdata2','animations':'Animations.rvdata2','tilesets':'Tilesets.rvdata2','common-events':'CommonEvents.rvdata2','common_events':'CommonEvents.rvdata2','system':'System.rvdata2','map-infos':'MapInfos.rvdata2','map_infos':'MapInfos.rvdata2'}
@@ -152,6 +152,12 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     before_raw=sha256(target); before_sem=inspect_file(ruby,mutator,target)['semantic_sha256']
     mutation=change.get('ruby_spec',{}).get('mutation',{})
     structural_action=mutation.get('action') in {'insert_commands','delete_commands','insert_page','delete_page'}
+    from vxace_event_rewards import has_rewards
+    reward_root=None
+    if structural_action and has_rewards(mutation):
+        from vxace_python_mutator import load
+        from vxace_event_rewards import validate as validate_rewards
+        reward_root=load(target)[0];reward_evidence=validate_rewards(reward_root,mutation,target)
     def structural_snapshot(file,after=False):
         from vxace_python_mutator import load,object_by_id
         from vxace_event_structure import snapshot,owner_for
@@ -203,6 +209,9 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     p=run(mutator_command(ruby,mutator,'mutate',target,tmp,specfile))
     if p.returncode: raise RuntimeError(f'mutation failed for {rel}: {p.stderr.strip()}')
     after_sem=inspect_file(ruby,mutator,tmp)['semantic_sha256']; after_raw=sha256(tmp)
+    if reward_root is not None:
+        from vxace_event_rewards import verify_transition as verify_rewards
+        verify_rewards(reward_root,load(tmp)[0],mutation,target)
     if region_cells:
         from vxace_map_regions import verify_transition
         verify_transition(before_region_root,load(tmp)[0],mutation)
@@ -221,6 +230,7 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if before_sem==after_sem: raise RuntimeError(f'mutation produced no semantic change: {rel}')
     os.replace(tmp,target)
     rec={'kind':change['kind'],'target':rel,'description':change.get('description',''),'before_sha256':before_raw,'after_sha256':after_raw,'before_semantic_sha256':before_sem,'after_semantic_sha256':after_sem}
+    if reward_root is not None:rec['one_time_rewards']={**reward_evidence,'only_approved_native_map_change':True}
     if change['kind']=='map_event':
         rec['map_event']={'before':before_event,'after':event_snapshot(load(target)[0],mutation['template_id']),
                           'new_id':mutation['new_id'],'name':mutation['name'],'x':mutation['x'],'y':mutation['y'],
@@ -291,6 +301,14 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
     source_before=current_inventory(project)
     spec=load_json(spec_path); changes=normalize_changes(index,spec)
     structural=[c for c in changes if c.get('mutation',{}).get('action') in {'insert_commands','delete_commands','insert_page','delete_page'}]
+    from vxace_event_rewards import has_rewards
+    reward_changes=[c for c in structural if has_rewards(c['ruby_spec']['mutation'])]
+    if reward_changes and len(changes)!=1:raise ValueError('One-time reward insertion requires its own single-change transaction')
+    for c in reward_changes:
+        from vxace_map_regions import integer
+        loc=c['locator']
+        if set(loc)!={'map_id','event_id','page','command_index'}:raise ValueError('Exact reward map/page/root locator required')
+        integer(loc['map_id'],'reward map ID',1,999);integer(loc['event_id'],'reward event ID',1,999)
     regions=[c for c in changes if c['kind']=='map_region']
     entries=[c for c in changes if c['kind']=='database_entry']
     slots=[c for c in changes if c['kind']=='script_slot']
@@ -370,7 +388,7 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         if mutator.resolve() != (Path(__file__).resolve().parent/'vxace_python_mutator.py'):
             raise ValueError('Structural edits require the explicitly selected Python backend')
         from vxace_event_structure import validate_project_references
-        for c in structural: validate_project_references(index,c['ruby_spec']['mutation'])
+        for c in structural: validate_project_references(index,c['ruby_spec']['mutation'],project/c['target'])
     if reload_required:
         system=load_json(index/'database/system.json')
         version=system.get('version_id')
@@ -436,6 +454,9 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
             for c in map_events:
                 if 'graphic' in c['mutation'] and binding(copy_root,rtp,c['mutation']['graphic'])!=c['mutation']['expected_asset']:
                     raise RuntimeError('Character asset changed during final verification')
+        if reward_changes:
+            from vxace_event_rewards import item_context
+            for c in reward_changes:item_context(c['ruby_spec']['mutation'],copy_root/c['target'])
         if current_inventory(project)!=source_before: raise RuntimeError('SOURCE_CHANGED: source changed during final verification')
         result={'version':VERSION,'title':str(spec.get('title') or 'VX Ace staged patch'),'status':'ok','source_project_omitted_from_persistent_output':True,'freshness':freshness,'roundtrip_preflight':preflights,'changes':applied,'source_integrity_after':source_integrity,'copy_path':str(copy_root),'reindex':reindex,'index_diff':index_diff,'rollback':{'strategy':'delete staged project copy','source_project_modified':False}}
         dump_json(audit_dir/'audit.json',result); (audit_dir/'audit.md').write_text(render_audit(result),encoding='utf-8')

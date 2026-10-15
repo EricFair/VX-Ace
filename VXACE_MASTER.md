@@ -1,6 +1,8 @@
-# VX Ace Masterfile — v0.27.0
+# VX Ace Masterfile — v1.0.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
+
+The next milestone is a feature-frozen v1.0 release. Follow [the finite release checklist](RELEASE_1_0.md); broader backlog features are scheduled after v1.0 and do not block it.
 
 ## Recommended setup
 
@@ -94,6 +96,7 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Guarded script slot | Python copy backend: one new exact UTF-8 source entry before unique canonical Main, exact archive/anchor hashes and explicit unused ID/unique name; preserve all old entries/order/bytes, review proposed-code impact and require postgates; no reorder/delete/custom Main/overlapping Scripts edits |
 | Guarded upper scenery tiles | Python copy backend: 1..256 ordinary B-E cells on layer2 only, native Table/current-cell/tileset/selected-image hashes and explicit RTP; preserve ground/shadows/regions/unknown fields, advance reload version and require postgates; no ground/A5/autotile synthesis or arbitrary layers |
 | Guarded dialogue event append | Python copy backend: one stationary literal-dialogue event per existing map, exact blank one-page native template/full-map hashes, next maximum ID and unoccupied cell; optional asset-bound character on new record, preserve old event/map bytes, advance reload version and require postgates; no unbound/tile graphics, copied logic, deletion or ID reuse |
+| Guarded one-time native rewards | Python copy backend: one constant gold/item addition batch in a blank lower action-button page, exact higher self-switch/literal-only page and actual native Items binding; preserve unrelated map bytes and require version/postgates; no variables/removal/equipment/common/troop scopes |
 | Optional native syntax diagnostics | Private source-as-data bundle, different trusted disposable VX Ace host and complete bound Ruby1.9.2 compile-only report; no inspected-source evaluation, app launching or runtime compatibility claim |
 | Change review | Source hashes, before/after byte and semantic hashes, re-index, normalized diff, semantic Codex diff |
 | Actual editor/runtime verification | Structural edit/old-save evidence in v0.12; search locations, hidden page selection, terminating cutscene and counted autorun restart in `references/real-project-validation-v0.13.md` |

@@ -15,7 +15,7 @@ BRANCHES = {411: 111, 402: 102, 403: 102, 601: 301, 602: 301, 603: 301}
 MAX_COMMANDS, MAX_INSERT, MAX_PAGES = 10000, 500, 32
 
 
-def validate_project_references(index, mutation):
+def validate_project_references(index, mutation, source_path=None):
     """Verify newly supplied cross-file references against the fresh index."""
     index = Path(index)
     def data(name):
@@ -25,6 +25,17 @@ def validate_project_references(index, mutation):
     switches = system.get('switches', [])
     commons = data('common-events.json') or []
     common_ids = {x.get('id') for x in commons if isinstance(x,dict)}
+    from vxace_event_rewards import has_rewards,reward_rows
+    if has_rewards(mutation):
+        from vxace_event_rewards import validate,snapshot
+        from vxace_python_mutator import load
+        from vxace_index_query import Index,unlinked
+        if source_path is None:raise ValueError('Rewards require actual native map context')
+        source=unlinked(source_path);native,_=load(source)
+        validate(native,mutation,source)
+        proposed=reward_rows(mutation['commands']);observed=Index(index)
+        snapshot(observed,source.parent.parent,int(source.stem[3:]),mutation['event_id'],proposed.get('item_id'))
+        observed.unchanged()
     for row in mutation.get('commands', []):
         code, p = row.get('code'), row.get('parameters')
         if code == 117 and (not isinstance(p,list) or len(p)!=1 or type(p[0]) is not int or p[0] not in common_ids):
@@ -154,6 +165,12 @@ def new_commands(rows, convert, scope, terminal=False):
         elif code == 230:
             if len(p) != 1: raise ValueError("Invalid wait")
             native_int(p[0], "wait frames", 1, 3600)
+        elif code == 125:
+            if scope!='map' or len(p)!=3 or any(type(value) is not int for value in p) or p[:2]!=[0,0]:raise ValueError('Only constant positive map gold additions are enabled')
+            native_int(p[2],'gold addition',1,99999999)
+        elif code == 126:
+            if scope!='map' or len(p)!=4 or any(type(value) is not int for value in p) or p[1:3]!=[0,0]:raise ValueError('Only constant positive map item additions are enabled')
+            native_int(p[0],'reward item ID',1,999);native_int(p[3],'item addition',1,99)
         else:
             raise ValueError(f"New command code {code} is outside the validated native subset")
         result.append(RubyObject("RPG::EventCommand", {"@code": code, "@indent": 0, "@parameters": convert(p)}))
@@ -206,15 +223,18 @@ def snapshot(root, mutation, object_by_id):
     return result
 
 
-def apply(root, mutation, convert, object_by_id):
+def apply(root, mutation, convert, object_by_id, *, source_path=None):
     action, scope = mutation["action"], mutation["scope"]
     common = {"scope", "event_id", "troop_id", "common_event_id", "page", "command_index", "action"}
-    specific = {"insert_commands": {"expected_list_sha256", "commands"},
+    specific = {"insert_commands": {"expected_list_sha256", "commands", "reward_guard"},
                 "delete_commands": {"expected_list_sha256", "count"},
                 "insert_page": {"expected_pages_sha256", "expected_template_sha256", "template_page", "conditions", "commands", "acknowledge_page_priority_change"},
                 "delete_page": {"expected_pages_sha256", "expected_page_sha256", "acknowledge_page_priority_change"}}
     if action not in specific or set(mutation) - common - specific[action]:
         raise ValueError("Unknown structural mutation fields")
+    from vxace_event_rewards import has_rewards,validate as validate_rewards
+    if has_rewards(mutation):validate_rewards(root,mutation,source_path)
+    elif 'reward_guard' in mutation:raise ValueError('Reward guard requires actual reward commands')
     owner = owner_for(root, mutation, object_by_id)
     pages = owner.get("pages") if scope != "common_event" else None
     if action in ("insert_page", "delete_page"):

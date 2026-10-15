@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "_vendor"))
 from rpgvxace_mcp import marshal_rb
 from rpgvxace_mcp.rubytypes import RubyObject, RubyString, RubyHash, RubySymbol, Table, Color, Tone
 
-VERSION = "0.27.0"
+VERSION = "1.0.0"
 MAX_BYTES = 64 * 1024 * 1024
 
 
@@ -203,7 +203,7 @@ def apply(root, spec, *, source_path=None):
     elif kind == "event":
         from vxace_event_structure import ACTIONS, apply as structural_apply
         if mutation.get('action') in ACTIONS:
-            structural_apply(root, mutation, convert, object_by_id)
+            structural_apply(root, mutation, convert, object_by_id,source_path=source_path)
             return
         holder = command_holder(root, mutation)
         commands = holder.get("list") if isinstance(holder, RubyObject) else None

@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, difflib, hashlib, json, sys
 from pathlib import Path
 
-VERSION = "0.27.0"
+VERSION = "1.0.0"
 
 
 def sha256(path: Path) -> str:

@@ -1,5 +1,7 @@
 # Guarded event structure editing — v0.12
 
+Later additions are separate, narrower workflows: [stationary dialogue-event creation](map-event-creation.md), [bound graphics on new dialogue events](character-event-graphics.md), and [one-time constant native rewards](one-time-event-rewards.md). Reward commands125/126 require their complete native page/Items guards; the v0.12 baseline command list below does not authorize unguarded resource insertion.
+
 Use the production copy patcher with `--backend python`. The low-level mutator is an internal implementation component, not a substitute for project-wide gates. Original-project writes remain prohibited. Close editors/playtests for the source snapshot; open only the resulting disposable copy for review.
 
 ## Supported scope

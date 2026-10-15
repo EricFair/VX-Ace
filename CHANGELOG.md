@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0 — First stable guarded VX Ace specialist release
+
+- Freeze the supported analysis/planning/copy-only authoring scope and move broader upstream parity to post-release milestones. Add installation, first read-only validation and staged-copy usage instructions with explicit capability/evidence limits.
+- Incorporate the previously unpublished v0.28 one-time map reward feature: bounded positive constant gold and/or actual native item additions, exact blank lower page and higher self-switch/literal-only page, native Items/page/context hashes, full candidate preservation, version reload and mandatory final postgates/rollback. No variables, removal, equipment, arbitrary branches or general economy writer.
+- Add 12 reward/context/refusal/preservation/copy tests, bringing the suite to 400. Fix ordinary event-impact imports so the existing standalone analysis API does not load the reward helper unnecessarily.
+- Native disposable-copy verification passed old-save loading, first 25-gold/one-Potion grant, repeat prevention, gold/inventory menus, saving and full-process restart with unchanged saves/no extra setup. Original-project hashes matched; proprietary data remains private. Existing Oakfall victory/defeat/retry/scenery/save evidence remains documented.
+- Package/master/core writer metadata is 1.0.0; unchanged component report formats retain their historical version identifiers. See the release evidence document for coverage and limitations, and the exact release commit's Actions result for CI status.
+
 ## 0.27.0 — Asset-bound character graphics for new dialogue events
 
 - Extend stationary dialogue append with optional exact character name/index/direction/pattern and a full selected PNG binding; preserve the original blank schema and require the source template to remain blank.

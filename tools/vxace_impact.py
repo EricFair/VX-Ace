@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, json
 from pathlib import Path
 
-VERSION = "0.27.0"
+VERSION = "1.0.0"
 DB_FILES = {
     "actors":"actors.json","classes":"classes.json","skills":"skills.json","items":"items.json",
     "weapons":"weapons.json","armors":"armors.json","enemies":"enemies.json","troops":"troops.json",
@@ -81,7 +81,12 @@ def event_impact(graph, maps, change, index=None):
         exact=map_page(maps,mid,eid,page)
         if not exact: raise ValueError(f"map event page not found: map {mid}, event {eid}, page {page}")
         node=f"map:{mid}:event:{eid}:page:{page}"
-        return {"kind":"event","scope":"map","target":exact,"graph_node":node,"dependencies":graph_neighbors(graph,node),"severity":"high" if mutation.get('action') in {'insert_page','delete_page'} else "medium",'structural_action':mutation.get('action'),'requested_locator':change.get('locator')}
+        result={"kind":"event","scope":"map","target":exact,"graph_node":node,"dependencies":graph_neighbors(graph,node),"severity":"high" if mutation.get('action') in {'insert_page','delete_page'} else "medium",'structural_action':mutation.get('action'),'requested_locator':change.get('locator')}
+        rows=mutation.get('commands',[])
+        if isinstance(rows,list) and any(isinstance(row,dict) and type(row.get('code')) is int and row['code'] in (125,126) for row in rows):
+            if index is None:raise ValueError('Reward impact requires the complete source index')
+            result.update(severity='high',one_time_rewards=reward_impact(index,change))
+        return result
     if "common_event_id" in loc:
         cid=int(loc["common_event_id"]); node=f"common_event:{cid}"
         nodes={n.get("id"):n for n in graph.get("nodes",[]) if isinstance(n,dict)}
@@ -98,6 +103,35 @@ def event_impact(graph, maps, change, index=None):
         return {"kind":"event","scope":"troop","target":target,"graph_node":node,"dependencies":graph_neighbors(graph,node),"severity":"high" if mutation.get('action') in {'insert_page','delete_page'} else "medium",
                 "limitations":["Troop page/command dependency extraction is less complete than map-event dependency extraction."]}
     raise ValueError("event locator requires map_id/event_id/page, common_event_id, or troop_id")
+
+def reward_impact(index,change):
+    from vxace_event_rewards import reward_rows,GUARD_FIELDS,integer
+    from vxace_index_query import Index
+    from vxace_search import search
+    import re
+    loc=change.get('locator')
+    if not isinstance(loc,dict) or set(loc)!={'map_id','event_id','page','command_index'} or type(loc['page']) is not int or loc['page']!=1 or type(loc['command_index']) is not int or loc['command_index']!=0:raise ValueError('Exact lower map-page/root reward locator required')
+    integer(loc['map_id'],'reward map ID',1,999);integer(loc['event_id'],'reward event ID',1,999)
+    mutation=change['mutation'];rewards=reward_rows(mutation['commands']);guard=mutation.get('reward_guard')
+    if not isinstance(guard,dict) or set(guard)!=GUARD_FIELDS or guard['self_switch']!=rewards['self_switch'] or not isinstance(guard['expected_pages_sha256'],str) or not re.fullmatch('[a-f0-9]{64}',guard['expected_pages_sha256']):raise ValueError('Exact reward page/self-switch binding required')
+    if 'item_id' in rewards:
+        if not isinstance(guard['expected_items_sha256'],str) or not re.fullmatch('[a-f0-9]{64}',guard['expected_items_sha256']):raise ValueError('Exact native Items hash required')
+        target,error=database_object(index,'items',rewards['item_id'])
+        if error:raise ValueError(error)
+    else:
+        target=None
+        if guard['expected_items_sha256'] is not None:raise ValueError('Gold-only reward cannot claim an item binding')
+    data=Index(index);mentions=[]
+    for marker in ('gain_gold','gain_item','max_gold','max_item_number','$game_self_switches','conditions_met?'):
+        found=search(data,query=marker,scopes=('scripts','events'),limit=10)
+        mentions.append({'literal':marker,'matches':found['matches'],'evidence':found['hits'],'truncated':found['truncated']})
+    data.unchanged()
+    return {'proposed':rewards,'item_target':target,'guard':guard,'consumer_mentions':mentions,
+            'limitations':['Actual native two-page/blank-list/Items/hash and candidate preservation checks run separately in the Python copy chain.',
+                          'Default native inventory/gold caps can truncate grants while the self switch still completes the reward.',
+                          'Other events/scripts/save state can reset or pre-enable a self switch; literal evidence cannot prove global uniqueness.',
+                          'Review custom gain/cap/condition/save hooks and test initial reward, repeat interaction, inventory, old save and restart.']}
+
 
 def database_impact(index, change):
     loc=change.get("locator") or {}
