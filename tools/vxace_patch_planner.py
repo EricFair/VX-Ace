@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, difflib, hashlib, json, sys
 from pathlib import Path
 
-VERSION = "0.25.0"
+VERSION = "0.26.0"
 
 
 def sha256(path: Path) -> str:
@@ -73,7 +73,7 @@ def normalize_spec(spec: dict) -> dict:
         if not isinstance(raw, dict):
             raise ValueError(f"Change #{i} must be an object")
         kind = raw.get("kind")
-        if kind not in {"script", "script_slot", "event", "database", "map_region", "map_tile", "database_entry"}:
+        if kind not in {"script", "script_slot", "event", "database", "map_region", "map_tile", "map_event", "database_entry"}:
             raise ValueError(f"Change #{i} has unsupported kind: {kind}")
         item = dict(raw)
         if kind == "script":
@@ -92,7 +92,7 @@ def normalize_spec(spec: dict) -> dict:
         elif kind == 'database_entry':
             if item.get('locator') != {'table':'items'} or not item.get('proposal'):
                 raise ValueError('Key-item entry proposal requires the exact items locator and proposal')
-        elif kind in ('map_region','map_tile'):
+        elif kind in ('map_region','map_tile','map_event'):
             locator=item.get('locator')
             if not isinstance(locator,dict) or set(locator) != {'map_id'} or type(locator['map_id']) is not int or not 1 <= locator['map_id'] <= 999999:
                 raise ValueError('Region change requires exact map_id locator')

@@ -1,5 +1,5 @@
 {
-  "version": "0.25.0",
+  "version": "0.26.0",
   "engine": "VX Ace",
   "runtime_target": "RGSS3 / Ruby 1.9.2",
   "validation_backend": "python",

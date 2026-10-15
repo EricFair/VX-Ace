@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, difflib, hashlib, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
-VERSION='0.25.0'
+VERSION='0.26.0'
 def mutator_command(ruby, mutator, *args):
     return [sys.executable if mutator.suffix == '.py' else ruby, str(mutator), *map(str, args)]
 DB_FILES={'actors':'Actors.rvdata2','classes':'Classes.rvdata2','skills':'Skills.rvdata2','items':'Items.rvdata2','weapons':'Weapons.rvdata2','armors':'Armors.rvdata2','enemies':'Enemies.rvdata2','troops':'Troops.rvdata2','states':'States.rvdata2','animations':'Animations.rvdata2','tilesets':'Tilesets.rvdata2','common-events':'CommonEvents.rvdata2','common_events':'CommonEvents.rvdata2','system':'System.rvdata2','map-infos':'MapInfos.rvdata2','map_infos':'MapInfos.rvdata2'}
@@ -97,6 +97,14 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             out.append({'kind':'database_entry','target':'Data/Items.rvdata2',
                         'ruby_spec':{'type':'database_entry','mutation':mut},'description':c.get('description',''),
                         'locator':loc,'mutation':mut})
+        elif kind=='map_event':
+            from vxace_map_events import FIELDS,integer
+            if not isinstance(loc,dict) or set(loc)!={'map_id'}:raise ValueError('Map event locator requires exactly map_id')
+            mid=integer(loc['map_id'],'map ID',1,999999)
+            if not isinstance(mut,dict) or set(mut)!=FIELDS or mut.get('action')!='append_dialogue_event':raise ValueError('Exact append_dialogue_event schema required')
+            out.append({'kind':'map_event','target':f'Data/Map{mid:03d}.rvdata2',
+                        'ruby_spec':{'type':'map_event','mutation':mut},'description':c.get('description',''),
+                        'locator':loc,'mutation':mut})
         elif kind=='map_tile':
             from vxace_upper_tiles import FIELDS,integer
             if not isinstance(loc,dict) or set(loc)!={'map_id'}:raise ValueError('Upper tile locator must contain exactly map_id')
@@ -169,6 +177,12 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         from vxace_database_entries import snapshot as entry_snapshot
         before_entry_root=load(target)[0]
         before_entry=entry_snapshot(before_entry_root,mutation['template_id'])
+    before_event_root=None
+    if change['kind']=='map_event':
+        from vxace_python_mutator import load
+        from vxace_map_events import snapshot as event_snapshot
+        before_event_root=load(target)[0]
+        before_event=event_snapshot(before_event_root,mutation['template_id'])
     before_tile_root=None
     if change['kind']=='map_tile':
         from vxace_python_mutator import load
@@ -195,6 +209,9 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if change['kind']=='database_entry':
         from vxace_database_entries import verify_transition as verify_entry
         verify_entry(before_entry_root,load(tmp)[0],mutation)
+    if change['kind']=='map_event':
+        from vxace_map_events import verify_transition as verify_event
+        verify_event(before_event_root,load(tmp)[0],mutation)
     if change['kind']=='map_tile':
         from vxace_upper_tiles import verify_transition as verify_upper
         verify_upper(before_tile_root,load(tmp)[0],mutation)
@@ -204,6 +221,10 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if before_sem==after_sem: raise RuntimeError(f'mutation produced no semantic change: {rel}')
     os.replace(tmp,target)
     rec={'kind':change['kind'],'target':rel,'description':change.get('description',''),'before_sha256':before_raw,'after_sha256':after_raw,'before_semantic_sha256':before_sem,'after_semantic_sha256':after_sem}
+    if change['kind']=='map_event':
+        rec['map_event']={'before':before_event,'after':event_snapshot(load(target)[0],mutation['template_id']),
+                          'new_id':mutation['new_id'],'name':mutation['name'],'x':mutation['x'],'y':mutation['y'],
+                          'text':mutation['text'],'old_events_and_other_map_fields_preserved':True}
     if change['kind']=='map_tile':
         after_tiles=upper_snapshot(load(target)[0],copy_root,tile_cells,tile_values,tile_rtp)
         rec['upper_tiles']={'locator':change['locator'],'before':before_tiles,'after':after_tiles,
@@ -273,8 +294,22 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
     entries=[c for c in changes if c['kind']=='database_entry']
     slots=[c for c in changes if c['kind']=='script_slot']
     upper_tiles=[c for c in changes if c['kind']=='map_tile']
-    reload_required=bool(structural or regions or upper_tiles)
+    map_events=[c for c in changes if c['kind']=='map_event']
+    reload_required=bool(structural or regions or upper_tiles or map_events)
     post_required=bool(reload_required or entries or slots)
+    if map_events:
+        if len({c['target'] for c in map_events})!=len(map_events) or any(sum(other['target']==c['target'] for other in changes)!=1 for c in map_events):
+            raise ValueError('Append one dialogue event per map without other edits to that map')
+        if no_reindex or mutator.resolve()!=(Path(__file__).resolve().parent/'vxace_python_mutator.py'):
+            raise ValueError('Event creation requires explicit Python backend and mandatory post-copy re-indexing')
+        from vxace_map_events import indexed_snapshot as event_indexed_snapshot,new_event
+        from vxace_index_query import Index,unlinked
+        from vxace_python_mutator import load
+        for c in map_events:
+            event_data=Index(index)
+            event_indexed_snapshot(event_data,project,c['locator']['map_id'],c['mutation']['template_id'])
+            event_data.unchanged()
+            new_event(load(unlinked(project/c['target']))[0],c['mutation'])
     if upper_tiles:
         if len({c['target'] for c in upper_tiles})!=len(upper_tiles) or any(sum(other['target']==c['target'] for other in changes)!=1 for c in upper_tiles):
             raise ValueError('Use one upper tile operation per map without other mutations to that map')

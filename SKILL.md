@@ -5,7 +5,7 @@ description: Analyze, validate, debug, and safely stage RPG Maker VX Ace databas
 
 # RPG Maker VX Ace Developer
 
-Version: 0.25.0
+Version: 0.26.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -81,7 +81,7 @@ See `references/project-validation.md` and `workflows/real-project-validation.md
 
 ## Project Reader + Codex
 
-Use `VXACE_MASTER.md` and `vxace-master.json` as the master entry points. Resolve tool/reference paths relative to this installed skill directory, not the user's current working directory. `python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR` runs the read-only release workflow with an explicitly selected Python data backend. Individual validator/patcher commands still default to Ruby; use `--backend python` to select the new backend. Readiness is specific to the selected backend and current snapshot. The standalone experimental codec audit is not a production gate. Only the documented guarded event subset, regions, inert key-item append, canonical-Main script-slot insertion and ordinary upper scenery painting are enabled; other structural writes remain disabled. See `references/upstream-adoption.md` and the real-project evidence document.
+Use `VXACE_MASTER.md` and `vxace-master.json` as the master entry points. Resolve tool/reference paths relative to this installed skill directory, not the user's current working directory. `python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR` runs the read-only release workflow with an explicitly selected Python data backend. Individual validator/patcher commands still default to Ruby; use `--backend python` to select the new backend. Readiness is specific to the selected backend and current snapshot. The standalone experimental codec audit is not a production gate. Only the documented guarded event subset, regions, inert key-item append, canonical-Main script-slot insertion, ordinary upper scenery painting and stationary dialogue-event append are enabled; other structural writes remain disabled. See `references/upstream-adoption.md` and the real-project evidence document.
 
 Generate fresh evidence before project-specific work:
 
@@ -182,7 +182,7 @@ v0.20 adds [append-only inert native key items](references/key-item-append.md) f
 
 v0.21 fixes [exact UTF-8 script exports and multiline anchors](references/script-byte-fidelity.md), preserving original line-ending bytes on Windows and recording source hashes/counts. Re-index old evidence; construct exact anchors from byte-preserving UTF-8 reads. Invalid compressed/non-UTF-8 source refuses complete extraction rather than producing lossy text or placeholder code; extraction errors block copy admission.
 
-The expanded suite has 364 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
+The expanded suite has 378 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
 
 Real-project evidence is recorded in [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md). It covers a small editor-produced project and disposable native map/common/battle/save scenarios; it does not establish compatibility with arbitrary customized games. Structural operations outside the documented subset remain disabled.
 
@@ -193,6 +193,8 @@ v0.23 adds optional [compile-only native syntax diagnostics](references/native-s
 v0.24 adds [one guarded native script slot before canonical Main](references/script-slot-insertion.md). Use fresh native/indexed archive and anchor fingerprints, an explicit unused ID/unique name and reviewed exact UTF-8 source. Require the Python copy chain, preservation of every old entry/order/byte, proposed-code impact and mandatory postgates. Inspect the native editor, startup and old-save/restart behavior. No reordering, deletion, customized Main or overlapping Scripts mutations are enabled.
 
 v0.25 adds [ordinary upper-layer B-E painting](references/upper-tile-painting.md) through the Python copy workflow: exact native Table/current cells, selected tileset/full asset hashes, explicit read-only RTP, standard PNG headers, low-level actual-context validation and mandatory postgates/version reload. Only layer2 ordinary IDs0..1023 are enabled; ground/A5/autotiles and shadow/region changes remain separate. Review native render/passage, old-save reload and restart. Image headers never prove decoding, and dynamic map replacement still requires review.
+
+For a new stationary literal-dialogue event, read [references/map-event-creation.md](references/map-event-creation.md). v0.26 enables one append per existing map from an exact one-page blank native template, next maximum ID and unoccupied coordinates, through the Python copy chain. Preserve existing events/map fields, advance the reload version and test actual action-button access, old-save reconstruction and restart. Graphics, copied logic, event deletion/ID reuse and arbitrary new commands remain outside this operation.
 
 ## Next milestones
 

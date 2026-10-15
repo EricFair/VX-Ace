@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v0.25.0
+# VX Ace Masterfile — v0.26.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -13,7 +13,7 @@ The authoritative entry point for this specialist toolchain: recommended setting
 - Failure: refuse; never downgrade a mismatch, warning, ambiguous target or stale source to a permissive warning.
 - Preserve original game files and private/proprietary scripts. Do not commit user projects, extracted defaults, saves, or raw private reports.
 
-The master runner does not perform mutations. Its safety settings are validated against a fixed policy; a configuration file cannot enable original-project writes or unrestricted structural editing. The legacy `structural_writes: "guarded-events-only"` label describes the event-structure subset. Regions, inert key-item append, canonical-Main script-slot insertion and ordinary upper scenery painting have separate documented copy operations; no master setting invokes or authorizes them.
+The master runner does not perform mutations. Its safety settings are validated against a fixed policy; a configuration file cannot enable original-project writes or unrestricted structural editing. The legacy `structural_writes: "guarded-events-only"` label describes the event-structure subset. Regions, inert key-item append, canonical-Main script-slot insertion and ordinary upper scenery painting and stationary dialogue-event append have separate documented copy operations; no master setting invokes or authorizes them.
 
 Optional [native compile-only syntax diagnostics](references/native-syntax-diagnostics.md) are separate from this unattended workflow: prepare a private exact-byte bundle, use a different trusted blank disposable VX Ace host through existing copy gates, observe the actual native run and collect its complete report. The inspected custom game must never be used as the host. No source is evaluated, and a compile pass never establishes gameplay/save compatibility or mutation authorization.
 
@@ -93,6 +93,7 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Guarded key-item append | Python copy backend: one inert native Key Item at the next static ID, exact template/array hashes/schema, preserved existing records, impact and mandatory postgates; no deletion, reuse, arbitrary effects or other new object types |
 | Guarded script slot | Python copy backend: one new exact UTF-8 source entry before unique canonical Main, exact archive/anchor hashes and explicit unused ID/unique name; preserve all old entries/order/bytes, review proposed-code impact and require postgates; no reorder/delete/custom Main/overlapping Scripts edits |
 | Guarded upper scenery tiles | Python copy backend: 1..256 ordinary B-E cells on layer2 only, native Table/current-cell/tileset/selected-image hashes and explicit RTP; preserve ground/shadows/regions/unknown fields, advance reload version and require postgates; no ground/A5/autotile synthesis or arbitrary layers |
+| Guarded dialogue event append | Python copy backend: one stationary literal-dialogue event per existing map, exact blank one-page native template/full-map hashes, next maximum ID and unoccupied cell; preserve old event/map bytes, advance reload version and require postgates; no graphics/copied logic/deletion/ID reuse |
 | Optional native syntax diagnostics | Private source-as-data bundle, different trusted disposable VX Ace host and complete bound Ruby1.9.2 compile-only report; no inspected-source evaluation, app launching or runtime compatibility claim |
 | Change review | Source hashes, before/after byte and semantic hashes, re-index, normalized diff, semantic Codex diff |
 | Actual editor/runtime verification | Structural edit/old-save evidence in v0.12; search locations, hidden page selection, terminating cutscene and counted autorun restart in `references/real-project-validation-v0.13.md` |
@@ -221,7 +222,7 @@ A release is complete when its documented scope is implemented, tests pass, real
 
 ## Remaining boundaries
 
-Structural edits outside [the guarded event workflow](references/event-structure.md), map creation/resizing, tile painting beyond [ordinary upper-layer cells](references/upper-tile-painting.md), database entry creation beyond [inert key-item append](references/key-item-append.md), entry deletion/ID reuse, arbitrary raw writes, general save migration, encrypted archives, and VX/RGSS2 remain outside this release. Writable MCP tools, full asset decoding, regex search and deeper control-flow/termination analysis remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
+Structural edits outside [guarded commands/pages](references/event-structure.md) and [stationary dialogue-event append](references/map-event-creation.md), map creation/resizing, tile painting beyond [ordinary upper-layer cells](references/upper-tile-painting.md), database entry creation beyond [inert key-item append](references/key-item-append.md), entry deletion/ID reuse, arbitrary raw writes, general save migration, encrypted archives, and VX/RGSS2 remain outside this release. Writable MCP tools, full asset decoding, regex search and deeper control-flow/termination analysis remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
 
 Do not run broad unsupported writes merely because one project passed validation. The recorded native scenarios establish limited evidence. Further changes need their own fixtures, type/schema checks, dependency review and runtime scenarios. For supported event insertion/deletion, use [references/event-structure.md](references/event-structure.md), including exact snapshot commands, transaction fields and old-save behavior.
 

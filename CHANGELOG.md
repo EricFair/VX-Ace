@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.26.0 — Guarded stationary dialogue-event append
+
+- Add read-only native/indexed template snapshots and one new literal-dialogue event per existing map through the explicit Python copy chain: exact full-map/template hashes, next maximum ID, unique name and unoccupied in-bounds cell.
+- Require one exact blank-graphic stationary action-button template with inactive conditions and empty native route/list; build only fixed101/401/0 text commands. Refuse copied logic, graphics/assets, escaped dynamic text, repeating triggers, deletion/ID reuse and overlapping same-map changes.
+- Detach the event hash and verify old entries/order/bytes, unrelated map fields/Table and unknown aliases. Require bounded event-consumer impact, version advance, re-index/semantic/full post-validation and rollback.
+- Native editor, unchanged older-save reconstruction, action-button dialogue/dismissal, native save and full Game-process restart passed on a disposable copy; save hashes/source/other Data remain unchanged at restart.
+- Add14 authored Ruby/synthetic refusal/preservation/copy tests (378 total).
+
 ## 0.25.0 — Guarded ordinary upper-layer scenery painting
 
 - Add bounded layer2 B–E painting through the explicit Python disposable-copy chain, with exact native Table/current-cell/tileset and selected image bindings; preserve all other Table words and unrelated map fields.

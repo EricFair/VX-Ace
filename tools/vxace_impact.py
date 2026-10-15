@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, json
 from pathlib import Path
 
-VERSION = "0.25.0"
+VERSION = "0.26.0"
 DB_FILES = {
     "actors":"actors.json","classes":"classes.json","skills":"skills.json","items":"items.json",
     "weapons":"weapons.json","armors":"armors.json","enemies":"enemies.json","troops":"troops.json",
@@ -302,6 +302,39 @@ def upper_tile_impact(index,change):
                           'Review native editor rendering, actor passage, old-save map reload and restart-based persistence.']}
 
 
+def map_event_impact(index,change):
+    from vxace_index_query import Index
+    from vxace_map_events import FIELDS,integer,text
+    from vxace_search import search
+    locator=change.get('locator');mutation=change.get('mutation')
+    if not isinstance(locator,dict) or set(locator)!={'map_id'} or not isinstance(mutation,dict) or set(mutation)!=FIELDS or mutation.get('action')!='append_dialogue_event':
+        raise ValueError('Exact map-event append proposal required')
+    mid=integer(locator['map_id'],'map ID',1,999999);data=Index(index);native=data.json(f'maps/map-{mid:03d}.json')
+    if not isinstance(native,dict) or native.get('__class__')!='RPG::Map' or not isinstance(native.get('events'),dict):raise ValueError('Indexed native map events required')
+    old=native['events'];identifier=integer(mutation['new_id'],'new event ID',1,999)
+    if any(not key.isdigit() or str(int(key))!=key for key in old) or identifier!=max((int(key) for key in old),default=0)+1:raise ValueError('New event must append after existing IDs')
+    template_id=integer(mutation['template_id'],'template event ID',1,999)
+    if str(template_id) not in old:raise ValueError('Template event absent from index')
+    width=integer(native.get('width'),'map width',1,500);height=integer(native.get('height'),'map height',1,500)
+    x=integer(mutation['x'],'new event x',0,width-1);y=integer(mutation['y'],'new event y',0,height-1)
+    if any(not isinstance(event,dict) or (event.get('x'),event.get('y'))==(x,y) for event in old.values()):raise ValueError('Occupied or opaque event position')
+    name=text(mutation['name'],'new event name',100)
+    lines=mutation['text']
+    if not isinstance(lines,list) or not 1<=len(lines)<=4 or not any(lines):raise ValueError('One to four literal dialogue lines required')
+    for line in lines:text(line,'dialogue line',500,True)
+    mentions=[]
+    for marker in ('$data_map','$game_map.events','Game_Event','event_id','self_switches','setup_events'):
+        result=search(data,query=marker,scopes=('scripts','events'),limit=10)
+        mentions.append({'literal':marker,'matches':result['matches'],'evidence':result['hits'],'truncated':result['truncated']})
+    data.unchanged()
+    return {'kind':'map_event','severity':'high','target':{'map_id':mid,'new_id':identifier,'name':name,'x':x,'y':y,'template_id':template_id},
+            'literal_dialogue':lines,'event_consumer_mentions':mentions,
+            'limitations':['Native exact template/map/schema preservation gates are enforced separately by the Python copy chain.',
+                          'An appended static ID can collide with runtime-created events or pre-existing orphan self-switch/save state.',
+                          'Literal consumers miss dynamic ownership; inspect custom map/save hooks and action-button accessibility.',
+                          'Blank graphic, stationary, one unconditional action-button page; test editor, old-save reload, native dialogue and restart.']}
+
+
 def build(index: Path, spec_path: Path):
     spec=load(spec_path)
     if not isinstance(spec,dict) or not isinstance(spec.get("changes"),list) or not spec["changes"]:
@@ -321,6 +354,7 @@ def build(index: Path, spec_path: Path):
         elif kind=='database_entry': impacts.append(entry_impact(index,change))
         elif kind=='script_slot': impacts.append(slot_impact(index,change))
         elif kind=='map_tile': impacts.append(upper_tile_impact(index,change))
+        elif kind=='map_event': impacts.append(map_event_impact(index,change))
         else: raise ValueError(f"unsupported change kind: {kind}")
     high=sum(1 for x in impacts if x.get("severity")=="high")
     return {"impact_version":VERSION,"title":str(spec.get("title") or "VX Ace impact analysis"),"impact_count":len(impacts),
