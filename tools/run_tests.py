@@ -4,7 +4,7 @@ from __future__ import annotations
 import subprocess, sys
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
-SUITES = ["tests/tooling", "tests/project_reader", "tests/codex", "tests/patch_planner", "tests/mutation", "tests/project_validator", "tests/impact", "tests/marshal_codec", "tests/master", "tests/structure", "tests/index_queries"]
+SUITES = ["tests/tooling", "tests/project_reader", "tests/codex", "tests/patch_planner", "tests/mutation", "tests/project_validator", "tests/impact", "tests/marshal_codec", "tests/master", "tests/structure", "tests/index_queries", "tests/mcp"]
 
 def main():
     failures=[]

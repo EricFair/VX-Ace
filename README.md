@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v0.17
+# RPG Maker VX Ace Developer — v0.18
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -8,7 +8,9 @@ Start with **[VXACE_MASTER.md](VXACE_MASTER.md)** for the complete settings, cap
 python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR
 ```
 
-v0.17 adds optional [PNG header and default-layout observations](references/image-header-layouts.md): bounded IHDR reads, character frame divisions and standard tileset dimensions. The master enables the checks; standalone use is opt-in. They do not decode pixels or establish runtime loadability.
+v0.18 adds an optional [read-only stdio MCP interface](references/mcp-read-only.md) over fresh indexed project information, search and event/map/asset diagnostics. It exposes five bounded tools and one fixed summary resource, with per-call source/index checks and worker deadlines. No writable or arbitrary-path tools are exposed.
+
+v0.17 added optional [PNG header and default-layout observations](references/image-header-layouts.md): bounded IHDR reads, character frame divisions and standard tileset dimensions. The master enables the checks; standalone use is opt-in. They do not decode pixels or establish runtime loadability.
 
 v0.16 added [direct common-event call-cycle diagnostics](references/common-event-cycles.md), with exact cycle components/evidence and explicit uncertainty about conditions and termination. It also blocks report output inside an explicit RTP root before any report is created.
 
@@ -182,7 +184,7 @@ python tools/vxace_semantic_diff.py BEFORE_INDEX AFTER_INDEX --json semantic-dif
 
 ## Automated validation
 
-The v0.8 baseline had **38 tests**, v0.9 **45**, v0.10 **52**, v0.11 **136**, v0.12 **159**, v0.13 **184**, v0.14 **199**, v0.15 **219**, and v0.16 **236**. The v0.17 suite has **254 tests**, adding 16 PNG header/layout checks and two master configuration checks. CI runs on Ubuntu and Windows; consult the latest Actions run for actual status and platform-specific skips.
+The v0.8 baseline had **38 tests**, v0.9 **45**, v0.10 **52**, v0.11 **136**, v0.12 **159**, v0.13 **184**, v0.14 **199**, v0.15 **219**, v0.16 **236**, and v0.17 **254**. The v0.18 suite has **280 tests**, adding 26 MCP protocol/API checks. CI runs on Ubuntu and Windows; consult the latest Actions run for actual status and platform-specific skips.
 
 Run all suites with:
 

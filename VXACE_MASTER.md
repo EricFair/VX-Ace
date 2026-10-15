@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v0.17.0
+# VX Ace Masterfile — v0.18.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -81,6 +81,7 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Read-only map tile audit | Native Table/tileset shape, sheet routing, ordinary atlas cells/autotile kinds, static directional flags, regions and shadows; excludes runtime movement, asset validation and map mutation |
 | Indexed asset references | Project-first graphics/audio filename presence/casing with optional explicit RTP; no image/audio decoding, scripted assets, archive extraction or automatic repairs |
 | Optional PNG headers/layouts | Bounded IHDR dimensions/checksums, default character grids and standard tileset sizes; no full decoding, atlas reachability or runtime loadability proof |
+| Optional stdio MCP interface | Five read-only indexed tools and one fixed summary resource; explicit roots, fresh source/index checks, bounded workers; no writes, arbitrary file API or HTTP listener |
 | Patch proposals | Freshness, exact unique script anchors, structured database/event proposals, regression checks and rollback guidance |
 | Dependency impact | Exact target review, event graph relationships, script collision and save-hook evidence; incomplete dependency coverage is disclosed |
 | Verified copy patching | Existing scalar database fields, existing map/common/troop command parameters and unique script replacements; backend-specific limits apply |
@@ -89,6 +90,12 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Actual editor/runtime verification | Structural edit/old-save evidence in v0.12; search locations, hidden page selection, terminating cutscene and counted autorun restart in `references/real-project-validation-v0.13.md` |
 
 ## Exact individual commands
+
+Launch the optional read-only MCP adapter from a compatible client with explicit paths (see [setup and protocol limits](references/mcp-read-only.md)):
+
+```powershell
+python tools/vxace_mcp.py PROJECT_INDEX --project PROJECT --rtp "C:/Explicit/Path/To/rtp"
+```
 
 Check indexed assets using a known RTP root:
 
@@ -194,7 +201,7 @@ A release is complete when its documented scope is implemented, tests pass, real
 
 ## Remaining boundaries
 
-Structural edits outside [the guarded event workflow](references/event-structure.md), map creation/resizing, tile painting, database entry creation/deletion, arbitrary raw writes, general save migration, encrypted archives, and VX/RGSS2 remain outside this release. MCP transport, RTP-aware asset checks, regex search and deeper control-flow/recursion analysis remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
+Structural edits outside [the guarded event workflow](references/event-structure.md), map creation/resizing, tile painting, database entry creation/deletion, arbitrary raw writes, general save migration, encrypted archives, and VX/RGSS2 remain outside this release. Writable MCP tools, full asset decoding, regex search and deeper control-flow/termination analysis remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
 
 Do not run broad unsupported writes merely because one project passed validation. The recorded native scenarios establish limited evidence. Further changes need their own fixtures, type/schema checks, dependency review and runtime scenarios. For supported event insertion/deletion, use [references/event-structure.md](references/event-structure.md), including exact snapshot commands, transaction fields and old-save behavior.
 

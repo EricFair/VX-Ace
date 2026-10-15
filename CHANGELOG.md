@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.18.0 — Optional read-only MCP interface
+
+- Add a stdio-only MCP adapter over existing fresh-index APIs: project summary, bounded literal search and event/map/asset diagnostics, plus a fixed summary resource.
+- Keep configured project/index/RTP roots fixed, strictly validate arguments and protocol envelopes, and expose no writer, arbitrary file API, HTTP transport or project-code execution.
+- Isolate each evidence request in a bounded worker with deadlines; require complete SHA-256 source freshness and source/index integrity rechecks. Bound inventory, JSON, response and session workloads.
+- Verify handshake, all five tools, the resource and explicit write refusal through a subprocess client against the private native-tested Oakfall copy; original and index hashes unchanged. Client-specific GUI registration remains separate and is not automated.
+- Add 26 protocol/API tests (280 total), including malformed data, stale evidence, timeouts, links and output budgets; preserve the separate guarded copy mutation workflow.
+
 ## 0.17.0 — Bounded PNG header and layout observations
 
 - Add optional 33-byte PNG IHDR observations with signature/CRC/field checks and final header rechecks; no full pixel decoding or automatic repairs.

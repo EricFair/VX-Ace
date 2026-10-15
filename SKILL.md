@@ -5,7 +5,7 @@ description: Analyze, validate, debug, and safely stage RPG Maker VX Ace databas
 
 # RPG Maker VX Ace Developer
 
-Version: 0.17.0
+Version: 0.18.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -174,7 +174,9 @@ v0.16 adds [direct common-event cycle diagnostics](references/common-event-cycle
 
 v0.17 adds optional [PNG header and default-layout observations](references/image-header-layouts.md) within the asset audit. The master enables them; the standalone audit uses `--image-headers`. Header observations never prove full decoding or runtime compatibility; nonstandard layouts require review.
 
-The expanded suite has 254 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
+v0.18 adds an optional [read-only MCP adapter](references/mcp-read-only.md) for compatible clients. Configure explicit project/index paths; all five tools and the fixed summary resource recheck fresh evidence. It never exposes mutations, arbitrary file paths or project-code execution. The normal skill workflow does not require MCP.
+
+The expanded suite has 280 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
 
 Real-project evidence is recorded in [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md). It covers a small editor-produced project and disposable native map/common/battle/save scenarios; it does not establish compatibility with arbitrary customized games. Structural operations outside the documented subset remain disabled.
 
