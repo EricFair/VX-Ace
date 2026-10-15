@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, difflib, hashlib, json, sys
 from pathlib import Path
 
-VERSION = "0.19.0"
+VERSION = "0.20.0"
 
 
 def sha256(path: Path) -> str:
@@ -73,7 +73,7 @@ def normalize_spec(spec: dict) -> dict:
         if not isinstance(raw, dict):
             raise ValueError(f"Change #{i} must be an object")
         kind = raw.get("kind")
-        if kind not in {"script", "event", "database", "map_region"}:
+        if kind not in {"script", "event", "database", "map_region", "database_entry"}:
             raise ValueError(f"Change #{i} has unsupported kind: {kind}")
         item = dict(raw)
         if kind == "script":
@@ -85,6 +85,9 @@ def normalize_spec(spec: dict) -> dict:
             item["search"] = str(item["search"]); item["replace"] = str(item["replace"])
             if not item["search"]:
                 raise ValueError(f"Script change #{i} search block cannot be empty")
+        elif kind == 'database_entry':
+            if item.get('locator') != {'table':'items'} or not item.get('proposal'):
+                raise ValueError('Key-item entry proposal requires the exact items locator and proposal')
         elif kind == 'map_region':
             locator=item.get('locator')
             if not isinstance(locator,dict) or set(locator) != {'map_id'} or type(locator['map_id']) is not int or not 1 <= locator['map_id'] <= 999999:
@@ -143,6 +146,10 @@ def regression_checks(changes: list[dict]) -> list[str]:
         checks += ['Review native encounter region sets and custom region consumers before staging.',
                    'Verify the region overlay in VX Ace; test new game, older-save map reload and restart-based save/load.',
                    'Confirm graphic layers and all lower metadata bytes are unchanged; no tile/region resizing is enabled.']
+    if 'database_entry' in kinds:
+        checks += ['Review dynamic item IDs, inventory extensions and template/note consumers before appending a key item.',
+                   'Verify the new ID/Key Item entry in VX Ace, native inventory categorization and engine save/restart-load.',
+                   'Confirm every existing Items entry is unchanged; deletion/reuse/reordering remain disabled.']
     checks.append("Re-run the Project Reader and compare the new index/codex against the pre-change snapshot.")
     return checks
 

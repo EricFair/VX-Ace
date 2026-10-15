@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v0.19.0
+# VX Ace Masterfile — v0.20.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -87,10 +87,17 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Verified copy patching | Existing scalar database fields, existing map/common/troop command parameters and unique script replacements; backend-specific limits apply |
 | Guarded event structure | Python copy backend: atomic command insertion/deletion and conditioned same-owner map/troop page cloning/deletion; exact native hashes, repeating-trigger refusal, native project-version advancement, mandatory post-copy validation |
 | Guarded existing-map regions | Python copy backend: 1..256 unique cells, editor IDs0..63, exact native Table/current-region preconditions; preserve graphics/lower metadata/other fields, review encounter/script consumers, version advance and mandatory postgates |
+| Guarded key-item append | Python copy backend: one inert native Key Item at the next static ID, exact template/array hashes/schema, preserved existing records, impact and mandatory postgates; no deletion, reuse, arbitrary effects or other new object types |
 | Change review | Source hashes, before/after byte and semantic hashes, re-index, normalized diff, semantic Codex diff |
 | Actual editor/runtime verification | Structural edit/old-save evidence in v0.12; search locations, hidden page selection, terminating cutscene and counted autorun restart in `references/real-project-validation-v0.13.md` |
 
 ## Exact individual commands
+
+Capture native key-item append preconditions (see [schema, spec and dynamic-ID cautions](references/key-item-append.md)):
+
+```powershell
+python tools/vxace_database_entries.py PROJECT_INDEX --project PROJECT --template-item 1 --output NEW_EXTERNAL_SNAPSHOT
+```
 
 Capture exact native region preconditions before a reviewed Python copy patch (see [scope, spec and save requirements](references/map-region-editing.md)):
 
@@ -208,7 +215,7 @@ A release is complete when its documented scope is implemented, tests pass, real
 
 ## Remaining boundaries
 
-Structural edits outside [the guarded event workflow](references/event-structure.md), map creation/resizing, tile painting, database entry creation/deletion, arbitrary raw writes, general save migration, encrypted archives, and VX/RGSS2 remain outside this release. Writable MCP tools, full asset decoding, regex search and deeper control-flow/termination analysis remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
+Structural edits outside [the guarded event workflow](references/event-structure.md), map creation/resizing, tile painting, database entry creation beyond [inert key-item append](references/key-item-append.md), entry deletion/ID reuse, arbitrary raw writes, general save migration, encrypted archives, and VX/RGSS2 remain outside this release. Writable MCP tools, full asset decoding, regex search and deeper control-flow/termination analysis remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
 
 Do not run broad unsupported writes merely because one project passed validation. The recorded native scenarios establish limited evidence. Further changes need their own fixtures, type/schema checks, dependency review and runtime scenarios. For supported event insertion/deletion, use [references/event-structure.md](references/event-structure.md), including exact snapshot commands, transaction fields and old-save behavior.
 

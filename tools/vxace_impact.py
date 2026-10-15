@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, json
 from pathlib import Path
 
-VERSION = "0.19.0"
+VERSION = "0.20.0"
 DB_FILES = {
     "actors":"actors.json","classes":"classes.json","skills":"skills.json","items":"items.json",
     "weapons":"weapons.json","armors":"armors.json","enemies":"enemies.json","troops":"troops.json",
@@ -164,6 +164,43 @@ def region_impact(index, change):
                           'Native old-save map reload and restart-based persistence testing remain required.']}
 
 
+def entry_impact(index, change):
+    from vxace_index_query import Index
+    from vxace_search import search
+    from vxace_database_entries import integer, ITEM_FIELDS
+    if change.get('locator')!={'table':'items'}:
+        raise ValueError('Only native key-item append impact is supported')
+    mutation=change.get('mutation')
+    if not isinstance(mutation,dict) or mutation.get('action')!='append_key_item':
+        raise ValueError('Expected append_key_item impact')
+    data=Index(index);items=data.json('database/items.json')
+    if not isinstance(items,list) or not 2<=len(items)<=999 or items[0] is not None:
+        raise ValueError('A supported native Items array with append capacity is required')
+    for number,item in enumerate(items[1:],1):
+        if not isinstance(item,dict) or item.get('__class__')!='RPG::Item' or type(item.get('id')) is not int or item['id']!=number:
+            raise ValueError('Indexed item IDs must match native array slots')
+    identifier=integer(mutation.get('new_id'),'new item ID',1,999)
+    template_id=integer(mutation.get('template_id'),'template item ID',1,len(items)-1)
+    if identifier!=len(items):raise ValueError('Append ID must be the next array slot')
+    selected=items[template_id]
+    if set(selected)!=(ITEM_FIELDS|{'__class__'}):
+        raise ValueError('Selected indexed template has unknown native fields')
+    mentions=[]
+    for marker in ('$data_items','gain_item','lose_item','item_number','has_item?'):
+        result=search(data,query=marker,scopes=('scripts','events'),limit=20)
+        mentions.append({'literal':marker,'matches':result['matches'],'evidence':result['hits'],
+                         'evidence_truncated':result['truncated']})
+    data.unchanged()
+    return {'kind':'database_entry','target':{'table':'items','new_id':identifier,'template_id':template_id,
+                                            'template_name':selected.get('name')},'severity':'high',
+            'template_note_present':bool(selected.get('note')),'new_note_and_effects_cleared':True,
+            'item_consumer_mentions':mentions,
+            'limitations':['An appended static ID can collide with runtime-created IDs; literal mentions do not prove freedom from dynamic consumers.',
+                          'Search includes editor scripts and event text, not complete note-tag/custom inventory analysis.',
+                          'Exact native array/template hashes and schema are enforced separately by the snapshot/copy backend, not reconstructed from normalized JSON.',
+                          'Review template and native inventory/save behavior; deletion, ID reuse/reordering and general object creation are not enabled.']}
+
+
 def build(index: Path, spec_path: Path):
     spec=load(spec_path)
     if not isinstance(spec,dict) or not isinstance(spec.get("changes"),list) or not spec["changes"]:
@@ -180,6 +217,7 @@ def build(index: Path, spec_path: Path):
         elif kind=="event": impacts.append(event_impact(graph,maps,change,index))
         elif kind=="database": impacts.append(database_impact(index,change))
         elif kind=='map_region': impacts.append(region_impact(index,change))
+        elif kind=='database_entry': impacts.append(entry_impact(index,change))
         else: raise ValueError(f"unsupported change kind: {kind}")
     high=sum(1 for x in impacts if x.get("severity")=="high")
     return {"impact_version":VERSION,"title":str(spec.get("title") or "VX Ace impact analysis"),"impact_count":len(impacts),

@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, difflib, hashlib, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
-VERSION='0.19.0'
+VERSION='0.20.0'
 def mutator_command(ruby, mutator, *args):
     return [sys.executable if mutator.suffix == '.py' else ruby, str(mutator), *map(str, args)]
 DB_FILES={'actors':'Actors.rvdata2','classes':'Classes.rvdata2','skills':'Skills.rvdata2','items':'Items.rvdata2','weapons':'Weapons.rvdata2','armors':'Armors.rvdata2','enemies':'Enemies.rvdata2','troops':'Troops.rvdata2','states':'States.rvdata2','animations':'Animations.rvdata2','tilesets':'Tilesets.rvdata2','common-events':'CommonEvents.rvdata2','common_events':'CommonEvents.rvdata2','system':'System.rvdata2','map-infos':'MapInfos.rvdata2','map_infos':'MapInfos.rvdata2'}
@@ -78,6 +78,14 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             if table not in DB_FILES: raise ValueError(f'unsupported database table: {table}')
             if 'id' not in loc or not mut.get('field'): raise ValueError(f'database change #{n} requires locator.id and mutation.field')
             out.append({'kind':'database','target':'Data/'+DB_FILES[table],'ruby_spec':{'type':'database','mutation':{'id':loc['id'],'field':mut['field'],'value':mut.get('value')}},'description':c.get('description',''),'locator':loc,'mutation':mut})
+        elif kind=='database_entry':
+            if not isinstance(loc,dict) or loc != {'table':'items'}:
+                raise ValueError('Entry creation supports only the exact items table locator')
+            if not isinstance(mut,dict) or mut.get('action')!='append_key_item':
+                raise ValueError('Only append_key_item entry creation is enabled')
+            out.append({'kind':'database_entry','target':'Data/Items.rvdata2',
+                        'ruby_spec':{'type':'database_entry','mutation':mut},'description':c.get('description',''),
+                        'locator':loc,'mutation':mut})
         elif kind=='map_region':
             from vxace_map_regions import integer
             if not isinstance(loc,dict) or set(loc) != {'map_id'}:
@@ -136,6 +144,12 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if region_cells:
         from vxace_python_mutator import load
         before_region_root=load(target)[0]
+    before_entry_root=None
+    if change['kind']=='database_entry':
+        from vxace_python_mutator import load
+        from vxace_database_entries import snapshot as entry_snapshot
+        before_entry_root=load(target)[0]
+        before_entry=entry_snapshot(before_entry_root,mutation['template_id'])
     specfile=audit_dir/f'mutation-{index:03d}.json'; dump_json(specfile,change['ruby_spec'])
     tmp=target.with_suffix(target.suffix+'.new')
     p=run(mutator_command(ruby,mutator,'mutate',target,tmp,specfile))
@@ -144,6 +158,9 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if region_cells:
         from vxace_map_regions import verify_transition
         verify_transition(before_region_root,load(tmp)[0],mutation)
+    if change['kind']=='database_entry':
+        from vxace_database_entries import verify_transition as verify_entry
+        verify_entry(before_entry_root,load(tmp)[0],mutation)
     if before_sem==after_sem: raise RuntimeError(f'mutation produced no semantic change: {rel}')
     os.replace(tmp,target)
     rec={'kind':change['kind'],'target':rel,'description':change.get('description',''),'before_sha256':before_raw,'after_sha256':after_raw,'before_semantic_sha256':before_sem,'after_semantic_sha256':after_sem}
@@ -156,6 +173,11 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         rec['regions']={'locator':change['locator'],'before':before_regions,'after':after_regions,
                         'only_approved_region_bytes_changed':True,'other_map_fields_unchanged':True}
         rec['diff']=''.join(difflib.unified_diff(json.dumps(before_regions,indent=2).splitlines(True),json.dumps(after_regions,indent=2).splitlines(True),fromfile='source-regions',tofile='staged-regions'))
+    if change['kind']=='database_entry':
+        after_entry=entry_snapshot(load(target)[0],mutation['template_id'])
+        rec['entry']={'before':before_entry,'after':after_entry,'created_id':mutation['new_id'],
+                      'existing_entries_unchanged':True,'approved_inert_key_item_verified':True}
+        rec['diff']=''.join(difflib.unified_diff(json.dumps(before_entry,indent=2).splitlines(True),json.dumps(after_entry,indent=2).splitlines(True),fromfile='source-items',tofile='staged-items'))
     if change['kind']=='script':
         idxroot=change.get('_index_root')
         if idxroot:
@@ -189,7 +211,20 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
     spec=load_json(spec_path); changes=normalize_changes(index,spec)
     structural=[c for c in changes if c.get('mutation',{}).get('action') in {'insert_commands','delete_commands','insert_page','delete_page'}]
     regions=[c for c in changes if c['kind']=='map_region']
+    entries=[c for c in changes if c['kind']=='database_entry']
     reload_required=bool(structural or regions)
+    post_required=bool(reload_required or entries)
+    if entries:
+        if len(entries)!=1 or any(c['target']=='Data/Items.rvdata2' and c['kind']!='database_entry' for c in changes):
+            raise ValueError('Append one key item per transaction without other Items mutations')
+        if no_reindex or mutator.resolve() != (Path(__file__).resolve().parent/'vxace_python_mutator.py'):
+            raise ValueError('Entry creation requires the explicit Python backend and mandatory post-copy re-indexing')
+        from vxace_python_mutator import load
+        from vxace_database_entries import new_key_item, indexed_snapshot
+        from vxace_index_query import Index, unlinked
+        for c in entries:
+            indexed_snapshot(Index(index),project,c['mutation']['template_id'])
+            new_key_item(load(unlinked(project/c['target']))[0],c['mutation'])
     if regions:
         if len({c['target'] for c in regions}) != len(regions):
             raise ValueError('Use one bounded region operation per map per transaction')
@@ -215,7 +250,7 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
                         'ruby_spec':{'type':'system_version','mutation':{'expected_version':version}}})
     for c in changes: c['_index_root']=str(index)
     audit_dir.mkdir(parents=True)
-    if reload_required:
+    if post_required:
         from vxace_impact import build as build_impact
         dump_json(audit_dir/'structural-impact.json',build_impact(index,spec_path))
     # Programmatic project-wide gate for the exact selected backend, in addition
@@ -251,7 +286,7 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
                 p=run([sys.executable,str(diff_tool),str(index),str(post),'--json',str(j),'--markdown',str(m)])
                 if p.returncode: raise RuntimeError('index diff failed: '+p.stderr.strip())
                 index_diff=json.loads(p.stdout)
-            if reload_required:
+            if post_required:
                 semantic_tool=Path(__file__).resolve().parent/'vxace_semantic_diff.py'
                 p=run([sys.executable,str(semantic_tool),str(index),str(post),'--json',str(audit_dir/'semantic-diff.json'),'--markdown',str(audit_dir/'semantic-diff.md')])
                 if p.returncode: raise RuntimeError('structural semantic verification failed: '+p.stderr.strip())

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.20.0 — Append-only inert native key items
+
+- Add read-only native Items/template snapshots and one `append_key_item` operation at the exact next static ID through the explicit Python disposable-copy chain.
+- Restrict selected templates to supported exact native schemas and no damage; enforce inert key-item defaults, bounded text, exact array/template hashes and complete preservation of existing entries. Reject deletion, ID reuse/holes/reordering, arbitrary effects and other Items edits in the same transaction.
+- Review bounded script/event item-consumer mentions, then require fresh source/index, full project/target byte gates, mandatory impact/re-index/semantic diff/post-validation and complete rollback. An entry-only append does not advance the map reload version.
+- Native editor, Key Item inventory/filter/count and engine save/full-process-restart loading passed on a private blank-seed copy. Runtime-ID collisions remain a separate review concern; the known-good Oakfall runtime-item example is unchanged.
+- Add 13 append tests (307 total), including independent Ruby fixtures, schema/encoding refusal, candidate preservation and complete failed-copy rollback.
+
 ## 0.19.0 — Guarded existing-map region cells
 
 - Add read-only native region snapshots and small `map_region`/`set_regions` operations through the explicit Python disposable-copy workflow; no graphic painting or map structure changes.

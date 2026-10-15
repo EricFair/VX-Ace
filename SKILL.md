@@ -5,7 +5,7 @@ description: Analyze, validate, debug, and safely stage RPG Maker VX Ace databas
 
 # RPG Maker VX Ace Developer
 
-Version: 0.19.0
+Version: 0.20.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -178,7 +178,9 @@ v0.18 adds an optional [read-only MCP adapter](references/mcp-read-only.md) for 
 
 v0.19 adds [guarded existing-map region edits](references/map-region-editing.md): 1..256 unique cells, native editor IDs 0..63, exact Table/current-region preconditions, approved-byte/unknown-field verification and mandatory Python copy/reindex/postgates. Review encounter/script consumers and test older-save map reload. Graphic tiles, shadows and map structure cannot be edited through this operation; master/MCP remain read-only.
 
-The expanded suite has 294 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
+v0.20 adds [append-only inert native key items](references/key-item-append.md) from an exact supported template schema. Verify array/template hashes, the next static ID, dynamic item consumers and unchanged existing entries; require the explicit Python copy/postgate chain and native inventory/save tests. No deletion, hole reuse, reordering, other database entry creation or arbitrary effects are enabled. The Oakfall runtime item17 helper needs separate migration review before static item17 is added.
+
+The expanded suite has 307 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
 
 Real-project evidence is recorded in [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md). It covers a small editor-produced project and disposable native map/common/battle/save scenarios; it does not establish compatibility with arbitrary customized games. Structural operations outside the documented subset remain disabled.
 
