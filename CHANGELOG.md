@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.25.0 — Guarded ordinary upper-layer scenery painting
+
+- Add bounded layer2 B–E painting through the explicit Python disposable-copy chain, with exact native Table/current-cell/tileset and selected image bindings; preserve all other Table words and unrelated map fields.
+- Require actual adjacent native project context, project-first PNG resolution with explicit read-only RTP, bounded stable file hashing/header checks, dependency impact, version-driven old-save map reload, re-index/semantic/post-validation and rollback.
+- Verify an independent native editor's two-cell Table result, blocked and passable player movement, unchanged older-save loading, one native save and full-process-restart loading without extra setup or save rewrites. Original-project hashes and other Data files remain unchanged.
+- Add12 synthetic asset-binding/preservation/refusal/copy tests (364 total). Ground/autotiles, fills, map creation and unrestricted layers remain deferred.
+
 ## 0.24.0 — One guarded native script slot before Main
 
 - Add read-only native/indexed script archive snapshots and one `script_slot`/`insert_before_main` operation through the explicit Python copy chain; require a unique canonical Main, exact archive/anchor hashes, explicit unused ID/unique name and bounded exact UTF-8 source.
