@@ -1,8 +1,8 @@
-# VX Ace Masterfile — v1.0.0
+# VX Ace Masterfile — v1.1.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
-The next milestone is a feature-frozen v1.0 release. Follow [the finite release checklist](RELEASE_1_0.md); broader backlog features are scheduled after v1.0 and do not block it.
+v1.0 is released with [its frozen scope](RELEASE_1_0.md). v1.1 adds only [bounded read-only regex search](references/regex-search.md); broader authoring remains separately scoped post-release work.
 
 ## Recommended setup
 
@@ -82,7 +82,7 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Observed schema | Classes, field types, object counts and sample evidence locations from our normalized index; no invented fields |
 | Reference lint | Direct map transfers, coordinate bounds, common-event/troop targets, extraction errors; partial coverage is explicit |
 | Event-logic diagnostics | Local labels, continuations, terminators, unconditional map-page shadows, possible highest unconditional autorun locks and direct common-event call cycles; opaque/control-flow behavior stays uncertain |
-| Bounded project search | Literal text/native code filters across indexed events, database, map metadata and ordered script lines; exact evidence and honest pagination |
+| Bounded project search | Literal text/native code filters across indexed events, database, map metadata and ordered script lines; separate fixed-deadline Python-regex CLI; exact evidence and honest pagination |
 | Read-only map tile audit | Native Table/tileset shape, sheet routing, ordinary atlas cells/autotile kinds, static directional flags, regions and shadows; excludes runtime movement, asset validation and map mutation |
 | Indexed asset references | Project-first graphics/audio filename presence/casing with optional explicit RTP; no image/audio decoding, scripted assets, archive extraction or automatic repairs |
 | Optional PNG headers/layouts | Bounded IHDR dimensions/checksums, default character grids and standard tileset sizes; no full decoding, atlas reachability or runtime loadability proof |
@@ -225,7 +225,7 @@ A release is complete when its documented scope is implemented, tests pass, real
 
 ## Remaining boundaries
 
-Structural edits outside [guarded commands/pages](references/event-structure.md) and [stationary dialogue-event append](references/map-event-creation.md), map creation/resizing, tile painting beyond [ordinary upper-layer cells](references/upper-tile-painting.md), database entry creation beyond [inert key-item append](references/key-item-append.md), entry deletion/ID reuse, arbitrary raw writes, general save migration, encrypted archives, and VX/RGSS2 remain outside this release. Writable MCP tools, full asset decoding, regex search and deeper control-flow/termination analysis remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
+Structural edits outside [guarded commands/pages](references/event-structure.md) and [stationary dialogue-event append](references/map-event-creation.md), map creation/resizing, tile painting beyond [ordinary upper-layer cells](references/upper-tile-painting.md), database entry creation beyond [inert key-item append](references/key-item-append.md), entry deletion/ID reuse, arbitrary raw writes, general save migration, encrypted archives, and VX/RGSS2 remain outside this release. Writable MCP tools, full asset decoding and deeper control-flow/termination analysis remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
 
 Do not run broad unsupported writes merely because one project passed validation. The recorded native scenarios establish limited evidence. Further changes need their own fixtures, type/schema checks, dependency review and runtime scenarios. For supported event insertion/deletion, use [references/event-structure.md](references/event-structure.md), including exact snapshot commands, transaction fields and old-save behavior.
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0 — Bounded read-only regex search
+
+- Add a separate Python-regex CLI over existing normalized scopes and exact evidence, with complete field/line counts, code filters and pagination. Preserve literal search and MCP behavior.
+- Isolate compilation/matching in a text-only Python worker with a fixed10-second deadline, input/candidate/text/mask/report limits and strict refusal on invalid, partial, oversized or changed inputs. Retain source/index freshness, external reports and no project-code evaluation.
+- Add9 meaningful result/refusal/deadline/import-isolation tests (409 total). Verify a regex hit against actual disposable VX Ace dialogue, with unchanged save/source/original evidence. See references/regex-search.md for semantics, limits and bounded native evidence.
+
 ## 1.0.0 — First stable guarded VX Ace specialist release
 
 - Freeze the supported analysis/planning/copy-only authoring scope and move broader upstream parity to post-release milestones. Add installation, first read-only validation and staged-copy usage instructions with explicit capability/evidence limits.

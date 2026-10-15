@@ -1,4 +1,4 @@
-# Getting started with v1.0
+# Getting started with v1.1
 
 This is a VX Ace specialist skill and local toolchain. It helps design mechanics, understand a project and stage supported edits on new copies. It requires a legally installed RPG Maker VX Ace for native editor/playtesting. It does not redistribute engine resources or promise automatic creation of every part of a game.
 
@@ -9,7 +9,7 @@ Use Python 3.10+ and Ruby 3.2 on PATH. CI uses Python 3.11 and Ruby 3.2. Ruby is
 Clone the release into a new skill directory in PowerShell:
 
 ```powershell
-git clone --branch v1.0.0 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.codex/skills/rpg-maker-vx-ace-developer"
+git clone --branch v1.1.0 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.codex/skills/rpg-maker-vx-ace-developer"
 Set-Location "$env:USERPROFILE/.codex/skills/rpg-maker-vx-ace-developer"
 python --version
 ruby --version

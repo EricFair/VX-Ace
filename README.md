@@ -1,14 +1,16 @@
-# RPG Maker VX Ace Developer — v1.0
+# RPG Maker VX Ace Developer — v1.1
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
-This first stable release covers the documented guarded subset, with native editor/runtime and save evidence from a small default project. See [getting started](GETTING_STARTED.md), [release evidence and limits](references/release-1.0-evidence.md) and the [closed release scope](RELEASE_1_0.md). Broader authoring is post-1.0 work.
+The v1.0 stable foundation covers the documented guarded subset, with native editor/runtime and save evidence from a small default project. See [getting started](GETTING_STARTED.md), [release evidence and limits](references/release-1.0-evidence.md) and the [closed v1.0 release scope](RELEASE_1_0.md). Broader authoring remains separately scoped post-release work.
 
 Start with **[VXACE_MASTER.md](VXACE_MASTER.md)** for the complete settings, capability matrix, commands, safety contract, and evidence. The machine-readable defaults are in `vxace-master.json`.
 
 ```bash
 python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR
 ```
+
+v1.1 adds [bounded read-only regex search](references/regex-search.md) through a separate fixed-deadline CLI. The suite now has **409 tests**; literal search, MCP and copy-writing behavior stay unchanged.
 
 v1.0 includes [guarded one-time native gold/item rewards](references/one-time-event-rewards.md): constant additions only, an exact higher self-switch page, native item identity/full-array hashes, candidate preservation and the complete Python copy chain. Variable operands, removal, equipment and general economy/branch authoring remain deferred.
 
@@ -206,7 +208,7 @@ python tools/vxace_semantic_diff.py BEFORE_INDEX AFTER_INDEX --json semantic-dif
 
 ## Automated validation
 
-The v0.8 baseline had **38 tests**, v0.9 **45**, v0.10 **52**, v0.11 **136**, v0.12 **159**, v0.13 **184**, v0.14 **199**, v0.15 **219**, v0.16 **236**, v0.17 **254**, v0.18 **280**, v0.19 **294**, v0.20 **307**, v0.21 **312**, v0.22 **319**, v0.23 **336**, and v0.24 **352**. The v0.25 suite had **364 tests**. The v0.26 suite had **378 tests**. The v0.27 suite had **388 tests**. The v1.0 suite has **400 tests**, adding12 one-time reward/context/identity/preservation/copy/rollback checks. CI runs on Ubuntu and Windows; consult the latest Actions run for actual status and platform-specific skips.
+The v0.8 baseline had **38 tests**, v0.9 **45**, v0.10 **52**, v0.11 **136**, v0.12 **159**, v0.13 **184**, v0.14 **199**, v0.15 **219**, v0.16 **236**, v0.17 **254**, v0.18 **280**, v0.19 **294**, v0.20 **307**, v0.21 **312**, v0.22 **319**, v0.23 **336**, and v0.24 **352**. The v0.25 suite had **364 tests**. The v0.26 suite had **378 tests**. The v0.27 suite had **388 tests**. The v1.0 suite had **400 tests**, adding12 one-time reward/context/identity/preservation/copy/rollback checks. CI runs on Ubuntu and Windows; consult the latest Actions run for actual status and platform-specific skips.
 
 Run all suites with:
 
