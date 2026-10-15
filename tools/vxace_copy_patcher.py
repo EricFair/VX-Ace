@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, difflib, hashlib, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
-VERSION='0.21.0'
+VERSION='0.24.0'
 def mutator_command(ruby, mutator, *args):
     return [sys.executable if mutator.suffix == '.py' else ruby, str(mutator), *map(str, args)]
 DB_FILES={'actors':'Actors.rvdata2','classes':'Classes.rvdata2','skills':'Skills.rvdata2','items':'Items.rvdata2','weapons':'Weapons.rvdata2','armors':'Armors.rvdata2','enemies':'Enemies.rvdata2','troops':'Troops.rvdata2','states':'States.rvdata2','animations':'Animations.rvdata2','tilesets':'Tilesets.rvdata2','common-events':'CommonEvents.rvdata2','common_events':'CommonEvents.rvdata2','system':'System.rvdata2','map-infos':'MapInfos.rvdata2','map_infos':'MapInfos.rvdata2'}
@@ -73,6 +73,17 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             rel=safe_rel(str(c.get('script_path') or '')); search=str(c.get('search') or ''); replace=str(c.get('replace') or '')
             if not search: raise ValueError(f'script change #{n} missing search')
             out.append({'kind':'script','target':'Data/Scripts.rvdata2','ruby_spec':{'type':'scripts','mutation':{'script_index':script_index(index,rel),'search':search,'replace':replace}},'description':c.get('description',''),'script_path':rel,'search':search,'replace':replace})
+        elif kind=='script_slot':
+            from vxace_script_slots import integer
+            if not isinstance(loc,dict) or set(loc)!={'before_index'}:
+                raise ValueError('Script slot locator must contain exactly before_index')
+            before=integer(loc['before_index'],'before script index',0,4095)
+            fields={'action','expected_archive_sha256','expected_anchor_sha256','new_id','name','source'}
+            if not isinstance(mut,dict) or set(mut)!=fields or mut.get('action')!='insert_before_main':
+                raise ValueError('Script slot requires the exact insert_before_main mutation schema')
+            out.append({'kind':'script_slot','target':'Data/Scripts.rvdata2',
+                        'ruby_spec':{'type':'script_slot','mutation':{'before_index':before,**mut}},
+                        'description':c.get('description',''),'locator':loc,'mutation':mut})
         elif kind=='database':
             table=str(loc.get('table') or '')
             if table not in DB_FILES: raise ValueError(f'unsupported database table: {table}')
@@ -150,6 +161,12 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         from vxace_database_entries import snapshot as entry_snapshot
         before_entry_root=load(target)[0]
         before_entry=entry_snapshot(before_entry_root,mutation['template_id'])
+    before_slot_root=None
+    if change['kind']=='script_slot':
+        from vxace_python_mutator import load
+        from vxace_script_slots import snapshot as slot_snapshot
+        before_slot_root=load(target)[0]
+        before_slot=slot_snapshot(before_slot_root,mutation['before_index'])
     specfile=audit_dir/f'mutation-{index:03d}.json'; dump_json(specfile,change['ruby_spec'])
     tmp=target.with_suffix(target.suffix+'.new')
     p=run(mutator_command(ruby,mutator,'mutate',target,tmp,specfile))
@@ -161,6 +178,9 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if change['kind']=='database_entry':
         from vxace_database_entries import verify_transition as verify_entry
         verify_entry(before_entry_root,load(tmp)[0],mutation)
+    if change['kind']=='script_slot':
+        from vxace_script_slots import verify_transition as verify_slot
+        verify_slot(before_slot_root,load(tmp)[0],mutation)
     if before_sem==after_sem: raise RuntimeError(f'mutation produced no semantic change: {rel}')
     os.replace(tmp,target)
     rec={'kind':change['kind'],'target':rel,'description':change.get('description',''),'before_sha256':before_raw,'after_sha256':after_raw,'before_semantic_sha256':before_sem,'after_semantic_sha256':after_sem}
@@ -178,6 +198,11 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         rec['entry']={'before':before_entry,'after':after_entry,'created_id':mutation['new_id'],
                       'existing_entries_unchanged':True,'approved_inert_key_item_verified':True}
         rec['diff']=''.join(difflib.unified_diff(json.dumps(before_entry,indent=2).splitlines(True),json.dumps(after_entry,indent=2).splitlines(True),fromfile='source-items',tofile='staged-items'))
+    if change['kind']=='script_slot':
+        after_slot=slot_snapshot(load(target)[0],mutation['before_index']+1)
+        rec['script_slot']={'locator':change['locator'],'before':before_slot,'after':after_slot,
+                            'existing_entries_order_and_bytes_unchanged':True}
+        rec['diff']=''.join(difflib.unified_diff([],mutation['source'].splitlines(True),fromfile='/dev/null',tofile='new-script-slot-source'))
     if change['kind']=='script':
         idxroot=change.get('_index_root')
         if idxroot:
@@ -216,8 +241,22 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
     structural=[c for c in changes if c.get('mutation',{}).get('action') in {'insert_commands','delete_commands','insert_page','delete_page'}]
     regions=[c for c in changes if c['kind']=='map_region']
     entries=[c for c in changes if c['kind']=='database_entry']
+    slots=[c for c in changes if c['kind']=='script_slot']
     reload_required=bool(structural or regions)
-    post_required=bool(reload_required or entries)
+    post_required=bool(reload_required or entries or slots)
+    if slots:
+        if len(slots)!=1 or any(c['target']=='Data/Scripts.rvdata2' and c['kind']!='script_slot' for c in changes):
+            raise ValueError('Insert one script slot per transaction without other Scripts mutations')
+        if no_reindex or mutator.resolve()!=(Path(__file__).resolve().parent/'vxace_python_mutator.py'):
+            raise ValueError('Script slot insertion requires the explicit Python backend and mandatory post-copy re-indexing')
+        from vxace_script_slots import indexed_snapshot as slot_indexed_snapshot, new_slot
+        from vxace_index_query import Index, unlinked
+        from vxace_python_mutator import load
+        for c in slots:
+            slot_data=Index(index)
+            slot_indexed_snapshot(slot_data,project,c['locator']['before_index'])
+            slot_data.unchanged()
+            new_slot(load(unlinked(project/c['target']))[0],c['ruby_spec']['mutation'])
     if entries:
         if len(entries)!=1 or any(c['target']=='Data/Items.rvdata2' and c['kind']!='database_entry' for c in changes):
             raise ValueError('Append one key item per transaction without other Items mutations')

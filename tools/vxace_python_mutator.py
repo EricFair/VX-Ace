@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "_vendor"))
 from rpgvxace_mcp import marshal_rb
 from rpgvxace_mcp.rubytypes import RubyObject, RubyString, RubyHash, RubySymbol, Table, Color, Tone
 
-VERSION = "0.20.0"
+VERSION = "0.24.0"
 MAX_BYTES = 64 * 1024 * 1024
 
 
@@ -208,6 +208,9 @@ def apply(root, spec):
             command.ivars["@parameters"] = convert(value, params)
         else:
             raise ValueError("Unsupported event mutation")
+    elif kind == 'script_slot':
+        from vxace_script_slots import apply as insert_script_slot
+        insert_script_slot(root,mutation)
     elif kind == "scripts":
         index = integer(mutation["script_index"], "script index")
         if not isinstance(root, list) or index >= len(root):

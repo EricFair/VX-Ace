@@ -6,6 +6,8 @@ v0.7 adds a proposal-only patch-planning layer on top of a fresh Project Reader 
 
 The planner never modifies the VX Ace source project.
 
+Outputs must be a new unlinked directory outside both source project and index; existing output directories are refused. v0.24 [script-slot proposals](script-slot-insertion.md) include the complete new-source diff/hash and native archive/anchor preconditions after verifying the current canonical Main snapshot. Planning still never inserts or executes code.
+
 It may:
 
 - verify that every source file recorded by `manifest.json` still has the same SHA-256 hash;

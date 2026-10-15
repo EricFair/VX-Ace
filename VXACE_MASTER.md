@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v0.23.0
+# VX Ace Masterfile — v0.24.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -13,7 +13,7 @@ The authoritative entry point for this specialist toolchain: recommended setting
 - Failure: refuse; never downgrade a mismatch, warning, ambiguous target or stale source to a permissive warning.
 - Preserve original game files and private/proprietary scripts. Do not commit user projects, extracted defaults, saves, or raw private reports.
 
-The master runner does not perform mutations. Its safety settings are validated against a fixed policy; a configuration file cannot enable original-project writes or unrestricted structural editing. `structural_writes: "guarded-events-only"` describes the separately invoked copy patcher, not a master-runner write permission.
+The master runner does not perform mutations. Its safety settings are validated against a fixed policy; a configuration file cannot enable original-project writes or unrestricted structural editing. The legacy `structural_writes: "guarded-events-only"` label describes the event-structure subset. Regions, inert key-item append and canonical-Main script-slot insertion have separate documented copy operations; no master setting invokes or authorizes them.
 
 Optional [native compile-only syntax diagnostics](references/native-syntax-diagnostics.md) are separate from this unattended workflow: prepare a private exact-byte bundle, use a different trusted blank disposable VX Ace host through existing copy gates, observe the actual native run and collect its complete report. The inspected custom game must never be used as the host. No source is evaluated, and a compile pass never establishes gameplay/save compatibility or mutation authorization.
 
@@ -91,6 +91,8 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Guarded event structure | Python copy backend: atomic command insertion/deletion and conditioned same-owner map/troop page cloning/deletion; exact native hashes, repeating-trigger refusal, native project-version advancement, mandatory post-copy validation |
 | Guarded existing-map regions | Python copy backend: 1..256 unique cells, editor IDs0..63, exact native Table/current-region preconditions; preserve graphics/lower metadata/other fields, review encounter/script consumers, version advance and mandatory postgates |
 | Guarded key-item append | Python copy backend: one inert native Key Item at the next static ID, exact template/array hashes/schema, preserved existing records, impact and mandatory postgates; no deletion, reuse, arbitrary effects or other new object types |
+| Guarded script slot | Python copy backend: one new exact UTF-8 source entry before unique canonical Main, exact archive/anchor hashes and explicit unused ID/unique name; preserve all old entries/order/bytes, review proposed-code impact and require postgates; no reorder/delete/custom Main/overlapping Scripts edits |
+| Optional native syntax diagnostics | Private source-as-data bundle, different trusted disposable VX Ace host and complete bound Ruby1.9.2 compile-only report; no inspected-source evaluation, app launching or runtime compatibility claim |
 | Change review | Source hashes, before/after byte and semantic hashes, re-index, normalized diff, semantic Codex diff |
 | Actual editor/runtime verification | Structural edit/old-save evidence in v0.12; search locations, hidden page selection, terminating cutscene and counted autorun restart in `references/real-project-validation-v0.13.md` |
 

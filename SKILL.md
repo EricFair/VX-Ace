@@ -5,7 +5,7 @@ description: Analyze, validate, debug, and safely stage RPG Maker VX Ace databas
 
 # RPG Maker VX Ace Developer
 
-Version: 0.23.0
+Version: 0.24.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -81,7 +81,7 @@ See `references/project-validation.md` and `workflows/real-project-validation.md
 
 ## Project Reader + Codex
 
-Use `VXACE_MASTER.md` and `vxace-master.json` as the master entry points. Resolve tool/reference paths relative to this installed skill directory, not the user's current working directory. `python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR` runs the read-only release workflow with an explicitly selected Python data backend. Individual validator/patcher commands still default to Ruby; use `--backend python` to select the new backend. Readiness is specific to the selected backend and current snapshot. The standalone experimental codec audit is not a production gate. Only the guarded structural event subset in `references/event-structure.md` is enabled; other structural writes remain disabled. See `references/upstream-adoption.md` and the real-project evidence document.
+Use `VXACE_MASTER.md` and `vxace-master.json` as the master entry points. Resolve tool/reference paths relative to this installed skill directory, not the user's current working directory. `python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR` runs the read-only release workflow with an explicitly selected Python data backend. Individual validator/patcher commands still default to Ruby; use `--backend python` to select the new backend. Readiness is specific to the selected backend and current snapshot. The standalone experimental codec audit is not a production gate. Only the documented guarded event subset, inert key-item append and canonical-Main script-slot insertion are enabled; other structural writes remain disabled. See `references/upstream-adoption.md` and the real-project evidence document.
 
 Generate fresh evidence before project-specific work:
 
@@ -182,13 +182,15 @@ v0.20 adds [append-only inert native key items](references/key-item-append.md) f
 
 v0.21 fixes [exact UTF-8 script exports and multiline anchors](references/script-byte-fidelity.md), preserving original line-ending bytes on Windows and recording source hashes/counts. Re-index old evidence; construct exact anchors from byte-preserving UTF-8 reads. Invalid compressed/non-UTF-8 source refuses complete extraction rather than producing lossy text or placeholder code; extraction errors block copy admission.
 
-The expanded suite has 336 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
+The expanded suite has 352 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
 
 Real-project evidence is recorded in [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md). It covers a small editor-produced project and disposable native map/common/battle/save scenarios; it does not establish compatibility with arbitrary customized games. Structural operations outside the documented subset remain disabled.
 
 v0.22 extends [host syntax diagnostics](references/project-validation.md) with exact verified source bytes, source hashes/counts and extraction/parser deadlines. These remain modern host diagnostics; test every staged script in VX Ace.
 
 v0.23 adds optional [compile-only native syntax diagnostics](references/native-syntax-diagnostics.md). Prepare a private exact-byte bundle, use a different trusted blank disposable VX Ace host through the guarded copy chain, observe the native launch and collect the complete bound report. Never execute the inspected custom game as the host or evaluate its scripts. Generated bundles contain proprietary source and must stay private. Compilation never proves runtime/save compatibility or authorizes mutation.
+
+v0.24 adds [one guarded native script slot before canonical Main](references/script-slot-insertion.md). Use fresh native/indexed archive and anchor fingerprints, an explicit unused ID/unique name and reviewed exact UTF-8 source. Require the Python copy chain, preservation of every old entry/order/byte, proposed-code impact and mandatory postgates. Inspect the native editor, startup and old-save/restart behavior. No reordering, deletion, customized Main or overlapping Scripts mutations are enabled.
 
 ## Next milestones
 

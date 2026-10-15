@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, json
 from pathlib import Path
 
-VERSION = "0.20.0"
+VERSION = "0.24.0"
 DB_FILES = {
     "actors":"actors.json","classes":"classes.json","skills":"skills.json","items":"items.json",
     "weapons":"weapons.json","armors":"armors.json","enemies":"enemies.json","troops":"troops.json",
@@ -201,6 +201,71 @@ def entry_impact(index, change):
                           'Review template and native inventory/save behavior; deletion, ID reuse/reordering and general object creation are not enabled.']}
 
 
+def slot_impact(index,change):
+    import copy
+    import tempfile
+    from vxace_index_query import Index
+    from vxace_script_slots import integer,MAX_NEW_SOURCE_BYTES,MAIN_CALL
+    from rgss3_analyzer import analyze_script,build_report
+    locator=change.get('locator');mutation=change.get('mutation')
+    fields={'action','expected_archive_sha256','expected_anchor_sha256','new_id','name','source'}
+    if not isinstance(locator,dict) or set(locator)!={'before_index'} or not isinstance(mutation,dict) or set(mutation)!=fields or mutation.get('action')!='insert_before_main':
+        raise ValueError('Expected exact script slot locator and insert_before_main mutation')
+    data=Index(index);order=data.json('scripts/order.json').get('scripts')
+    if not isinstance(order,list) or not 1<=len(order)<4096:raise ValueError('Supported ordered script evidence required')
+    before=integer(locator['before_index'],'before script index',0,len(order)-1)
+    identifier=integer(mutation['new_id'],'new script ID',1,2**31-1)
+    name=mutation['name']
+    if identifier in {row.get('id') for row in order} or not isinstance(name,str) or not 1<=len(name)<=80 or name!=name.strip() or any(ord(c)<32 or ord(c)==127 for c in name) or name in {row.get('name') for row in order}:
+        raise ValueError('Proposed script ID/name must be valid and unique')
+    import re
+    if any(not isinstance(mutation[key],str) or not re.fullmatch('[a-f0-9]{64}',mutation[key]) for key in ('expected_archive_sha256','expected_anchor_sha256')):
+        raise ValueError('Exact native archive/anchor hash preconditions required')
+    selected=order[before]
+    if selected.get('name')!='Main' or sum(row.get('name')=='Main' for row in order)!=1:
+        raise ValueError('Unique indexed Main insertion anchor required')
+    text=data.text('scripts/'+selected['path'])
+    if [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith('#')]!=[MAIN_CALL]:
+        raise ValueError('Customized Main cannot anchor script slot impact')
+    source=mutation.get('source')
+    if not isinstance(source,str) or '\0' in source or not 1<=len(source.encode('utf-8','strict'))<=MAX_NEW_SOURCE_BYTES:
+        raise ValueError('Bounded UTF-8 proposed script source required')
+    compatibility=data.json('analysis/script-compatibility.json')
+    existing=copy.deepcopy(compatibility.get('scripts'))
+    if not isinstance(existing,list) or len(existing)!=len(order):raise ValueError('Complete ordered script compatibility evidence required')
+    for number,item in enumerate(existing):
+        if item.get('order')!=number or item.get('path')!=order[number].get('path'):raise ValueError('Ambiguous compatibility script order/path')
+        if number>=before:item['order']+=1
+    with tempfile.TemporaryDirectory(prefix='vxace-slot-impact-') as directory:
+        proposed=Path(directory)/'ProposedSlot.rb';proposed.write_bytes(source.encode('utf-8','strict'))
+        new=analyze_script(str(proposed),before,str(directory))
+    marker='<proposed-script-slot>';new.update(path=marker,name=mutation.get('name'))
+    report=build_report(existing[:before]+[new]+existing[before:])
+    def related(value):
+        if isinstance(value,dict):return value.get('path')==marker or any(related(v) for v in value.values())
+        if isinstance(value,list):return any(related(v) for v in value)
+        return False
+    evidence={}
+    for key in ('method_collisions','constant_collisions','imported_keys','dependency_findings'):
+        found=[row for row in report[key] if related(row)]
+        bounded=[]
+        for row in found[:100]:
+            item=copy.deepcopy(row)
+            for field in ('occurrences','definitions'):
+                if isinstance(item.get(field),list) and len(item[field])>20:
+                    item[field+'_total']=len(item[field]);item[field]=item[field][:20]
+            bounded.append(item)
+        evidence[key]={'total':len(found),'findings':bounded,'truncated':len(found)>len(bounded)}
+    data.unchanged()
+    return {'kind':'script_slot','severity':'high','target':{'before_index':before,'anchor_id':selected.get('id'),'anchor_name':'Main','new_id':mutation.get('new_id'),'name':mutation.get('name')},
+            'new_script':{key:new[key] for key in ('classes','modules','methods','aliases','save_hooks','imported_reads','imported_sets','requires','warnings')},
+            'ordered_compatibility_evidence':evidence,
+            'limitations':['Proposed startup code can change game behavior; static analysis never executes it or establishes compatibility.',
+                          'Native archive/anchor/ID/schema preservation is enforced separately by the snapshot/copy backend.',
+                          'Metaprogramming, attribute-generated methods and dynamic dependencies may be missed.',
+                          'Review native compilation, editor order, new game, unchanged older saves and restart-based persistence.']}
+
+
 def build(index: Path, spec_path: Path):
     spec=load(spec_path)
     if not isinstance(spec,dict) or not isinstance(spec.get("changes"),list) or not spec["changes"]:
@@ -218,6 +283,7 @@ def build(index: Path, spec_path: Path):
         elif kind=="database": impacts.append(database_impact(index,change))
         elif kind=='map_region': impacts.append(region_impact(index,change))
         elif kind=='database_entry': impacts.append(entry_impact(index,change))
+        elif kind=='script_slot': impacts.append(slot_impact(index,change))
         else: raise ValueError(f"unsupported change kind: {kind}")
     high=sum(1 for x in impacts if x.get("severity")=="high")
     return {"impact_version":VERSION,"title":str(spec.get("title") or "VX Ace impact analysis"),"impact_count":len(impacts),

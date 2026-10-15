@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, difflib, hashlib, json, sys
 from pathlib import Path
 
-VERSION = "0.21.0"
+VERSION = "0.24.0"
 
 
 def sha256(path: Path) -> str:
@@ -73,7 +73,7 @@ def normalize_spec(spec: dict) -> dict:
         if not isinstance(raw, dict):
             raise ValueError(f"Change #{i} must be an object")
         kind = raw.get("kind")
-        if kind not in {"script", "event", "database", "map_region", "database_entry"}:
+        if kind not in {"script", "script_slot", "event", "database", "map_region", "database_entry"}:
             raise ValueError(f"Change #{i} has unsupported kind: {kind}")
         item = dict(raw)
         if kind == "script":
@@ -85,6 +85,10 @@ def normalize_spec(spec: dict) -> dict:
             item["search"] = str(item["search"]); item["replace"] = str(item["replace"])
             if not item["search"]:
                 raise ValueError(f"Script change #{i} search block cannot be empty")
+        elif kind == 'script_slot':
+            locator=item.get('locator')
+            if not isinstance(locator,dict) or set(locator)!={'before_index'} or type(locator['before_index']) is not int or not 0<=locator['before_index']<=4095 or not item.get('proposal'):
+                raise ValueError('Script slot proposal requires exact before_index locator and proposal')
         elif kind == 'database_entry':
             if item.get('locator') != {'table':'items'} or not item.get('proposal'):
                 raise ValueError('Key-item entry proposal requires the exact items locator and proposal')
@@ -133,10 +137,28 @@ def structural_change(change: dict) -> dict:
     return {"kind":change["kind"],"locator":change["locator"],"description":str(change.get("description") or ""),"proposal":change.get("proposal"),"evidence":change.get("evidence",[]),"risk":str(change.get("risk") or "medium"),"apply_mode":"manual_or_future_verified_writer"}
 
 
+def script_slot_plan(index,project,change):
+    from vxace_index_query import Index,unlinked
+    from vxace_script_slots import indexed_snapshot,new_slot
+    from vxace_python_mutator import load
+    locator=change['locator'];mutation=change.get('mutation')
+    if not isinstance(mutation,dict) or 'before_index' in mutation:raise ValueError('Script slot mutation cannot override locator')
+    data=Index(index);snapshot=indexed_snapshot(data,project,locator['before_index'])
+    new_slot(load(unlinked(project/'Data/Scripts.rvdata2'))[0],{'before_index':locator['before_index'],**mutation})
+    data.unchanged()
+    raw=mutation['source'].encode('utf-8','strict')
+    result=structural_change(change)
+    result.update(apply_mode='proposal_only',risk='high',new_id=mutation['new_id'],name=mutation['name'],
+                  source_sha256=hashlib.sha256(raw).hexdigest(),source_bytes=len(raw),
+                  archive_sha256=snapshot['archive_sha256'],anchor_sha256=snapshot['anchor_sha256'],
+                  diff=''.join(difflib.unified_diff([],mutation['source'].splitlines(True),fromfile='/dev/null',tofile='new-script-slot-source')))
+    return result
+
+
 def regression_checks(changes: list[dict]) -> list[str]:
     checks=["Verify the source project still matches the indexed manifest before applying anything.","Apply changes to a copy or with a restorable backup first.","Launch the project and reproduce the original scenario before testing the change."]
     kinds={c["kind"] for c in changes}
-    if "script" in kinds:
+    if "script" in kinds or 'script_slot' in kinds:
         checks += ["Check Script Editor load order and overlapping aliases/overrides for every touched method.","Start a new game and load at least one existing save if the script touches persistent state."]
     if "event" in kinds:
         checks += ["Test the affected event from a fresh map entry, repeated interaction, map transfer away/back, and save/load.","Confirm active event page/trigger and that autoruns terminate or parallels yield as designed."]
@@ -150,6 +172,10 @@ def regression_checks(changes: list[dict]) -> list[str]:
         checks += ['Review dynamic item IDs, inventory extensions and template/note consumers before appending a key item.',
                    'Verify the new ID/Key Item entry in VX Ace, native inventory categorization and engine save/restart-load.',
                    'Confirm every existing Items entry is unchanged; deletion/reuse/reordering remain disabled.']
+    if 'script_slot' in kinds:
+        checks += ['Insert only one exact byte-verified native slot before unique canonical Main through the explicit Python copy workflow.',
+                   'Verify every existing script ID/name/source/order is preserved; no reordering/deletion or other Scripts edits in the transaction.',
+                   'Review new source collisions/dependencies, native compilation, editor order and old-save/restart-based behavior.']
     checks.append("Re-run the Project Reader and compare the new index/codex against the pre-change snapshot.")
     return checks
 
@@ -159,8 +185,9 @@ def render_markdown(plan: dict) -> str:
     for i,change in enumerate(plan["changes"],1):
         lines.append(f"### {i}. {change['kind'].title()} change")
         if change.get("description"): lines.append(change["description"])
-        if change["kind"]=="script":
-            lines += ["",f"Target: `scripts/{change['script_path']}`","","```diff",change["diff"].rstrip(),"```",""]
+        if change["kind"] in ("script",'script_slot'):
+            target='scripts/'+change['script_path'] if change['kind']=='script' else 'New slot '+change['name']+' before index '+str(change['locator']['before_index'])
+            lines += ["",f"Target: `{target}`","","```diff",change["diff"].rstrip(),"```",""]
         else:
             lines += ["","Locator:","","```json",json.dumps(change["locator"],ensure_ascii=False,indent=2),"```","","Proposal:","","```json",json.dumps(change["proposal"],ensure_ascii=False,indent=2),"```",""]
     lines += ["## Regression checklist",""]+[f"- {x}" for x in plan["regression_checks"]]+["","## Rollback","","This planner does not modify the source project. If a human or later verified writer applies the plan, preserve the pre-change project/script files and restore them if any regression fails.",""]
@@ -168,13 +195,20 @@ def render_markdown(plan: dict) -> str:
 
 
 def build_plan(index: Path, project: Path, spec_path: Path, output: Path) -> dict:
-    index=index.resolve(); project=project.resolve(); output=output.resolve()
+    from vxace_index_query import unlinked
+    index=unlinked(index);project=unlinked(project);output=unlinked(output)
+    if project.is_file() and project.suffix.lower()=='.rvproj2':project=project.parent
+    if not (project/'Data').is_dir():raise ValueError('Expected a VX Ace project with Data/')
+    if output.exists() or any(output==root or root in output.parents for root in (index,project)):
+        raise ValueError('Use a new plan directory outside the source project and index')
     manifest=validate_index(index); freshness=verify_freshness(manifest,project)
     if freshness["status"]!="fresh":
         raise RuntimeError("STALE_INDEX:"+json.dumps(freshness,ensure_ascii=False))
     spec=normalize_spec(load_json(spec_path)); changes=[]
     for change in spec["changes"]:
-        changes.append(script_diff(index,change) if change["kind"]=="script" else structural_change(change))
+        if change['kind']=='script':changes.append(script_diff(index,change))
+        elif change['kind']=='script_slot':changes.append(script_slot_plan(index,project,change))
+        else:changes.append(structural_change(change))
     plan={"planner_version":VERSION,"title":spec["title"],"summary":spec["summary"],"index":str(index),"source_path_omitted_from_persistent_output":True,"freshness":freshness,"changes":changes,"regression_checks":regression_checks(changes),"rollback":{"source_modified":False,"strategy":"restore pre-change backup or script copy if later applied"},"binary_writer_enabled":False}
     output.mkdir(parents=True,exist_ok=True); dump_json(output/"plan.json",plan); (output/"plan.md").write_text(render_markdown(plan),encoding="utf-8")
     return plan

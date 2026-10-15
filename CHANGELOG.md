@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.24.0 — One guarded native script slot before Main
+
+- Add read-only native/indexed script archive snapshots and one `script_slot`/`insert_before_main` operation through the explicit Python copy chain; require a unique canonical Main, exact archive/anchor hashes, explicit unused ID/unique name and bounded exact UTF-8 source.
+- Verify that removing the inserted entry reproduces the complete old archive bytes; preserve every old entry, relative order and source payload. Refuse reordering, deletion, customized Main, unknown metadata and overlapping Scripts mutations.
+- Require ordered proposed-code collision/dependency impact and complete re-index/semantic/post-project byte gates/rollback. Slot-only insertion leaves System/version data unchanged. Planner previews the complete new source and refuses plans inside source/index or existing output directories.
+- Verify127 entries through the separate native compile workflow, inspect the slot/order/source in VX Ace and test unchanged older-save default0, native save value7 and full-process-restart loading without save rewrites. Preserve all other Data/System files and original20 hashes.
+- Add14 slot/schema/preservation/impact/copy/rollback tests and two planner-output safety tests (352 total).
+
 ## 0.23.0 — Optional compile-only native syntax diagnostics
 
 - Prepare private exact-byte script bundles from a fresh complete index independently matched to the native archive; never launch, mutate or execute the inspected game.

@@ -73,6 +73,20 @@ class PatchPlannerTests(unittest.TestCase):
         self.assertEqual(p.returncode, 2)
         self.assertIn("Unsafe relative path", p.stderr)
 
+    def test_plans_refuse_output_inside_project_or_index_without_writes(self):
+        before=sha(self.project/'Data/System.rvdata2')
+        for root in (self.project,self.index):
+            self.out=root/'unsafe-plan'
+            p=self.run_planner({'changes':[{'kind':'script','script_path':'001_Test.rb','search':'    1\n','replace':'    2\n'}]})
+            self.assertEqual(p.returncode,2,p.stderr);self.assertFalse(self.out.exists())
+        self.assertEqual(sha(self.project/'Data/System.rvdata2'),before)
+
+    def test_existing_plan_directory_is_refused_and_preserved(self):
+        self.out.mkdir();marker=self.out/'preserve.txt';marker.write_bytes(b'keep')
+        p=self.run_planner({'changes':[{'kind':'script','script_path':'001_Test.rb','search':'    1\n','replace':'    2\n'}]})
+        self.assertEqual(p.returncode,2,p.stderr);self.assertEqual(marker.read_bytes(),b'keep')
+        self.assertFalse((self.out/'plan.json').exists())
+
 
 if __name__ == "__main__":
     unittest.main()
