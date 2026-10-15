@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v0.20
+# RPG Maker VX Ace Developer — v0.21
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -8,7 +8,9 @@ Start with **[VXACE_MASTER.md](VXACE_MASTER.md)** for the complete settings, cap
 python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR
 ```
 
-v0.20 adds [append-only inert native key items](references/key-item-append.md) through the explicit Python disposable-copy workflow. Exact native template/array checks, ID/schema restrictions, existing-entry preservation, impact and mandatory postgates constrain the operation. Deletion, ID reuse and general database object creation remain disabled.
+v0.21 fixes [script source-byte fidelity on Windows](references/script-byte-fidelity.md), preserving line endings and verified UTF-8 bytes, recording hashes/counts and keeping multiline anchors exact. Invalid compressed or unsupported source text now produces extraction errors instead of lossy/placeholder code; partial extraction blocks copy mutation.
+
+v0.20 added [append-only inert native key items](references/key-item-append.md) through the explicit Python disposable-copy workflow. Exact native template/array checks, ID/schema restrictions, existing-entry preservation, impact and mandatory postgates constrain the operation. Deletion, ID reuse and general database object creation remain disabled.
 
 v0.19 added [guarded existing-map region cells](references/map-region-editing.md) through the explicit Python disposable-copy workflow. Exact native preconditions, editor IDs 0..63, approved-byte verification, encounter/script impact and mandatory post-copy gates constrain the operation. Graphic tile painting and map structure changes remain disabled.
 
@@ -188,7 +190,7 @@ python tools/vxace_semantic_diff.py BEFORE_INDEX AFTER_INDEX --json semantic-dif
 
 ## Automated validation
 
-The v0.8 baseline had **38 tests**, v0.9 **45**, v0.10 **52**, v0.11 **136**, v0.12 **159**, v0.13 **184**, v0.14 **199**, v0.15 **219**, v0.16 **236**, v0.17 **254**, v0.18 **280**, and v0.19 **294**. The v0.20 suite has **307 tests**, adding 13 key-item append checks. CI runs on Ubuntu and Windows; consult the latest Actions run for actual status and platform-specific skips.
+The v0.8 baseline had **38 tests**, v0.9 **45**, v0.10 **52**, v0.11 **136**, v0.12 **159**, v0.13 **184**, v0.14 **199**, v0.15 **219**, v0.16 **236**, v0.17 **254**, v0.18 **280**, v0.19 **294**, and v0.20 **307**. The v0.21 suite has **312 tests**, adding five exact script-byte/refusal checks. CI runs on Ubuntu and Windows; consult the latest Actions run for actual status and platform-specific skips.
 
 Run all suites with:
 

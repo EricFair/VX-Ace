@@ -21,7 +21,9 @@ class PatchPlannerTests(unittest.TestCase):
         src = self.project / "Data" / "System.rvdata2"
         src.write_bytes(b"synthetic-system")
         script = self.index / "scripts" / "001_Test.rb"
-        script.write_text("class Game_System\n  def foo\n    1\n  end\nend\n", encoding="utf-8")
+        # This fixture intentionally supplies LF bytes, independent of the
+        # Windows text-mode convention. CRLF exactness has separate coverage.
+        script.write_bytes(b"class Game_System\n  def foo\n    1\n  end\nend\n")
         (self.index / "manifest.json").write_text(json.dumps({
             "reader_version": "0.6.0", "read_only": True,
             "files": [{"path": "Data/System.rvdata2", "sha256": sha(src), "size": src.stat().st_size}],

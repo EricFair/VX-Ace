@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, difflib, hashlib, json, sys
 from pathlib import Path
 
-VERSION = "0.20.0"
+VERSION = "0.21.0"
 
 
 def sha256(path: Path) -> str:
@@ -120,7 +120,7 @@ def script_diff(index: Path, change: dict) -> dict:
         raise ValueError(f"Script path escapes scripts/: {rel}")
     if not src.is_file():
         raise ValueError(f"Indexed script not found: scripts/{rel}")
-    original = src.read_text(encoding="utf-8")
+    original = src.read_bytes().decode('utf-8','strict')
     count = original.count(change["search"])
     if count != 1:
         raise ValueError(f"Expected search block exactly once in {rel}; found {count}")

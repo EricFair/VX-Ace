@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, difflib, hashlib, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
-VERSION='0.20.0'
+VERSION='0.21.0'
 def mutator_command(ruby, mutator, *args):
     return [sys.executable if mutator.suffix == '.py' else ruby, str(mutator), *map(str, args)]
 DB_FILES={'actors':'Actors.rvdata2','classes':'Classes.rvdata2','skills':'Skills.rvdata2','items':'Items.rvdata2','weapons':'Weapons.rvdata2','armors':'Armors.rvdata2','enemies':'Enemies.rvdata2','troops':'Troops.rvdata2','states':'States.rvdata2','animations':'Animations.rvdata2','tilesets':'Tilesets.rvdata2','common-events':'CommonEvents.rvdata2','common_events':'CommonEvents.rvdata2','system':'System.rvdata2','map-infos':'MapInfos.rvdata2','map_infos':'MapInfos.rvdata2'}
@@ -181,7 +181,7 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if change['kind']=='script':
         idxroot=change.get('_index_root')
         if idxroot:
-            text=(Path(idxroot)/'scripts'/change['script_path']).read_text(encoding='utf-8')
+            text=(Path(idxroot)/'scripts'/change['script_path']).read_bytes().decode('utf-8','strict')
             proposed=text.replace(change['search'],change['replace'],1)
             rec['diff']=''.join(difflib.unified_diff(text.splitlines(True),proposed.splitlines(True),fromfile='a/'+change['script_path'],tofile='b/'+change['script_path']))
     return rec
@@ -205,6 +205,10 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
     if copy_root==audit_dir or copy_root in audit_dir.parents or audit_dir in copy_root.parents: raise ValueError('copy and audit destinations must be separate non-nested paths')
     if copy_root.exists(): raise ValueError('copy destination already exists')
     if audit_dir.exists(): raise ValueError('audit destination already exists')
+    if (index/'project.json').is_file():
+        summary=load_json(index/'project.json')
+        if not isinstance(summary,dict) or summary.get('errors'):
+            raise ValueError('Complete Project Reader extraction is required before copy mutation')
     freshness=verify_fresh(index,project)
     if freshness['status']!='fresh': raise RuntimeError('STALE_INDEX:'+json.dumps(freshness))
     source_before=current_inventory(project)

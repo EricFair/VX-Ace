@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.21.0 — Exact script bytes and honest extraction refusal
+
+- Preserve verified UTF-8 script bytes and original CRLF/LF/mixed line endings during export; record source SHA-256, byte/newline counts and UTF-8/ASCII observations in script order metadata.
+- Read exact bytes in multiline planner/copy-audit paths; keep unique anchors strict, without fuzzy newline conversion. Re-index old Windows exports rather than altering source archives.
+- Bound incremental script inflation and refuse corrupt/truncated/trailing streams, unsupported UTF-8 source or invalid entries. Remove placeholder/lossy source fallbacks and block copy admission when extraction reports errors.
+- Verify all 126 native source exports byte-for-byte and an exact CRLF multiline replacement in the installed VX Ace runtime on disposable copies; original project unchanged.
+- Add five regression tests (312 total), including actual copy staging, UTF-8/mixed endings, encoding/compression refusal and source budgets.
+
 ## 0.20.0 — Append-only inert native key items
 
 - Add read-only native Items/template snapshots and one `append_key_item` operation at the exact next static ID through the explicit Python disposable-copy chain.

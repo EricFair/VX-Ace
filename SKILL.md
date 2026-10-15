@@ -5,7 +5,7 @@ description: Analyze, validate, debug, and safely stage RPG Maker VX Ace databas
 
 # RPG Maker VX Ace Developer
 
-Version: 0.20.0
+Version: 0.21.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -180,7 +180,9 @@ v0.19 adds [guarded existing-map region edits](references/map-region-editing.md)
 
 v0.20 adds [append-only inert native key items](references/key-item-append.md) from an exact supported template schema. Verify array/template hashes, the next static ID, dynamic item consumers and unchanged existing entries; require the explicit Python copy/postgate chain and native inventory/save tests. No deletion, hole reuse, reordering, other database entry creation or arbitrary effects are enabled. The Oakfall runtime item17 helper needs separate migration review before static item17 is added.
 
-The expanded suite has 307 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
+v0.21 fixes [exact UTF-8 script exports and multiline anchors](references/script-byte-fidelity.md), preserving original line-ending bytes on Windows and recording source hashes/counts. Re-index old evidence; construct exact anchors from byte-preserving UTF-8 reads. Invalid compressed/non-UTF-8 source refuses complete extraction rather than producing lossy text or placeholder code; extraction errors block copy admission.
+
+The expanded suite has 312 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
 
 Real-project evidence is recorded in [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md). It covers a small editor-produced project and disposable native map/common/battle/save scenarios; it does not establish compatibility with arbitrary customized games. Structural operations outside the documented subset remain disabled.
 

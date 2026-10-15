@@ -12,9 +12,10 @@
 require 'json'
 require 'zlib'
 require 'base64'
+require 'digest'
 
 module VXACEBridge
-  VERSION = '0.5.0'
+  VERSION = '0.21.0'
 
   def self.safe_string(value)
     s = value.to_s
@@ -137,11 +138,35 @@ module VXACEBridge
   def self.dump_json(path); puts JSON.pretty_generate(Encoder.new.encode(load_marshaled(path))); end
   def self.dump_scripts(path)
     data = load_marshaled(path); raise "Scripts archive root is #{data.class}, expected Array" unless data.is_a?(Array)
+    raise 'Script count budget exceeded' if data.length > 4096
+    total_source_bytes = 0
     scripts = data.each_with_index.map do |entry,index|
-      next({ 'index'=>index, 'invalid_entry'=>true, 'raw_class'=>entry.class.name }) unless entry.is_a?(Array) && entry.length >= 3
+      raise "Invalid script archive entry #{index}" unless entry.is_a?(Array) && entry.length >= 3
       id,name,compressed = entry[0],entry[1],entry[2]
-      source = begin Zlib::Inflate.inflate(compressed); rescue StandardError => e; "# [VXACE bridge] Failed to inflate script: #{e.class}: #{e.message}\n"; end
-      { 'index'=>index, 'id'=>id, 'name'=>safe_string(name), 'source'=>safe_string(source) }
+      raise "Invalid compressed script #{index}" unless compressed.is_a?(String) && compressed.bytesize <= 16 * 1024 * 1024
+      inflater = Zlib::Inflate.new
+      source = ''.b
+      begin
+        offset = 0
+        while offset < compressed.bytesize
+          piece = inflater.inflate(compressed.byteslice(offset, 32768))
+          raise "Script #{index} source byte budget exceeded" if source.bytesize + piece.bytesize > 16 * 1024 * 1024
+          source << piece
+          offset += 32768
+        end
+        raise "Incomplete or trailing compressed script #{index}" unless inflater.finished? && inflater.total_in == compressed.bytesize
+      ensure
+        inflater.close
+      end
+      total_source_bytes += source.bytesize
+      raise 'Total script source byte budget exceeded' if total_source_bytes > 64 * 1024 * 1024
+      utf8 = source.dup.force_encoding('UTF-8')
+      raise "Script #{index} is not valid UTF-8; code-page review required" unless utf8.valid_encoding?
+      crlf = source.scan(/\r\n/).length
+      { 'index'=>index, 'id'=>id, 'name'=>safe_string(name), 'source'=>utf8,
+        'source_sha256'=>Digest::SHA256.hexdigest(source), 'source_bytes'=>source.bytesize,
+        'utf8_decodable'=>true, 'ascii_only'=>utf8.ascii_only?,
+        'newlines'=>{ 'crlf'=>crlf, 'bare_lf'=>source.count("\n")-crlf, 'bare_cr'=>source.count("\r")-crlf } }
     end
     puts JSON.pretty_generate({ 'bridge_version'=>VERSION, 'scripts'=>scripts })
   end

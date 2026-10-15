@@ -5,7 +5,7 @@ import argparse, hashlib, json, os, re, shutil, subprocess, sys
 from collections import defaultdict
 from pathlib import Path
 
-VERSION = "0.12.0"
+VERSION = "0.21.0"
 DB_FILES = {
     "Actors.rvdata2":"actors.json","Classes.rvdata2":"classes.json","Skills.rvdata2":"skills.json",
     "Items.rvdata2":"items.json","Weapons.rvdata2":"weapons.json","Armors.rvdata2":"armors.json",
@@ -240,7 +240,12 @@ def read_project(project,output,ruby=None,bridge=None,run_compat=True,run_codex=
         try:
             for e in run_bridge(r,rb,"scripts",sp).get("scripts",[]):
                 i=int(e.get("index",len(order))); name=re.sub(r'[\\/:*?"<>|\x00-\x1f]+','_',str(e.get("name","")).strip()) or "unnamed"; fn=f"{i:03d}_{name[:80]}.rb"
-                (scriptsdir/fn).write_text(str(e.get("source","")),encoding="utf-8"); order.append({"index":i,"id":e.get("id"),"name":e.get("name",""),"path":fn})
+                raw_source=str(e['source']).encode('utf-8')
+                if e.get('source_bytes')!=len(raw_source) or e.get('source_sha256')!=hashlib.sha256(raw_source).hexdigest() or e.get('utf8_decodable') is not True:
+                    raise ValueError('Bridge script bytes/hash/UTF-8 observations disagree')
+                (scriptsdir/fn).write_bytes(raw_source)
+                order.append({"index":i,"id":e.get("id"),"name":e.get("name",""),"path":fn,
+                              **{key:e[key] for key in ('source_sha256','source_bytes','utf8_decodable','ascii_only','newlines')}})
             dump_json(scriptsdir/"order.json",{"scripts":order})
         except Exception as e: errors.append({"file":"Scripts.rvdata2","error":str(e)})
     system=decoded.get("System.rvdata2",{}); sw=system.get("switches",[]) if isinstance(system,dict) else []; vr=system.get("variables",[]) if isinstance(system,dict) else []

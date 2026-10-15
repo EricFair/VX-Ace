@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v0.20.0
+# VX Ace Masterfile — v0.21.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -69,6 +69,7 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | --- | --- |
 | VX Ace engine architecture and native design patterns | Specialist knowledge: ownership, state, events, battle, UI, persistence, performance |
 | Read-only binary extraction | Ruby bridge; normalized database/maps and exact Script Editor order/source |
+| Exact UTF-8 script exports | Verified source hashes/counts, original newline bytes and exact multiline anchors; corrupt/unsupported source produces extraction errors, not guessed text |
 | Script compatibility | Static classes/modules/methods/aliases, `$imported`, order, collisions, save hooks; evidence, not runtime proof |
 | Project Codex | Grounded candidates for quests/progression, battle gates, cutscenes and common-event systems; graph and evidence paths |
 | Project-wide byte validation | Selected Ruby or Python backend; all discovered `Data/*.rvdata2` files must pass |
