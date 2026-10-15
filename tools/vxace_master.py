@@ -84,7 +84,7 @@ def workflow(project, output, ruby, config, rtp=None):
         validation = output / "validation/validation.json"
         ready = validation.is_file() and json.loads(validation.read_text(encoding="utf-8"))["copy_mutation_ready"]
         ok = completed and unchanged and ready and all(s["exit_code"] == 0 for s in stages)
-        summary = {"version": "0.22.0", "status": "pass" if ok else "review_required", "stages": stages,
+        summary = {"version": "0.23.0", "status": "pass" if ok else "review_required", "stages": stages,
                    "source_unchanged": unchanged, "selected_backend": config["validation_backend"],
                    "copy_mutation_ready": bool(ready and unchanged), "mutation_performed": False,
                    "runtime_compatibility_proven": False}

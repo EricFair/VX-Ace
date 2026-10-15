@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v0.22.0
+# VX Ace Masterfile — v0.23.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -14,6 +14,8 @@ The authoritative entry point for this specialist toolchain: recommended setting
 - Preserve original game files and private/proprietary scripts. Do not commit user projects, extracted defaults, saves, or raw private reports.
 
 The master runner does not perform mutations. Its safety settings are validated against a fixed policy; a configuration file cannot enable original-project writes or unrestricted structural editing. `structural_writes: "guarded-events-only"` describes the separately invoked copy patcher, not a master-runner write permission.
+
+Optional [native compile-only syntax diagnostics](references/native-syntax-diagnostics.md) are separate from this unattended workflow: prepare a private exact-byte bundle, use a different trusted blank disposable VX Ace host through existing copy gates, observe the actual native run and collect its complete report. The inspected custom game must never be used as the host. No source is evaluated, and a compile pass never establishes gameplay/save compatibility or mutation authorization.
 
 ## One-command read-only workflow
 

@@ -5,7 +5,7 @@ description: Analyze, validate, debug, and safely stage RPG Maker VX Ace databas
 
 # RPG Maker VX Ace Developer
 
-Version: 0.22.0
+Version: 0.23.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -182,11 +182,13 @@ v0.20 adds [append-only inert native key items](references/key-item-append.md) f
 
 v0.21 fixes [exact UTF-8 script exports and multiline anchors](references/script-byte-fidelity.md), preserving original line-ending bytes on Windows and recording source hashes/counts. Re-index old evidence; construct exact anchors from byte-preserving UTF-8 reads. Invalid compressed/non-UTF-8 source refuses complete extraction rather than producing lossy text or placeholder code; extraction errors block copy admission.
 
-The expanded suite has 319 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
+The expanded suite has 336 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
 
 Real-project evidence is recorded in [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md). It covers a small editor-produced project and disposable native map/common/battle/save scenarios; it does not establish compatibility with arbitrary customized games. Structural operations outside the documented subset remain disabled.
 
 v0.22 extends [host syntax diagnostics](references/project-validation.md) with exact verified source bytes, source hashes/counts and extraction/parser deadlines. These remain modern host diagnostics; test every staged script in VX Ace.
+
+v0.23 adds optional [compile-only native syntax diagnostics](references/native-syntax-diagnostics.md). Prepare a private exact-byte bundle, use a different trusted blank disposable VX Ace host through the guarded copy chain, observe the native launch and collect the complete bound report. Never execute the inspected custom game as the host or evaluate its scripts. Generated bundles contain proprietary source and must stay private. Compilation never proves runtime/save compatibility or authorizes mutation.
 
 ## Next milestones
 

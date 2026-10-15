@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.23.0 — Optional compile-only native syntax diagnostics
+
+- Prepare private exact-byte script bundles from a fresh complete index independently matched to the native archive; never launch, mutate or execute the inspected game.
+- Add an authored Ruby1.9.2 scaffold for a different trusted blank disposable host, staged only through existing copy gates. Compile embedded source data without evaluating it, refuse report overwrite and stop before Main.
+- Collect only complete bounded reports bound to source inventory, scaffold, nonce, native Ruby version, entry order/hashes and statuses; retain runtime/mutation uncertainty. Generated bundles/reports may contain proprietary source and remain private.
+- Verify all126 private seed entries in actual VX Ace; a separate fixture reports one expected modern-syntax failure while BEGIN/END/regular side-effect traps never execute. Original20 hashes remain unchanged.
+- Add17 public fixture/protocol/refusal/non-execution tests (336 total); host regression reports are deliberately refused as native proof.
+
 ## 0.22.0 — Exact and bounded host syntax diagnostics
 
 - Feed verified UTF-8 bytes directly to host syntax checks, preserving Windows CRLF and mixed endings; record source hashes/counts and refuse inconsistent metadata before parsing.

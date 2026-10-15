@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v0.22
+# RPG Maker VX Ace Developer — v0.23
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -7,6 +7,8 @@ Start with **[VXACE_MASTER.md](VXACE_MASTER.md)** for the complete settings, cap
 ```bash
 python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR
 ```
+
+v0.23 adds optional [compile-only native syntax diagnostics](references/native-syntax-diagnostics.md): prepare a private byte-verified bundle, compile source data in a different trusted disposable VX Ace host, and collect a complete bound Ruby1.9.2 report. Inspected scripts are never evaluated; compilation remains separate from gameplay/save compatibility and mutation permission.
 
 v0.22 adds [exact and bounded host syntax diagnostics](references/project-validation.md): verified UTF-8 parser bytes and source hashes/counts, extraction/parser deadlines and explicit failures. Modern host parsing remains separate from byte readiness and native RGSS3 compatibility; a private native test confirms modern syntax can pass the host and fail VX Ace.
 
@@ -192,7 +194,7 @@ python tools/vxace_semantic_diff.py BEFORE_INDEX AFTER_INDEX --json semantic-dif
 
 ## Automated validation
 
-The v0.8 baseline had **38 tests**, v0.9 **45**, v0.10 **52**, v0.11 **136**, v0.12 **159**, v0.13 **184**, v0.14 **199**, v0.15 **219**, v0.16 **236**, v0.17 **254**, v0.18 **280**, v0.19 **294**, v0.20 **307**, and v0.21 **312**. The v0.22 suite has **319 tests**, adding seven exact host-parser integrity/deadline/non-execution checks. CI runs on Ubuntu and Windows; consult the latest Actions run for actual status and platform-specific skips.
+The v0.8 baseline had **38 tests**, v0.9 **45**, v0.10 **52**, v0.11 **136**, v0.12 **159**, v0.13 **184**, v0.14 **199**, v0.15 **219**, v0.16 **236**, v0.17 **254**, v0.18 **280**, v0.19 **294**, v0.20 **307**, v0.21 **312**, and v0.22 **319**. The v0.23 suite has **336 tests**, adding 17 native-bundle/protocol/integrity/non-execution checks. CI runs on Ubuntu and Windows; consult the latest Actions run for actual status and platform-specific skips.
 
 Run all suites with:
 
