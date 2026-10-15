@@ -371,6 +371,30 @@ def map_event_impact(index,change):
                           'Review character/object prefix semantics, native rendering, old-save reload, dialogue and restart.']}
 
 
+def map_entry_impact(index,change):
+    from vxace_maps import FIELDS,integer
+    from vxace_index_query import Index
+    from vxace_search import search
+    import re
+    loc=change.get('locator');mutation=change.get('mutation')
+    if not isinstance(loc,dict) or set(loc)!={'template_map_id'} or not isinstance(mutation,dict) or set(mutation)!=FIELDS-{'template_map_id'} or mutation.get('action')!='append_blank_map':raise ValueError('Exact map append proposal required')
+    tid=integer(loc['template_map_id'],'template map ID',1,999);identifier=integer(mutation['new_id'],'new map ID',1,999)
+    data=Index(index);infos=data.json('database/map-infos.json')
+    if not isinstance(infos,dict) or str(tid) not in infos or identifier!=max(int(key) for key in infos)+1:raise ValueError('Indexed next map ID/template disagree')
+    for field in ('expected_infos_sha256','expected_template_sha256','expected_inventory_sha256','expected_tilesets_sha256'):
+        if not isinstance(mutation[field],str) or not re.fullmatch('[a-f0-9]{64}',mutation[field]):raise ValueError('Exact native map append guards required')
+    evidence=[]
+    for query in ('MapInfos','reserve_transfer','load_data','$game_map','region_id','DataManager'):
+        found=search(data,query=query,scopes=('scripts','events'),limit=10)
+        evidence.append({'literal':query,'matches':found['matches'],'evidence':found['hits'],'truncated':found['truncated']})
+    data.unchanged()
+    return {'kind':'map_entry','severity':'high','target':{'template_map_id':tid,'new_id':identifier,'name':mutation['name']},'consumer_mentions':evidence,
+            'limitations':['Actual native tree/file inventory/tileset/template hashes and empty-map construction run separately in the Python copy chain.',
+                          'Next static ID can collide with runtime-created maps, custom loaders or old save state; literal search cannot establish absence.',
+                          'Adds one root map with inherited dimensions/tiles and no events; no transfers are authored and existing maps/System remain unchanged.',
+                          'Review native editor tree/map, real transfer/render/passability, old save and native save/process restart.']}
+
+
 def build(index: Path, spec_path: Path):
     spec=load(spec_path)
     if not isinstance(spec,dict) or not isinstance(spec.get("changes"),list) or not spec["changes"]:
@@ -391,6 +415,7 @@ def build(index: Path, spec_path: Path):
         elif kind=='script_slot': impacts.append(slot_impact(index,change))
         elif kind=='map_tile': impacts.append(upper_tile_impact(index,change))
         elif kind=='map_event': impacts.append(map_event_impact(index,change))
+        elif kind=='map_entry': impacts.append(map_entry_impact(index,change))
         else: raise ValueError(f"unsupported change kind: {kind}")
     high=sum(1 for x in impacts if x.get("severity")=="high")
     return {"impact_version":VERSION,"title":str(spec.get("title") or "VX Ace impact analysis"),"impact_count":len(impacts),

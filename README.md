@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v1.1
+# RPG Maker VX Ace Developer — v1.2
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -10,7 +10,9 @@ Start with **[VXACE_MASTER.md](VXACE_MASTER.md)** for the complete settings, cap
 python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR
 ```
 
-v1.1 adds [bounded read-only regex search](references/regex-search.md) through a separate fixed-deadline CLI. The suite now has **409 tests**; literal search, MCP and copy-writing behavior stay unchanged.
+v1.1 adds [bounded read-only regex search](references/regex-search.md) through a separate fixed-deadline CLI. Literal search and MCP stay unchanged.
+
+v1.2 adds [one guarded blank-map append](references/blank-map-append.md) through the Python copy chain. Exact native template/tree/inventory/tileset guards preserve existing data; native editor, transfer, collision-aware movement, old-save, saving and full-process-restart checks passed on disposable copies. The suite has **420 tests**. Resize/delete/reparent, ID reuse and transfer authoring remain deferred.
 
 v1.0 includes [guarded one-time native gold/item rewards](references/one-time-event-rewards.md): constant additions only, an exact higher self-switch page, native item identity/full-array hashes, candidate preservation and the complete Python copy chain. Variable operands, removal, equipment and general economy/branch authoring remain deferred.
 
@@ -18,7 +20,7 @@ v0.27 adds [asset-bound character graphics for new dialogue events](references/c
 
 v0.26 adds [guarded stationary dialogue-event append](references/map-event-creation.md): exact native blank template/full-map hashes, next maximum ID, unoccupied cell, literal text only and complete preservation of existing events/map fields. Native editor, action-button dialogue, unchanged older-save reload and full-process-restart checks passed on disposable copies. Graphics, copied logic, event deletion and ID reuse remain deferred.
 
-v0.25 adds [guarded ordinary upper-layer scenery painting](references/upper-tile-painting.md): exact native map/tileset/asset bindings, bounded B–E cells, preserved ground/shadow/region bytes and mandatory Python copy/postgates. Disposable native editor, blocked/passable movement, unchanged older-save map reload and process-restart checks passed. Ground/autotile painting, fills and map creation remain deferred.
+v0.25 adds [guarded ordinary upper-layer scenery painting](references/upper-tile-painting.md): exact native map/tileset/asset bindings, bounded B–E cells, preserved ground/shadow/region bytes and mandatory Python copy/postgates. Disposable native editor, blocked/passable movement, unchanged older-save map reload and process-restart checks passed. Ground/autotile painting, fills and broader map creation remain deferred; v1.2 separately enables the guarded blank-map subset.
 
 v0.24 adds [one guarded native script slot before canonical Main](references/script-slot-insertion.md): fresh archive/anchor hashes, explicit unused ID/unique name, exact UTF-8 source, complete preservation of old entries/order/bytes, proposed-code impact and mandatory Python copy/postgates. Native editor/compiler/startup/older-save/restart checks passed on disposable copies. Reordering, deletion and customized Main anchors remain disabled.
 

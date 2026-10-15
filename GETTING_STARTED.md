@@ -1,4 +1,4 @@
-# Getting started with v1.1
+# Getting started with v1.2
 
 This is a VX Ace specialist skill and local toolchain. It helps design mechanics, understand a project and stage supported edits on new copies. It requires a legally installed RPG Maker VX Ace for native editor/playtesting. It does not redistribute engine resources or promise automatic creation of every part of a game.
 
@@ -9,7 +9,7 @@ Use Python 3.10+ and Ruby 3.2 on PATH. CI uses Python 3.11 and Ruby 3.2. Ruby is
 Clone the release into a new skill directory in PowerShell:
 
 ```powershell
-git clone --branch v1.1.0 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.codex/skills/rpg-maker-vx-ace-developer"
+git clone --branch v1.2.0 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.codex/skills/rpg-maker-vx-ace-developer"
 Set-Location "$env:USERPROFILE/.codex/skills/rpg-maker-vx-ace-developer"
 python --version
 ruby --version
@@ -42,4 +42,4 @@ python tools/vxace_copy_patcher.py "C:/VXReports/MyGame-first-master/index" --pr
 
 All output paths must be new. The Python backend enables the documented guarded subset; it does not enable arbitrary structural edits. Keep the original closed and untouched. Open **the staged copy's** `Game.rvproj2` in VX Ace, inspect the change and test New Game, relevant older saves, repeat/failure paths, saving and a full process restart. Review the audit, re-index, semantic diff and post-validation. Failed staging removes the invalid copy and retains a failure audit; discarding a tested copy leaves the original intact.
 
-See [the master capability matrix](VXACE_MASTER.md), [release evidence](references/release-1.0-evidence.md) and [the playable fantasy quest example](examples/oakfall/README.md). New NPC dialogue, simple guarded rewards, existing command/page edits and small script extensions are useful starting tasks. Map creation, ground/autotile painting and broad database/event construction remain later-version work.
+See [the master capability matrix](VXACE_MASTER.md), [release evidence](references/release-1.0-evidence.md) and [the playable fantasy quest example](examples/oakfall/README.md). New NPC dialogue, simple guarded rewards, existing command/page edits and small script extensions are useful starting tasks. v1.2 also supports [one guarded blank-map append](references/blank-map-append.md) from an inert native template. Broader map creation/resizing/deletion, ground/autotile painting and broad database/event construction remain later-version work.

@@ -1,8 +1,8 @@
-# VX Ace Masterfile — v1.1.0
+# VX Ace Masterfile — v1.2.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
-v1.0 is released with [its frozen scope](RELEASE_1_0.md). v1.1 adds only [bounded read-only regex search](references/regex-search.md); broader authoring remains separately scoped post-release work.
+v1.0 is released with [its frozen scope](RELEASE_1_0.md). v1.1 adds [bounded read-only regex search](references/regex-search.md). v1.2 separately adds [one guarded blank-map append](references/blank-map-append.md), with native movement/save/restart and editor evidence; broader authoring remains separately scoped.
 
 ## Recommended setup
 
@@ -15,7 +15,7 @@ v1.0 is released with [its frozen scope](RELEASE_1_0.md). v1.1 adds only [bounde
 - Failure: refuse; never downgrade a mismatch, warning, ambiguous target or stale source to a permissive warning.
 - Preserve original game files and private/proprietary scripts. Do not commit user projects, extracted defaults, saves, or raw private reports.
 
-The master runner does not perform mutations. Its safety settings are validated against a fixed policy; a configuration file cannot enable original-project writes or unrestricted structural editing. The legacy `structural_writes: "guarded-events-only"` label describes the event-structure subset. Regions, inert key-item append, canonical-Main script-slot insertion and ordinary upper scenery painting and stationary dialogue-event append have separate documented copy operations; no master setting invokes or authorizes them.
+The master runner does not perform mutations. Its safety settings are validated against a fixed policy; a configuration file cannot enable original-project writes or unrestricted structural editing. The legacy `structural_writes: "guarded-events-only"` label describes the event-structure subset. Regions, inert key-item append, canonical-Main script-slot insertion and ordinary upper scenery painting and stationary dialogue-event append and guarded blank-map append have separate documented copy operations; no master setting invokes or authorizes them.
 
 Optional [native compile-only syntax diagnostics](references/native-syntax-diagnostics.md) are separate from this unattended workflow: prepare a private exact-byte bundle, use a different trusted blank disposable VX Ace host through existing copy gates, observe the actual native run and collect its complete report. The inspected custom game must never be used as the host. No source is evaluated, and a compile pass never establishes gameplay/save compatibility or mutation authorization.
 
@@ -223,9 +223,13 @@ CI runs on Ubuntu and Windows with Python 3.11 and Ruby 3.2. Local release valid
 
 A release is complete when its documented scope is implemented, tests pass, real-project evidence is recorded honestly, original hashes are unchanged, staged edits are reviewed/tested, and the repository is updated. This is not a claim that every upstream feature or all possible VX Ace projects are supported.
 
+## Blank-map creation
+
+For one new empty root map, read [the guarded blank-map workflow](references/blank-map-append.md). Capture fresh read-only native evidence with `vxace_maps.py`, bind every guard and use one reviewed `map_entry` transaction through the explicit Python copy backend. Existing maps/tree entries/System are preserved. Review dynamic IDs/loaders/save hooks and verify native editor, transfer, collision-aware movement, old save, saving and process restart. No transfers are authored automatically.
+
 ## Remaining boundaries
 
-Structural edits outside [guarded commands/pages](references/event-structure.md) and [stationary dialogue-event append](references/map-event-creation.md), map creation/resizing, tile painting beyond [ordinary upper-layer cells](references/upper-tile-painting.md), database entry creation beyond [inert key-item append](references/key-item-append.md), entry deletion/ID reuse, arbitrary raw writes, general save migration, encrypted archives, and VX/RGSS2 remain outside this release. Writable MCP tools, full asset decoding and deeper control-flow/termination analysis remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
+Structural edits outside [guarded commands/pages](references/event-structure.md) and [stationary dialogue-event append](references/map-event-creation.md), map creation beyond [one guarded blank-map append](references/blank-map-append.md), map resizing, tile painting beyond [ordinary upper-layer cells](references/upper-tile-painting.md), database entry creation beyond [inert key-item append](references/key-item-append.md), entry deletion/ID reuse, arbitrary raw writes, general save migration, encrypted archives, and VX/RGSS2 remain outside this release. Writable MCP tools, full asset decoding and deeper control-flow/termination analysis remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
 
 Do not run broad unsupported writes merely because one project passed validation. The recorded native scenarios establish limited evidence. Further changes need their own fixtures, type/schema checks, dependency review and runtime scenarios. For supported event insertion/deletion, use [references/event-structure.md](references/event-structure.md), including exact snapshot commands, transaction fields and old-save behavior.
 

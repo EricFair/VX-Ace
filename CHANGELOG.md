@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 — Guarded blank-map append
+
+- Append one root-level empty map from exact inert native template/tree/inventory/tileset context, next maximum static ID and unique literal name. Preserve existing maps, tree entries, System/version and saves.
+- Require a single explicit Python disposable-copy transaction, both immediate target gates, coordinated exclusive map/tree writes, impact, re-index, semantic/post-validation, tile audit and complete final inventory. Failure removes the entire copy.
+- Add 11 candidate/planner/copy/refusal/rollback tests (420 total); native editor, transfer, ordinary collision-aware movement, unchanged old save, native saving and full-process restart passed on disposable default-project copies. Input was driven by a private native-API harness; no general keyboard/custom-project compatibility claim.
+- See [commands, evidence and limits](references/blank-map-append.md). No resize/delete/reparent/ID reuse, transfer authoring or general map writer.
+
 ## 1.1.0 — Bounded read-only regex search
 
 - Add a separate Python-regex CLI over existing normalized scopes and exact evidence, with complete field/line counts, code filters and pagination. Preserve literal search and MCP behavior.

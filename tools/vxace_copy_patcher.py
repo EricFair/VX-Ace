@@ -97,6 +97,14 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             out.append({'kind':'database_entry','target':'Data/Items.rvdata2',
                         'ruby_spec':{'type':'database_entry','mutation':mut},'description':c.get('description',''),
                         'locator':loc,'mutation':mut})
+        elif kind=='map_entry':
+            from vxace_maps import FIELDS,integer
+            if not isinstance(loc,dict) or set(loc)!={'template_map_id'}:raise ValueError('Map append requires exactly template_map_id locator')
+            tid=integer(loc['template_map_id'],'template map ID',1,999)
+            if not isinstance(mut,dict) or set(mut)!=FIELDS-{'template_map_id'} or mut.get('action')!='append_blank_map':raise ValueError('Exact append_blank_map mutation required')
+            native_mutation={'template_map_id':tid,**mut}
+            out.append({'kind':'map_entry','target':'Data/MapInfos.rvdata2','ruby_spec':{'type':'map_entry','mutation':native_mutation},
+                        'description':c.get('description',''),'locator':loc,'mutation':native_mutation})
         elif kind=='map_event':
             from vxace_map_events import schema,integer
             if not isinstance(loc,dict) or set(loc)!={'map_id'}:raise ValueError('Map event locator requires exactly map_id')
@@ -145,7 +153,43 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
         else: raise ValueError(f'change #{n} unsupported kind: {kind}')
     return out
 
+def apply_map_append(copy_root,change,audit_dir,index):
+    """Coordinated two-file operation on the already verified fresh clone only."""
+    from vxace_python_mutator import load,marshal_rb,inspect
+    from vxace_index_query import unlinked
+    from vxace_maps import candidates
+    target=unlinked(copy_root/'Data/MapInfos.rvdata2');before=current_inventory(copy_root)
+    infos,before_raw=load(target);mutation=change['ruby_spec']['mutation']
+    proposed_info,proposed_map=candidates(infos,mutation,copy_root)
+    info_raw=marshal_rb.dump(proposed_info);map_raw=marshal_rb.dump(proposed_map)
+    retained=marshal_rb.load(info_raw);retained.pairs.pop()
+    if marshal_rb.dump(retained)!=before_raw:raise ValueError('Map append changed existing map-info entries or aliases')
+    new_rel=f"Data/Map{mutation['new_id']:03d}.rvdata2";new_file=unlinked(copy_root/new_rel)
+    if new_file.exists():raise ValueError('New map file already exists; never overwrite maps')
+    dump_json(audit_dir/f'mutation-{index:03d}.json',change['ruby_spec'])
+    temporary=None
+    try:
+        with new_file.open('xb') as stream:stream.write(map_raw)
+        with tempfile.NamedTemporaryFile(mode='wb',dir=target.parent,prefix='.vxace-map-',delete=False) as stream:
+            temporary=Path(stream.name);stream.write(info_raw)
+        os.replace(temporary,target);temporary=None
+        after_info,after_raw=load(target);after_map,after_map_raw=load(new_file)
+        if after_raw!=info_raw or after_map_raw!=map_raw:raise ValueError('Map/tree candidate changed during staged write')
+        expected={**before,'Data/MapInfos.rvdata2':hashlib.sha256(info_raw).hexdigest(),new_rel:hashlib.sha256(map_raw).hexdigest()}
+        if current_inventory(copy_root)!=expected:raise ValueError('Map append changed unapproved copied files')
+        change['_expected_copy_inventory']=expected
+        return {'kind':'map_entry','target':'Data/MapInfos.rvdata2','description':change.get('description',''),
+                'before_sha256':hashlib.sha256(before_raw).hexdigest(),'after_sha256':expected['Data/MapInfos.rvdata2'],
+                'before_semantic_sha256':inspect(infos)['semantic_sha256'],'after_semantic_sha256':inspect(after_info)['semantic_sha256'],
+                'new_map':{'target':new_rel,'sha256':expected[new_rel],'new_id':mutation['new_id'],'name':mutation['name'],
+                           'width':after_map.get('width'),'height':after_map.get('height'),'events':len(after_map.get('events').pairs),
+                           'old_entries_and_existing_maps_preserved':True,'system_version_unchanged':True}}
+    finally:
+        if temporary is not None and temporary.exists():temporary.unlink()
+
+
 def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Path, index:int)->dict:
+    if change['kind']=='map_entry':return apply_map_append(copy_root,change,audit_dir,index)
     rel=safe_rel(change['target']); target=(copy_root/rel).resolve()
     if copy_root.resolve() not in target.parents: raise ValueError(f'target escapes copy: {rel}')
     if not target.is_file(): raise FileNotFoundError(rel)
@@ -314,8 +358,19 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
     slots=[c for c in changes if c['kind']=='script_slot']
     upper_tiles=[c for c in changes if c['kind']=='map_tile']
     map_events=[c for c in changes if c['kind']=='map_event']
+    map_entries=[c for c in changes if c['kind']=='map_entry']
     reload_required=bool(structural or regions or upper_tiles or map_events)
-    post_required=bool(reload_required or entries or slots)
+    post_required=bool(reload_required or entries or slots or map_entries)
+    if map_entries:
+        if len(changes)!=1:raise ValueError('Map append requires its own single-change transaction')
+        if no_reindex or mutator.resolve()!=(Path(__file__).resolve().parent/'vxace_python_mutator.py'):
+            raise ValueError('Map append requires explicit Python backend and mandatory post-copy indexing')
+        from vxace_maps import snapshot as map_snapshot,candidates as map_candidates
+        from vxace_index_query import Index,unlinked
+        from vxace_python_mutator import load
+        for c in map_entries:
+            map_data=Index(index);map_snapshot(map_data,project,c['mutation']['template_map_id']);map_data.unchanged()
+            map_candidates(load(unlinked(project/c['target']))[0],c['mutation'],project)
     if map_events:
         if len({c['target'] for c in map_events})!=len(map_events) or any(sum(other['target']==c['target'] for other in changes)!=1 for c in map_events):
             raise ValueError('Append one dialogue event per map without other edits to that map')
@@ -408,7 +463,8 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
     if not validation['copy_mutation_ready']:
         raise RuntimeError('project-wide byte-identical gate refused mutation')
     preflights=[]
-    for rel in sorted({c['target'] for c in changes}):
+    targets={c['target'] for c in changes}|{f"Data/Map{c['mutation']['template_map_id']:03d}.rvdata2" for c in map_entries}
+    for rel in sorted(targets):
         preflights.append(roundtrip_preflight(ruby,mutator,project/safe_rel(rel)))
     shutil.copytree(project,copy_root)
     try:
@@ -439,10 +495,11 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
                 if p.returncode: raise RuntimeError('structural semantic verification failed: '+p.stderr.strip())
                 post_validation=validate(copy_root,audit_dir/'post-validation',ruby,mutator,skip_script_syntax=True,backend='python')
                 if not post_validation['copy_mutation_ready']: raise RuntimeError('post-copy project validation failed')
-                if regions or upper_tiles:
+                if regions or upper_tiles or map_entries:
                     from vxace_map_audit import audit as map_audit
                     from vxace_index_query import Index
                     reports=[map_audit(Index(post),c['locator']['map_id']) for c in regions+upper_tiles]
+                    reports += [map_audit(Index(post),c['mutation']['new_id']) for c in map_entries]
                     if any(r['findings'] for r in reports): raise RuntimeError('post-copy selected-map tile audit failed')
                     dump_json(audit_dir/'post-map-audit.json',reports)
         if upper_tiles:
@@ -457,6 +514,8 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         if reward_changes:
             from vxace_event_rewards import item_context
             for c in reward_changes:item_context(c['ruby_spec']['mutation'],copy_root/c['target'])
+        for c in map_entries:
+            if current_inventory(copy_root)!=c['_expected_copy_inventory']:raise RuntimeError('Map append final copied-file preservation check failed')
         if current_inventory(project)!=source_before: raise RuntimeError('SOURCE_CHANGED: source changed during final verification')
         result={'version':VERSION,'title':str(spec.get('title') or 'VX Ace staged patch'),'status':'ok','source_project_omitted_from_persistent_output':True,'freshness':freshness,'roundtrip_preflight':preflights,'changes':applied,'source_integrity_after':source_integrity,'copy_path':str(copy_root),'reindex':reindex,'index_diff':index_diff,'rollback':{'strategy':'delete staged project copy','source_project_modified':False}}
         dump_json(audit_dir/'audit.json',result); (audit_dir/'audit.md').write_text(render_audit(result),encoding='utf-8')

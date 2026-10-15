@@ -73,7 +73,7 @@ def normalize_spec(spec: dict) -> dict:
         if not isinstance(raw, dict):
             raise ValueError(f"Change #{i} must be an object")
         kind = raw.get("kind")
-        if kind not in {"script", "script_slot", "event", "database", "map_region", "map_tile", "map_event", "database_entry"}:
+        if kind not in {"script", "script_slot", "event", "database", "map_region", "map_tile", "map_event", "map_entry", "database_entry"}:
             raise ValueError(f"Change #{i} has unsupported kind: {kind}")
         item = dict(raw)
         if kind == "script":
@@ -89,6 +89,10 @@ def normalize_spec(spec: dict) -> dict:
             locator=item.get('locator')
             if not isinstance(locator,dict) or set(locator)!={'before_index'} or type(locator['before_index']) is not int or not 0<=locator['before_index']<=4095 or not item.get('proposal'):
                 raise ValueError('Script slot proposal requires exact before_index locator and proposal')
+        elif kind == 'map_entry':
+            locator=item.get('locator')
+            if not isinstance(locator,dict) or set(locator)!={'template_map_id'} or type(locator['template_map_id']) is not int or not 1<=locator['template_map_id']<=999 or not item.get('proposal'):
+                raise ValueError('Map append proposal requires template_map_id and proposal')
         elif kind == 'database_entry':
             if item.get('locator') != {'table':'items'} or not item.get('proposal'):
                 raise ValueError('Key-item entry proposal requires the exact items locator and proposal')
@@ -176,6 +180,10 @@ def regression_checks(changes: list[dict]) -> list[str]:
         checks += ['Insert only one exact byte-verified native slot before unique canonical Main through the explicit Python copy workflow.',
                    'Verify every existing script ID/name/source/order is preserved; no reordering/deletion or other Scripts edits in the transaction.',
                    'Review new source collisions/dependencies, native compilation, editor order and old-save/restart-based behavior.']
+    if 'map_entry' in kinds:
+        checks += ['Review dynamic map IDs/loaders, old save state and existing tile/region consumers before appending a static map.',
+                   'Verify the new root map and empty event list in VX Ace, native transfer/render/movement and save/full-process restart.',
+                   'Confirm all existing maps, old tree entries, System/version and other copied files are unchanged.']
     checks.append("Re-run the Project Reader and compare the new index/codex against the pre-change snapshot.")
     return checks
 
@@ -208,6 +216,15 @@ def build_plan(index: Path, project: Path, spec_path: Path, output: Path) -> dic
     for change in spec["changes"]:
         if change['kind']=='script':changes.append(script_diff(index,change))
         elif change['kind']=='script_slot':changes.append(script_slot_plan(index,project,change))
+        elif change['kind']=='map_entry':
+            from vxace_maps import snapshot as map_snapshot,candidates as map_candidates
+            from vxace_index_query import Index
+            from vxace_python_mutator import load
+            from vxace_copy_patcher import normalize_changes
+            proposed=normalize_changes(index,{'changes':[change]})[0]
+            data=Index(index);map_snapshot(data,project,proposed['mutation']['template_map_id']);data.unchanged()
+            map_candidates(load(project/'Data/MapInfos.rvdata2')[0],proposed['mutation'],project)
+            changes.append(structural_change(change))
         else:changes.append(structural_change(change))
     plan={"planner_version":VERSION,"title":spec["title"],"summary":spec["summary"],"index":str(index),"source_path_omitted_from_persistent_output":True,"freshness":freshness,"changes":changes,"regression_checks":regression_checks(changes),"rollback":{"source_modified":False,"strategy":"restore pre-change backup or script copy if later applied"},"binary_writer_enabled":False}
     output.mkdir(parents=True,exist_ok=True); dump_json(output/"plan.json",plan); (output/"plan.md").write_text(render_markdown(plan),encoding="utf-8")

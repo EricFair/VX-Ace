@@ -73,3 +73,8 @@ Direct mutation of the user's original working project remains disabled.
 ## v1.0 — Validated specialist
 
 Validated against the full competency benchmark and real VX Ace projects with documented failure modes, reproducible extraction/validation/patch results, and proven rollback procedures.
+
+
+## Released post-1.0 milestones
+
+v1.0 and v1.1 are complete releases. v1.2 is the separately bounded [blank-map append](references/blank-map-append.md) milestone. Broader map operations remain future work; they never reopen the closed v1.0 scope.
