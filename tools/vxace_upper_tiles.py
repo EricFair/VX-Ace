@@ -56,7 +56,7 @@ def tileset(root,project):
     return selected,names,flags.data
 
 
-def asset_digest(path):
+def asset_digest(path,dimensions=(512,512)):
     path=unlinked(path)
     if not path.is_file():raise ValueError('Selected tileset asset must be a regular file')
     before=path.stat()
@@ -73,8 +73,8 @@ def asset_digest(path):
     stamp=lambda value:(value.st_dev,value.st_ino,value.st_size,value.st_mtime_ns)
     if not stamp(before)==stamp(opened)==stamp(after)==stamp(path.stat()):raise ValueError('Selected tileset asset changed during hashing')
     header,_=read_header(path)
-    if header.get('status')!='header_observed' or (header.get('width'),header.get('height'))!=(512,512):
-        raise ValueError('Ordinary B-E painting requires a standard 512x512 PNG header')
+    if header.get('status')!='header_observed' or (dimensions is not None and (header.get('width'),header.get('height'))!=dimensions):
+        raise ValueError('Selected image requires a valid PNG header and the expected dimensions')
     # Recheck around the separate header observation too.
     if stamp(before)!=stamp(path.stat()):raise ValueError('Selected tileset asset changed during header observation')
     return sha.hexdigest(),header

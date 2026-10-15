@@ -5,7 +5,7 @@ description: Analyze, validate, debug, and safely stage RPG Maker VX Ace databas
 
 # RPG Maker VX Ace Developer
 
-Version: 0.26.0
+Version: 0.27.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -182,7 +182,7 @@ v0.20 adds [append-only inert native key items](references/key-item-append.md) f
 
 v0.21 fixes [exact UTF-8 script exports and multiline anchors](references/script-byte-fidelity.md), preserving original line-ending bytes on Windows and recording source hashes/counts. Re-index old evidence; construct exact anchors from byte-preserving UTF-8 reads. Invalid compressed/non-UTF-8 source refuses complete extraction rather than producing lossy text or placeholder code; extraction errors block copy admission.
 
-The expanded suite has 378 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
+The expanded suite has 388 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
 
 Real-project evidence is recorded in [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md). It covers a small editor-produced project and disposable native map/common/battle/save scenarios; it does not establish compatibility with arbitrary customized games. Structural operations outside the documented subset remain disabled.
 
@@ -194,7 +194,9 @@ v0.24 adds [one guarded native script slot before canonical Main](references/scr
 
 v0.25 adds [ordinary upper-layer B-E painting](references/upper-tile-painting.md) through the Python copy workflow: exact native Table/current cells, selected tileset/full asset hashes, explicit read-only RTP, standard PNG headers, low-level actual-context validation and mandatory postgates/version reload. Only layer2 ordinary IDs0..1023 are enabled; ground/A5/autotiles and shadow/region changes remain separate. Review native render/passage, old-save reload and restart. Image headers never prove decoding, and dynamic map replacement still requires review.
 
-For a new stationary literal-dialogue event, read [references/map-event-creation.md](references/map-event-creation.md). v0.26 enables one append per existing map from an exact one-page blank native template, next maximum ID and unoccupied coordinates, through the Python copy chain. Preserve existing events/map fields, advance the reload version and test actual action-button access, old-save reconstruction and restart. Graphics, copied logic, event deletion/ID reuse and arbitrary new commands remain outside this operation.
+For a new stationary literal-dialogue event, read [references/map-event-creation.md](references/map-event-creation.md). v0.26 enables one append per existing map from an exact one-page blank native template, next maximum ID and unoccupied coordinates, through the Python copy chain. Preserve existing events/map fields, advance the reload version and test actual action-button access, old-save reconstruction and restart. Unbound/tile graphics, copied logic, event deletion/ID reuse and arbitrary new commands remain outside this operation.
+
+For a visible new dialogue NPC, v0.27 adds [optional bound character graphics](references/character-event-graphics.md). Select an actual project or explicit RTP basename/index, exact PNG bytes/native grid/frame and direction/pattern. Require low-level actual context and final asset rechecks. The source template stays blank; only the detached new event gains the reviewed character. Header checks never prove native decoding/rendering.
 
 ## Next milestones
 

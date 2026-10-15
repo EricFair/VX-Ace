@@ -1,6 +1,6 @@
 # Guarded stationary dialogue-event append — v0.26
 
-This separate Python copy operation creates **one new event per selected existing map** from an exact native blank template. It does not create maps, delete/reuse events or copy arbitrary event logic. Only one stationary unconditional action-button page, a blank graphic and one literal Show Text block are enabled. Existing template priority/movement flags are preserved, so review how the player can reach and activate the event.
+This separate Python copy operation creates **one new event per selected existing map** from an exact native blank template. It does not create maps, delete/reuse events or copy arbitrary event logic. Only one stationary unconditional action-button page and one literal Show Text block are enabled. The base v0.26 schema keeps the graphic blank; v0.27 permits a [separately asset-bound character](character-event-graphics.md) on the new detached record. Existing template priority/movement flags are preserved, so review how the player can reach and activate the event.
 
 ## Capture actual template evidence
 

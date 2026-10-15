@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.27.0 — Asset-bound character graphics for new dialogue events
+
+- Extend stationary dialogue append with optional exact character name/index/direction/pattern and a full selected PNG binding; preserve the original blank schema and require the source template to remain blank.
+- Resolve project-first with explicit read-only RTP, refuse unsafe/ambiguous/case-mismatched files and bind full bytes/header/grid/frame/object-prefix semantics. Require actual low-level native project context and final asset rechecks/rollback; never install/copy/edit resources or modify existing event graphics.
+- Verify ordinary, single-character and object-character rendering, native frame rectangles/positioning, old-save event reconstruction, dialogue and full-process-restart save loading on private native copies. Preserve source/other Data/assets and retain header-decoding uncertainty.
+- Add10 synthetic context/asset/prefix/schema/copy/rollback tests (388 total); all local suites and seven-stage read-only master passed.
+
 ## 0.26.0 — Guarded stationary dialogue-event append
 
 - Add read-only native/indexed template snapshots and one new literal-dialogue event per existing map through the explicit Python copy chain: exact full-map/template hashes, next maximum ID, unique name and unoccupied in-bounds cell.

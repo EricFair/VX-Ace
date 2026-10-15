@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v0.26.0
+# VX Ace Masterfile — v0.27.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -93,7 +93,7 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Guarded key-item append | Python copy backend: one inert native Key Item at the next static ID, exact template/array hashes/schema, preserved existing records, impact and mandatory postgates; no deletion, reuse, arbitrary effects or other new object types |
 | Guarded script slot | Python copy backend: one new exact UTF-8 source entry before unique canonical Main, exact archive/anchor hashes and explicit unused ID/unique name; preserve all old entries/order/bytes, review proposed-code impact and require postgates; no reorder/delete/custom Main/overlapping Scripts edits |
 | Guarded upper scenery tiles | Python copy backend: 1..256 ordinary B-E cells on layer2 only, native Table/current-cell/tileset/selected-image hashes and explicit RTP; preserve ground/shadows/regions/unknown fields, advance reload version and require postgates; no ground/A5/autotile synthesis or arbitrary layers |
-| Guarded dialogue event append | Python copy backend: one stationary literal-dialogue event per existing map, exact blank one-page native template/full-map hashes, next maximum ID and unoccupied cell; preserve old event/map bytes, advance reload version and require postgates; no graphics/copied logic/deletion/ID reuse |
+| Guarded dialogue event append | Python copy backend: one stationary literal-dialogue event per existing map, exact blank one-page native template/full-map hashes, next maximum ID and unoccupied cell; optional asset-bound character on new record, preserve old event/map bytes, advance reload version and require postgates; no unbound/tile graphics, copied logic, deletion or ID reuse |
 | Optional native syntax diagnostics | Private source-as-data bundle, different trusted disposable VX Ace host and complete bound Ruby1.9.2 compile-only report; no inspected-source evaluation, app launching or runtime compatibility claim |
 | Change review | Source hashes, before/after byte and semantic hashes, re-index, normalized diff, semantic Codex diff |
 | Actual editor/runtime verification | Structural edit/old-save evidence in v0.12; search locations, hidden page selection, terminating cutscene and counted autorun restart in `references/real-project-validation-v0.13.md` |

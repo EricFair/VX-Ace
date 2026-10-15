@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "_vendor"))
 from rpgvxace_mcp import marshal_rb
 from rpgvxace_mcp.rubytypes import RubyObject, RubyString, RubyHash, RubySymbol, Table, Color, Tone
 
-VERSION = "0.26.0"
+VERSION = "0.27.0"
 MAX_BYTES = 64 * 1024 * 1024
 
 
@@ -152,7 +152,15 @@ def apply(root, spec, *, source_path=None):
         root.set('version_id',old+1)
     elif kind == 'map_event':
         from vxace_map_events import apply as append_dialogue_event
-        append_dialogue_event(root,mutation)
+        project=None;rtp=None
+        if 'graphic' in mutation:
+            from vxace_index_query import unlinked
+            if source_path is None:raise ValueError('Character event writes require an actual native project source path')
+            source_file=unlinked(source_path);context=spec.get('context')
+            if source_file.parent.name!='Data' or not re.fullmatch(r'Map\d{3,6}\.rvdata2',source_file.name) or not isinstance(context,dict) or set(context)!={'rtp'} or (context['rtp'] is not None and not isinstance(context['rtp'],str)):
+                raise ValueError('Character event native path/explicit asset context is unsupported')
+            project=source_file.parent.parent;rtp=context['rtp']
+        append_dialogue_event(root,mutation,project,rtp)
     elif kind == 'map_tile':
         from vxace_index_query import unlinked
         if source_path is None:raise ValueError('Upper tile writes require an actual native project source path')

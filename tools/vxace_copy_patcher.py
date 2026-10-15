@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, difflib, hashlib, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
-VERSION='0.26.0'
+VERSION='0.27.0'
 def mutator_command(ruby, mutator, *args):
     return [sys.executable if mutator.suffix == '.py' else ruby, str(mutator), *map(str, args)]
 DB_FILES={'actors':'Actors.rvdata2','classes':'Classes.rvdata2','skills':'Skills.rvdata2','items':'Items.rvdata2','weapons':'Weapons.rvdata2','armors':'Armors.rvdata2','enemies':'Enemies.rvdata2','troops':'Troops.rvdata2','states':'States.rvdata2','animations':'Animations.rvdata2','tilesets':'Tilesets.rvdata2','common-events':'CommonEvents.rvdata2','common_events':'CommonEvents.rvdata2','system':'System.rvdata2','map-infos':'MapInfos.rvdata2','map_infos':'MapInfos.rvdata2'}
@@ -98,10 +98,10 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
                         'ruby_spec':{'type':'database_entry','mutation':mut},'description':c.get('description',''),
                         'locator':loc,'mutation':mut})
         elif kind=='map_event':
-            from vxace_map_events import FIELDS,integer
+            from vxace_map_events import schema,integer
             if not isinstance(loc,dict) or set(loc)!={'map_id'}:raise ValueError('Map event locator requires exactly map_id')
             mid=integer(loc['map_id'],'map ID',1,999999)
-            if not isinstance(mut,dict) or set(mut)!=FIELDS or mut.get('action')!='append_dialogue_event':raise ValueError('Exact append_dialogue_event schema required')
+            schema(mut)
             out.append({'kind':'map_event','target':f'Data/Map{mid:03d}.rvdata2',
                         'ruby_spec':{'type':'map_event','mutation':mut},'description':c.get('description',''),
                         'locator':loc,'mutation':mut})
@@ -211,7 +211,7 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         verify_entry(before_entry_root,load(tmp)[0],mutation)
     if change['kind']=='map_event':
         from vxace_map_events import verify_transition as verify_event
-        verify_event(before_event_root,load(tmp)[0],mutation)
+        verify_event(before_event_root,load(tmp)[0],mutation,copy_root,change['ruby_spec'].get('context',{}).get('rtp'))
     if change['kind']=='map_tile':
         from vxace_upper_tiles import verify_transition as verify_upper
         verify_upper(before_tile_root,load(tmp)[0],mutation)
@@ -225,6 +225,7 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         rec['map_event']={'before':before_event,'after':event_snapshot(load(target)[0],mutation['template_id']),
                           'new_id':mutation['new_id'],'name':mutation['name'],'x':mutation['x'],'y':mutation['y'],
                           'text':mutation['text'],'old_events_and_other_map_fields_preserved':True}
+        if 'graphic' in mutation:rec['map_event'].update(graphic=mutation['graphic'],asset=mutation['expected_asset'])
     if change['kind']=='map_tile':
         after_tiles=upper_snapshot(load(target)[0],copy_root,tile_cells,tile_values,tile_rtp)
         rec['upper_tiles']={'locator':change['locator'],'before':before_tiles,'after':after_tiles,
@@ -307,9 +308,10 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         from vxace_python_mutator import load
         for c in map_events:
             event_data=Index(index)
-            event_indexed_snapshot(event_data,project,c['locator']['map_id'],c['mutation']['template_id'])
+            event_indexed_snapshot(event_data,project,c['locator']['map_id'],c['mutation']['template_id'],c['mutation'].get('graphic'),rtp)
             event_data.unchanged()
-            new_event(load(unlinked(project/c['target']))[0],c['mutation'])
+            new_event(load(unlinked(project/c['target']))[0],c['mutation'],project,rtp)
+            if 'graphic' in c['mutation']:c['ruby_spec']['context']={'rtp':str(rtp) if rtp else None}
     if upper_tiles:
         if len({c['target'] for c in upper_tiles})!=len(upper_tiles) or any(sum(other['target']==c['target'] for other in changes)!=1 for c in upper_tiles):
             raise ValueError('Use one upper tile operation per map without other mutations to that map')
@@ -429,6 +431,11 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
             from vxace_upper_tiles import asset_context
             from vxace_python_mutator import load
             for c in upper_tiles:asset_context(load(copy_root/c['target'])[0],c['mutation'],copy_root,rtp)
+        if map_events:
+            from vxace_character_graphics import binding
+            for c in map_events:
+                if 'graphic' in c['mutation'] and binding(copy_root,rtp,c['mutation']['graphic'])!=c['mutation']['expected_asset']:
+                    raise RuntimeError('Character asset changed during final verification')
         if current_inventory(project)!=source_before: raise RuntimeError('SOURCE_CHANGED: source changed during final verification')
         result={'version':VERSION,'title':str(spec.get('title') or 'VX Ace staged patch'),'status':'ok','source_project_omitted_from_persistent_output':True,'freshness':freshness,'roundtrip_preflight':preflights,'changes':applied,'source_integrity_after':source_integrity,'copy_path':str(copy_root),'reindex':reindex,'index_diff':index_diff,'rollback':{'strategy':'delete staged project copy','source_project_modified':False}}
         dump_json(audit_dir/'audit.json',result); (audit_dir/'audit.md').write_text(render_audit(result),encoding='utf-8')

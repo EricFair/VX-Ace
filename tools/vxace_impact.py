@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, json
 from pathlib import Path
 
-VERSION = "0.26.0"
+VERSION = "0.27.0"
 DB_FILES = {
     "actors":"actors.json","classes":"classes.json","skills":"skills.json","items":"items.json",
     "weapons":"weapons.json","armors":"armors.json","enemies":"enemies.json","troops":"troops.json",
@@ -304,10 +304,11 @@ def upper_tile_impact(index,change):
 
 def map_event_impact(index,change):
     from vxace_index_query import Index
-    from vxace_map_events import FIELDS,integer,text
+    from vxace_map_events import schema,integer,text
     from vxace_search import search
     locator=change.get('locator');mutation=change.get('mutation')
-    if not isinstance(locator,dict) or set(locator)!={'map_id'} or not isinstance(mutation,dict) or set(mutation)!=FIELDS or mutation.get('action')!='append_dialogue_event':
+    schema(mutation)
+    if not isinstance(locator,dict) or set(locator)!={'map_id'}:
         raise ValueError('Exact map-event append proposal required')
     mid=integer(locator['map_id'],'map ID',1,999999);data=Index(index);native=data.json(f'maps/map-{mid:03d}.json')
     if not isinstance(native,dict) or native.get('__class__')!='RPG::Map' or not isinstance(native.get('events'),dict):raise ValueError('Indexed native map events required')
@@ -328,11 +329,12 @@ def map_event_impact(index,change):
         mentions.append({'literal':marker,'matches':result['matches'],'evidence':result['hits'],'truncated':result['truncated']})
     data.unchanged()
     return {'kind':'map_event','severity':'high','target':{'map_id':mid,'new_id':identifier,'name':name,'x':x,'y':y,'template_id':template_id},
-            'literal_dialogue':lines,'event_consumer_mentions':mentions,
+            'literal_dialogue':lines,'event_consumer_mentions':mentions,'proposed_graphic':mutation.get('graphic'),
             'limitations':['Native exact template/map/schema preservation gates are enforced separately by the Python copy chain.',
                           'An appended static ID can collide with runtime-created events or pre-existing orphan self-switch/save state.',
                           'Literal consumers miss dynamic ownership; inspect custom map/save hooks and action-button accessibility.',
-                          'Blank graphic, stationary, one unconditional action-button page; test editor, old-save reload, native dialogue and restart.']}
+                          'Stationary, one unconditional action-button page; optional character assets require independent native/header/hash checks.',
+                          'Review character/object prefix semantics, native rendering, old-save reload, dialogue and restart.']}
 
 
 def build(index: Path, spec_path: Path):

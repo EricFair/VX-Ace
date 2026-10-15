@@ -10,7 +10,7 @@ import sys
 from vxace_index_query import execute, unlinked
 from vxace_map_regions import integer, table_for
 
-VERSION = '0.26.0'
+VERSION = '0.27.0'
 FIELDS = {'action','template_id','new_id','name','x','y','text',
           'expected_map_sha256','expected_template_sha256'}
 EVENT_FIELDS = {'id','name','x','y','pages'}
@@ -19,6 +19,14 @@ PAGE_FIELDS = {'condition','graphic','move_type','move_speed','move_frequency','
 CONDITION_FLAGS = {'switch1_valid','switch2_valid','variable_valid','self_switch_valid','item_valid','actor_valid'}
 CONDITION_INTS = {'switch1_id','switch2_id','variable_id','variable_value','item_id','actor_id'}
 GRAPHIC_FIELDS = {'tile_id','character_name','character_index','direction','pattern'}
+
+
+def schema(mutation):
+    if not isinstance(mutation,dict) or set(mutation) not in (FIELDS,FIELDS|{'graphic','expected_asset'}) or mutation.get('action')!='append_dialogue_event':
+        raise ValueError('Exact append_dialogue_event schema required; optional graphic and expected_asset must appear together')
+    if 'graphic' in mutation:
+        from vxace_character_graphics import graphic_schema
+        graphic_schema(mutation['graphic'])
 
 
 def digest(value):
@@ -112,9 +120,9 @@ def snapshot(root,template_id):
                       'Next maximum ID only; review runtime-created IDs, coordinate consumers and native action-button access.']}
 
 
-def new_event(root,mutation):
+def new_event(root,mutation,project=None,rtp=None):
     from vxace_python_mutator import RubyString, RubyObject, convert, marshal_rb
-    if not isinstance(mutation,dict) or set(mutation)!=FIELDS or mutation.get('action')!='append_dialogue_event':raise ValueError('Exact append_dialogue_event schema required')
+    schema(mutation)
     for field in ('expected_map_sha256','expected_template_sha256'):
         if not isinstance(mutation[field],str) or not re.fullmatch('[a-f0-9]{64}',mutation[field]):raise ValueError('Exact native map/template SHA required')
     selected=template(root,mutation['template_id']);events=events_for(root)
@@ -134,25 +142,28 @@ def new_event(root,mutation):
     event.set('id',identifier);event.set('name',convert(name,selected.get('name')));event.set('x',x);event.set('y',y)
     def command(code,parameters):return RubyObject('RPG::EventCommand',{'@code':code,'@indent':0,'@parameters':parameters})
     event.get('pages')[0].set('list',[command(101,[RubyString(b'',{'E':True}),0,0,2])]+[command(401,[RubyString(line.encode('utf-8'),{'E':True})]) for line in lines]+[command(0,[])])
+    if 'graphic' in mutation:
+        from vxace_character_graphics import set_graphic
+        set_graphic(event.get('pages')[0],mutation['graphic'],mutation['expected_asset'],project,rtp)
     return event
 
 
-def apply(root,mutation):
+def apply(root,mutation,project=None,rtp=None):
     from vxace_python_mutator import RubyHash
-    added=new_event(root,mutation);events=events_for(root)
+    added=new_event(root,mutation,project,rtp);events=events_for(root)
     root.set('events',RubyHash([*events.pairs,(mutation['new_id'],added)],default=None))
 
 
-def verify_transition(before,after,mutation):
+def verify_transition(before,after,mutation,project=None,rtp=None):
     from vxace_python_mutator import RubyHash, RubyObject
     old=events_for(before);new=events_for(after)
     if len(new.pairs)!=len(old.pairs)+1 or digest(RubyHash(new.pairs[:-1],default=None))!=digest(old):raise ValueError('Candidate changed old event hash entries/order/bytes')
-    if new.pairs[-1][0]!=mutation['new_id'] or digest(new.pairs[-1][1])!=digest(new_event(before,mutation)):raise ValueError('Candidate differs from approved dialogue event')
+    if new.pairs[-1][0]!=mutation['new_id'] or digest(new.pairs[-1][1])!=digest(new_event(before,mutation,project,rtp)):raise ValueError('Candidate differs from approved dialogue event')
     def unrelated(root):return digest(RubyObject(root.cls,{key:value for key,value in root.ivars.items() if key!='@events'}))
     if unrelated(before)!=unrelated(after):raise ValueError('Candidate changed unrelated map fields or unknown aliases')
 
 
-def indexed_snapshot(data,project,map_id,template_id):
+def indexed_snapshot(data,project,map_id,template_id,graphic=None,rtp=None):
     from vxace_python_mutator import load, RubyObject, RubyString
     integer(map_id,'map ID',1,999999)
     root,_=load(unlinked(Path(project)/f'Data/Map{map_id:03d}.rvdata2'))
@@ -176,17 +187,29 @@ def indexed_snapshot(data,project,map_id,template_id):
         observed=indexed_events[str(key)]
         if not isinstance(observed,dict) or any(observed.get(field)!=plain(event.get(field)) for field in ('id','name','x','y')):
             raise ValueError('Native/indexed existing event identity/position disagrees')
-    return {'map_id':map_id,**snapshot(root,template_id)}
+    result={'map_id':map_id,**snapshot(root,template_id)}
+    if graphic is not None:
+        from vxace_character_graphics import binding
+        result.update(proposed_graphic=graphic,asset=binding(project,rtp,graphic))
+        result['limits'][0]='Blank native template, stationary literal dialogue and a separately bound proposed character graphic only.'
+    return result
 
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('index');parser.add_argument('--project',required=True)
     parser.add_argument('--map',dest='map_id',type=int,required=True);parser.add_argument('--template-event',type=int,required=True);parser.add_argument('--output',required=True)
+    parser.add_argument('--character');parser.add_argument('--character-index',type=int);parser.add_argument('--direction',type=int,default=2);parser.add_argument('--pattern',type=int,default=1);parser.add_argument('--rtp')
     args=parser.parse_args(argv)
     try:
         project=unlinked(args.project)
         if project.is_file() and project.suffix.lower()=='.rvproj2':project=project.parent
-        result=execute(args.index,project,args.output,lambda data:indexed_snapshot(data,project,args.map_id,args.template_event),'map-event-snapshot')
+        if (args.character is None)!=(args.character_index is None):raise ValueError('Character name/index must be supplied together')
+        rtp=unlinked(args.rtp) if args.rtp else None
+        output=unlinked(args.output)
+        if rtp is not None and (output==rtp or rtp in output.parents):raise ValueError('Snapshot output must be outside read-only RTP')
+        graphic={'character_name':args.character,'character_index':args.character_index,'direction':args.direction,'pattern':args.pattern} if args.character is not None else None
+        if graphic is None and (args.rtp or args.direction!=2 or args.pattern!=1):raise ValueError('Graphic-only options require a selected character')
+        result=execute(args.index,project,output,lambda data:indexed_snapshot(data,project,args.map_id,args.template_event,graphic,rtp),'map-event-snapshot')
     except Exception as error:print('Event snapshot refused: '+str(error),file=sys.stderr);return 2
     print(json.dumps({'version':VERSION,'next_event_id':result['next_event_id']}));return 0
 
