@@ -8,8 +8,9 @@ import os
 from pathlib import Path
 import sys
 from vxace_index_query import Index, execute, unlinked
+from vxace_image_headers import read_header, layout_checks
 
-VERSION = '0.16.0'
+VERSION = '0.17.0'
 MAX_ASSET_FILES = 20000
 MAX_REFERENCES = 10000
 EXTENSIONS = {'Graphics': {'.png', '.jpg', '.jpeg'},
@@ -28,7 +29,9 @@ FIELDS = {
 LIMITS = [
     'Checks indexed database/map/event references, including inactive content; not runtime reachability.',
     'Does not evaluate scripts, note tags, dynamic names, encrypted archives or implicit engine assets.',
-    'Presence and filename casing only; format decoding, sound playback, dimensions and licensing are not validated.',
+    'Presence/casing with optional bounded PNG header/layout observations; no full decoding, sound playback or licensing validation.',
+    'PNG header checks do not inspect pixel data, later chunks or full-image checksums; other image formats remain unverified.',
+    'Layout findings assume default RGSS3 and standard tilesets; custom scripts and intentionally partial sheets require manual review.',
     'No supplied RTP means unresolved files remain uncertain, not proven missing.',
     'Multiple matching files/formats remain ambiguous; no engine extension-priority claim is made.',
     'Asset names and file size/mtime metadata are rechecked, not full RTP file hashes.',
@@ -84,13 +87,13 @@ def catalog(root):
 
 def references(data):
     found = []
-    def add(folder, name, file, path, audio=False):
+    def add(folder, name, file, path, audio=False, tileset_slot=None):
         if name == '':
             return
         if len(found) >= MAX_REFERENCES:
             raise ValueError('Asset reference budget exceeded')
         found.append({'folder': ('Audio/' if audio else 'Graphics/') + folder,
-                      'name': name, 'evidence': {'file': file, 'path': path}})
+                      'name': name, 'evidence': {'file': file, 'path': path}, 'tileset_slot': tileset_slot})
     def walk(obj, file, path=()):
         data.spend()
         if len(path) > 128:
@@ -111,7 +114,9 @@ def references(data):
                 if not isinstance(names, list):
                     raise ValueError('Opaque tileset sheet references')
                 for i, name in enumerate(names):
-                    add('Tilesets', name, file, [*path, 'tileset_names', i])
+                    if i >= 9:
+                        raise ValueError('Unsupported native tileset slot')
+                    add('Tilesets', name, file, [*path, 'tileset_names', i], tileset_slot=i)
             if cls in ('RPG::EventCommand', 'RPG::MoveCommand'):
                 code = obj.get('code'); params = obj.get('parameters')
                 positions = ({101: [(0, 'Faces')], 231: [(1, 'Pictures')],
@@ -137,7 +142,9 @@ def references(data):
     return found
 
 
-def audit(index, project, rtp=None):
+def audit(index, project, rtp=None, image_headers=False):
+    if type(image_headers) is not bool:
+        raise ValueError('Image header feature flag must be boolean')
     data = index if isinstance(index, Index) else Index(index)
     project = unlinked(project)
     roots = [('project', project)]
@@ -159,10 +166,14 @@ def audit(index, project, rtp=None):
         if key not in unique:
             if len(unique) >= 2000:
                 raise ValueError('Distinct asset report budget exceeded')
-            unique[key] = {'folder': ref['folder'], 'name': name, 'reference_count': 0, 'evidence': []}
+            unique[key] = {'folder': ref['folder'], 'name': name, 'reference_count': 0, 'evidence': [], 'tileset_slots': []}
         row = unique[key]; row['reference_count'] += 1
+        slot = ref['tileset_slot']
+        if slot is not None and slot not in row['tileset_slots']:
+            row['tileset_slots'].append(slot)
         if len(row['evidence']) < 3:
             row['evidence'].append(ref['evidence'])
+    observed_headers = {}
     for (folder, name), row in unique.items():
         row['matches'] = []
         if name is None:
@@ -187,6 +198,13 @@ def audit(index, project, rtp=None):
                 row['status'] = 'unverified_extension'; break
             expected = wanted if explicit_extension else wanted + extension
             row['status'] = 'found' if actual == expected else 'case_mismatch'
+            if image_headers and folder.startswith('Graphics/'):
+                path = root / actual
+                header, digest = read_header(path)
+                row['image_header'] = header
+                row['layout_checks'] = layout_checks(folder, name, header, row['tileset_slots'])
+                if digest is not None:
+                    observed_headers[path] = digest
             break
         else:
             row['status'] = 'missing' if rtp is not None else 'unresolved_without_rtp'
@@ -194,17 +212,31 @@ def audit(index, project, rtp=None):
     for label, root, _, before in catalogs:
         if catalog(root)[1] != before:
             raise ValueError('Asset names/metadata changed during audit')
+    for path, before in observed_headers.items():
+        if read_header(path)[1] != before:
+            raise ValueError('Image header changed during audit')
     rows = list(unique.values())
     return {'version': VERSION, 'read_only': True, 'mutation_authorized': False,
             'rtp_supplied': rtp is not None, 'asset_names_and_metadata_unchanged': True,
+            'image_headers_requested': image_headers, 'observed_png_headers_unchanged': True if image_headers else None,
             'references': rows, 'counts': dict(Counter(x['status'] for x in rows)),
+            'image_counts': dict(Counter(x['image_header']['status'] for x in rows if 'image_header' in x)),
+            'layout_counts': dict(Counter(c['status'] for x in rows for c in x.get('layout_checks', []))),
             'limits': LIMITS}
+
+
+def review_required(result):
+    return any(row['status'] != 'found' or
+               row.get('image_header', {}).get('status', 'header_observed') != 'header_observed' or
+               any(c['status'] != 'standard_layout' for c in row.get('layout_checks', []))
+               for row in result['references'])
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('index'); ap.add_argument('--project', required=True); ap.add_argument('--output', required=True)
     ap.add_argument('--rtp', help='Explicit unpacked RTP root containing Graphics/ and Audio/')
+    ap.add_argument('--image-headers', action='store_true', help='Observe PNG IHDR dimensions and default character/tileset layouts; not full decoding')
     a = ap.parse_args(argv)
     try:
         project = unlinked(a.project)
@@ -214,16 +246,19 @@ def main(argv=None):
             rtp = unlinked(a.rtp); output = unlinked(a.output)
             if output == rtp or rtp in output.parents:
                 raise ValueError('Asset reports must be outside the read-only RTP root')
-        result = execute(a.index, project, a.output, lambda data: audit(data, project, a.rtp), 'asset-audit')
-        lines = ['# VX Ace asset references', '', 'Presence/casing checks only. See JSON for evidence.', '',
-                 'Counts: ' + json.dumps(result['counts']), '']
+        result = execute(a.index, project, a.output, lambda data: audit(data, project, a.rtp, a.image_headers), 'asset-audit')
+        lines = ['# VX Ace asset references', '', 'Presence/casing and requested PNG header/layout checks. See JSON for evidence.', '',
+                 'Counts: ' + json.dumps(result['counts']),
+                 'Image headers: ' + json.dumps(result['image_counts']),
+                 'Layouts: ' + json.dumps(result['layout_counts']), '']
         for row in result['references']:
-            if row['status'] != 'found':
-                lines.append('- ' + json.dumps({k: row[k] for k in ('status', 'folder', 'name')}, ensure_ascii=False))
+            if review_required({'references': [row]}):
+                lines.append('- ' + json.dumps({k: row[k] for k in ('status', 'folder', 'name', 'image_header', 'layout_checks') if k in row}, ensure_ascii=False))
         lines += ['', '## Limits', ''] + ['- ' + x for x in LIMITS]
         (Path(a.output) / 'asset-audit.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
-        review = any(x['status'] != 'found' for x in result['references'])
-        print(json.dumps({'status': 'review_required' if review else 'ok', 'counts': result['counts']}))
+        review = review_required(result)
+        print(json.dumps({'status': 'review_required' if review else 'ok', 'counts': result['counts'],
+                          'image_counts': result['image_counts'], 'layout_counts': result['layout_counts']}))
         return 3 if review else 0
     except Exception as exc:
         print('Asset audit refused: ' + str(exc), file=sys.stderr)

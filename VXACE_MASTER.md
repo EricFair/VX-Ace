@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v0.16.0
+# VX Ace Masterfile — v0.17.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -40,7 +40,7 @@ Original game (read-only)
   → observed class/field schema + reference inspection
   → conservative event-logic diagnostics
   → static map tile/tileset diagnostics
-  → indexed graphics/audio presence and casing, with optional explicit RTP
+  → indexed graphics/audio presence and casing, optional explicit RTP, PNG header/layout observations
   → full original-file inventory recheck
   → master report
 ```
@@ -80,6 +80,7 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Bounded project search | Literal text/native code filters across indexed events, database, map metadata and ordered script lines; exact evidence and honest pagination |
 | Read-only map tile audit | Native Table/tileset shape, sheet routing, ordinary atlas cells/autotile kinds, static directional flags, regions and shadows; excludes runtime movement, asset validation and map mutation |
 | Indexed asset references | Project-first graphics/audio filename presence/casing with optional explicit RTP; no image/audio decoding, scripted assets, archive extraction or automatic repairs |
+| Optional PNG headers/layouts | Bounded IHDR dimensions/checksums, default character grids and standard tileset sizes; no full decoding, atlas reachability or runtime loadability proof |
 | Patch proposals | Freshness, exact unique script anchors, structured database/event proposals, regression checks and rollback guidance |
 | Dependency impact | Exact target review, event graph relationships, script collision and save-hook evidence; incomplete dependency coverage is disclosed |
 | Verified copy patching | Existing scalar database fields, existing map/common/troop command parameters and unique script replacements; backend-specific limits apply |
@@ -92,7 +93,7 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 Check indexed assets using a known RTP root:
 
 ```powershell
-python tools/vxace_asset_audit.py PROJECT_INDEX --project PROJECT --output NEW_EXTERNAL_REPORT --rtp "C:/Explicit/Path/To/rtp"
+python tools/vxace_asset_audit.py PROJECT_INDEX --project PROJECT --output NEW_EXTERNAL_REPORT --rtp "C:/Explicit/Path/To/rtp" --image-headers
 ```
 
 See [asset audit coverage and uncertainty](references/asset-audit.md).

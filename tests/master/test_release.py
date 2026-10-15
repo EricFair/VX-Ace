@@ -102,9 +102,24 @@ class ReleaseSafetyTests(unittest.TestCase):
         with self.assertRaises(ValueError): master.settings(path)
 
     def test_older_config_without_asset_audit_remains_readable(self):
-        config = json.loads((ROOT / 'vxace-master.json').read_text()); del config['asset_audit']
+        config = json.loads((ROOT / 'vxace-master.json').read_text()); del config['asset_audit']; config.pop('image_headers', None)
         path = self.base / 'older-assets.json'; path.write_text(json.dumps(config))
         self.assertNotIn('asset_audit', master.settings(path))
+
+    def test_image_header_flag_refuses_strings_and_requires_asset_stage(self):
+        config = json.loads((ROOT / 'vxace-master.json').read_text())
+        path = self.base / 'headers.json'
+        for value in ('false', None, 1):
+            config['image_headers'] = value; path.write_text(json.dumps(config))
+            with self.assertRaises(ValueError): master.settings(path)
+        config['image_headers'] = True; config['asset_audit'] = False
+        path.write_text(json.dumps(config))
+        with self.assertRaisesRegex(ValueError, 'require'): master.settings(path)
+
+    def test_older_config_without_image_headers_keeps_presence_only(self):
+        config = json.loads((ROOT / 'vxace-master.json').read_text()); del config['image_headers']
+        path = self.base / 'older-headers.json'; path.write_text(json.dumps(config))
+        self.assertNotIn('image_headers', master.settings(path))
 
     def test_master_refuses_rtp_output_before_creating_any_report(self):
         project = self.base / 'game'; (project / 'Data').mkdir(parents=True)

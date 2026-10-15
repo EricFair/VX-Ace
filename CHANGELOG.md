@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.17.0 — Bounded PNG header and layout observations
+
+- Add optional 33-byte PNG IHDR observations with signature/CRC/field checks and final header rechecks; no full pixel decoding or automatic repairs.
+- Report default character frame divisions, special prefix semantics and standard tileset dimensions separately from presence/casing; preserve every referenced tileset role.
+- Enable the master option while keeping standalone and older settings opt-in; unsupported headers and nonstandard layouts require review without changing byte readiness.
+- Verify four authored PNG character cases and three RTP sheet measurements in native VX Ace on a guarded disposable copy; the deliberately uneven sheet warns as expected. Keep projects, harnesses and assets private.
+- Add 18 tests (254 total), retaining original-project immutability and copy-only mutation rules.
+
 ## 0.16.0 — Potential common-event recursion and RTP output protection
 
 - Build bounded direct common-event call graphs inside the existing event linter; report self/mutual cyclic components and exact bounded evidence, excluding acyclic downstream nodes. Track map/troop entry calls separately.

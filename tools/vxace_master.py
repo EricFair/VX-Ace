@@ -30,6 +30,10 @@ def settings(path):
         raise ValueError('Map audit feature flag must be boolean')
     if type(value.get('asset_audit', False)) is not bool:
         raise ValueError('Asset audit feature flag must be boolean')
+    if type(value.get('image_headers', False)) is not bool:
+        raise ValueError('Image header feature flag must be boolean')
+    if value.get('image_headers', False) and not value.get('asset_audit', False):
+        raise ValueError('Image header checks require the asset audit stage')
     return value
 
 
@@ -72,6 +76,7 @@ def workflow(project, output, ruby, config, rtp=None):
         if reader == 0 and config.get('asset_audit', False):
             args = [output/'index','--project',project,'--output',output/'asset-audit']
             if rtp is not None: args += ['--rtp', rtp]
+            if config.get('image_headers', False): args += ['--image-headers']
             stage('asset-audit','vxace_asset_audit.py',args)
         completed = True
     finally:
@@ -79,7 +84,7 @@ def workflow(project, output, ruby, config, rtp=None):
         validation = output / "validation/validation.json"
         ready = validation.is_file() and json.loads(validation.read_text(encoding="utf-8"))["copy_mutation_ready"]
         ok = completed and unchanged and ready and all(s["exit_code"] == 0 for s in stages)
-        summary = {"version": "0.16.0", "status": "pass" if ok else "review_required", "stages": stages,
+        summary = {"version": "0.17.0", "status": "pass" if ok else "review_required", "stages": stages,
                    "source_unchanged": unchanged, "selected_backend": config["validation_backend"],
                    "copy_mutation_ready": bool(ready and unchanged), "mutation_performed": False,
                    "runtime_compatibility_proven": False}
