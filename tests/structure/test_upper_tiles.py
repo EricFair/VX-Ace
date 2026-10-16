@@ -68,6 +68,18 @@ class UpperTileTests(unittest.TestCase):
         self.assertEqual(root.get('data').data[300],0x1aff)
         self.assertEqual(root.get('data').data[:200],self.before.get('data').data[:200])
 
+    def test_snapshot_native_upper_priority_over_nonstar_ground(self):
+        table=self.before.get('data');plane=table.xsize*table.ysize;pos=11
+        flags=self.tileset.get('flags').data
+        for ground_flag,middle,top,expected in ((0,0,1,False),(15,0,8,True),(0,1,0,False),(15,8,0,True)):
+            flags[2816]=ground_flag
+            (self.game/'Data/Tilesets.rvdata2').write_bytes(marshal_rb.dump([None,self.tileset]))
+            table.data[pos]=2816;table.data[pos+plane]=middle;table.data[pos+2*plane]=top
+            observed=upper.snapshot(self.before,self.game,[{'x':1,'y':1}],[1,8])['cells'][0]
+            self.assertEqual(observed['tile_id'],top)
+            self.assertEqual(observed['passage'],{name:expected for name in ('down','left','right','up')},
+                             (ground_flag,middle,top))
+
     def test_candidate_verifier_refuses_ground_region_shadow_unknown_field_and_shape_changes(self):
         for changed in ('ground','metadata','field','shape'):
             after=marshal_rb.load(marshal_rb.dump(self.before));upper.apply(after,self.mutation,self.game)

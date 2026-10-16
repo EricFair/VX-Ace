@@ -154,7 +154,7 @@ def snapshot(root,project,cells,tiles,rtp=None):
     rows=[];numbers=set(prospective)
     for cell,pos in coordinates(cells,table,True):
         current=integer(table.data[pos],'existing upper B-E tile',0,1023);numbers.add(current)
-        layers=[table.data[cell['x']+cell['y']*table.xsize+z*table.xsize*table.ysize] for z in (2,1,0)]
+        layers=[table.data[cell['x']+cell['y']*table.xsize+z*table.xsize*table.ysize] for z in (0,1,2)]
         rows.append({**cell,'layer':2,'tile_id':current,'passage':tile_passage(layers,flags)})
     bindings=assets(project,rtp,names,numbers)
     return {'version':VERSION,'width':table.xsize,'height':table.ysize,'layer':2,

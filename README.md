@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v1.4
+# RPG Maker VX Ace Developer — v1.4.1
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -14,7 +14,9 @@ v1.1 adds [bounded read-only regex search](references/regex-search.md) through a
 
 v1.3 adds [baseline-relative observed schema comparison](references/schema-comparison.md): fresh evidence on both projects, exact class/field/type paths, bounded reports and no mutation permission. That milestone passed **431 tests**.
 
-v1.4 adds [one guarded direct native map transfer](references/direct-map-transfer.md): an exact existing blank action-button event, a different inert empty destination, actual native guards and the complete Python copy/version/postgate chain. Native older-save reconstruction, actual201 execution, movement, saving, process restart and editor checks passed on disposable copies. The full suite has **441 tests**.
+v1.4.1 corrects [upper-tile snapshot passage ordering](references/upper-tile-painting.md). Recreate earlier snapshots: a blocked upper tile now correctly takes priority over passable non-star ground, and star overlays are skipped. The full suite contains **442 tests**; this patch adds no new mutation capability.
+
+v1.4 adds [one guarded direct native map transfer](references/direct-map-transfer.md): an exact existing blank action-button event, a different inert empty destination, actual native guards and the complete Python copy/version/postgate chain. Native older-save reconstruction, actual201 execution, movement, saving, process restart and editor checks passed on disposable copies. That milestone passed **441 tests**.
 
 v1.2 adds [one guarded blank-map append](references/blank-map-append.md) through the Python copy chain. Exact native template/tree/inventory/tileset guards preserve existing data; native editor, transfer, collision-aware movement, old-save, saving and full-process-restart checks passed on disposable copies. That milestone passed **420 tests**. Resize/delete/reparent, ID reuse and transfer authoring remain deferred.
 

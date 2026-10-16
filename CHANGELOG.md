@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.1 — Correct upper-tile snapshot passage ordering
+
+- Supply cell layers bottom-to-top to the shared passage helper, which examines the uppermost non-star tile first. Earlier snapshots could report passable ground instead of a blocked upper tile; regenerate those reports.
+- Add one regression test with four conflicting ground/upper/middle and star-overlay cases (442 tests total). The test failed on released code and passes with the correction.
+- Compare fresh read-only reports with an existing disposable native fixture's recorded blocked/passable movement evidence and the ordinary map audit. All 25 disposable files, selected RTP asset and original project's 20 recorded hashes remain unchanged. No new gameplay run is claimed for this diagnostic patch.
+- Native tile writing, ordinary map audit and copy admission gates are unaffected. Static flags still exclude events, vehicles, through mode and custom runtime movement hooks. See [evidence and limits](references/upper-tile-painting.md).
+
 ## 1.4.0 — One guarded direct native transfer
 
 - Insert one literal Transfer Player201 command into an exact blank one-page stationary unconditional action-button event, targeting a different verified inert empty map. Bind actual source/event/list/destination/tree/inventory/tileset context and strict native coordinates/direction/fade.
