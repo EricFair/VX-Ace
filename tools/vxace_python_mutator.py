@@ -170,6 +170,16 @@ def apply(root, spec, *, source_path=None):
             raise ValueError('Upper tile native path/explicit asset context is unsupported')
         from vxace_upper_tiles import apply as paint_upper_tiles
         paint_upper_tiles(root,mutation,source_file.parent.parent,context['rtp'])
+    elif kind == 'map_name':
+        from vxace_index_query import unlinked
+        from vxace_map_names import apply as rename_display,fingerprint
+        if source_path is None:raise ValueError('Display-name edits require an actual canonical native map path')
+        source_file=unlinked(source_path)
+        if source_file.parent.name!='Data' or not re.fullmatch(r'Map[0-9]{3}\.rvdata2',source_file.name) or source_file.name=='Map000.rvdata2':
+            raise ValueError('Display-name edits require a canonical native map path')
+        actual,_=load(source_file)
+        if fingerprint(actual)!=fingerprint(root):raise ValueError('Actual native map disagrees with display-name candidate context')
+        rename_display(root,mutation)
     elif kind == 'map_region':
         from vxace_map_regions import apply as region_apply
         region_apply(root, mutation)

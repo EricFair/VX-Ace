@@ -121,6 +121,14 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             out.append({'kind':'map_tile','target':f'Data/Map{mid:03d}.rvdata2',
                         'ruby_spec':{'type':'map_tile','mutation':mut},'description':c.get('description',''),
                         'locator':loc,'mutation':mut})
+        elif kind=='map_name':
+            from vxace_map_names import FIELDS,integer
+            if not isinstance(loc,dict) or set(loc)!={'map_id'}:raise ValueError('Display-name locator requires exactly map_id')
+            mid=integer(loc['map_id'],'map ID',1,999)
+            if not isinstance(mut,dict) or set(mut)!=FIELDS or mut.get('action')!='set_display_name':raise ValueError('Exact set_display_name mutation required')
+            out.append({'kind':'map_name','target':f'Data/Map{mid:03d}.rvdata2',
+                        'ruby_spec':{'type':'map_name','mutation':mut},'description':c.get('description',''),
+                        'locator':loc,'mutation':mut})
         elif kind=='map_region':
             from vxace_map_regions import integer
             if not isinstance(loc,dict) or set(loc) != {'map_id'}:
@@ -252,6 +260,11 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         tile_values=sorted({c['value'] for c in mutation['cells']})
         tile_rtp=change['ruby_spec']['context']['rtp']
         before_tiles=upper_snapshot(before_tile_root,copy_root,tile_cells,tile_values,tile_rtp)
+    before_name_root=None
+    if change['kind']=='map_name':
+        from vxace_python_mutator import load
+        from vxace_map_names import current as display_name
+        before_name_root=load(target)[0];before_name=display_name(before_name_root)
     before_slot_root=None
     if change['kind']=='script_slot':
         from vxace_python_mutator import load
@@ -281,6 +294,9 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if change['kind']=='map_tile':
         from vxace_upper_tiles import verify_transition as verify_upper
         verify_upper(before_tile_root,load(tmp)[0],mutation)
+    if change['kind']=='map_name':
+        from vxace_map_names import verify_transition as verify_name
+        verify_name(before_name_root,load(tmp)[0],mutation)
     if change['kind']=='script_slot':
         from vxace_script_slots import verify_transition as verify_slot
         verify_slot(before_slot_root,load(tmp)[0],mutation)
@@ -289,6 +305,10 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     rec={'kind':change['kind'],'target':rel,'description':change.get('description',''),'before_sha256':before_raw,'after_sha256':after_raw,'before_semantic_sha256':before_sem,'after_semantic_sha256':after_sem}
     if reward_root is not None:rec['one_time_rewards']={**reward_evidence,'only_approved_native_map_change':True}
     if transfer_root is not None:rec['direct_transfer']={**transfer_evidence,'only_approved_native_map_change':True}
+    if change['kind']=='map_name':
+        rec['map_name']={'map_id':change['locator']['map_id'],'before':before_name,'after':display_name(load(target)[0]),
+                         'only_display_name_changed':True,'other_native_fields_and_aliases_preserved':True}
+        rec['diff']=''.join(difflib.unified_diff([before_name+'\n'],[rec['map_name']['after']+'\n'],fromfile='source-display-name',tofile='staged-display-name'))
     if change['kind']=='map_event':
         rec['map_event']={'before':before_event,'after':event_snapshot(load(target)[0],mutation['template_id']),
                           'new_id':mutation['new_id'],'name':mutation['name'],'x':mutation['x'],'y':mutation['y'],
@@ -376,7 +396,18 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
     from vxace_transfers import has_transfers
     transfers=[c for c in structural if has_transfers(c['ruby_spec']['mutation'])]
     if transfers and len(changes)!=1:raise ValueError('Direct transfer requires its own single-change transaction')
-    reload_required=bool(structural or regions or upper_tiles or map_events)
+    map_names=[c for c in changes if c['kind']=='map_name']
+    if map_names:
+        if len(changes)!=1:raise ValueError('Display-name edit requires its own single-change transaction')
+        if no_reindex or mutator.resolve()!=(Path(__file__).resolve().parent/'vxace_python_mutator.py'):
+            raise ValueError('Display-name edits require the explicit Python backend and mandatory post-copy re-indexing')
+        from vxace_index_query import Index,unlinked
+        from vxace_python_mutator import load
+        from vxace_map_names import indexed_snapshot,validate as validate_name
+        for c in map_names:
+            name_data=Index(index);indexed_snapshot(name_data,project,c['locator']['map_id']);name_data.unchanged()
+            validate_name(load(unlinked(project/c['target']))[0],c['mutation'])
+    reload_required=bool(structural or regions or upper_tiles or map_events or map_names)
     post_required=bool(reload_required or entries or slots or map_entries)
     if map_entries:
         if len(changes)!=1:raise ValueError('Map append requires its own single-change transaction')
@@ -488,6 +519,10 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         if current_inventory(copy_root)!=source_before: raise RuntimeError('clone inventory differs from the verified source snapshot')
         applied=[]
         for i,c in enumerate(changes,1): applied.append(apply_one(ruby,mutator,copy_root,c,audit_dir,i))
+        name_inventory=None
+        if map_names:
+            name_inventory={**source_before,**{record['target']:record['after_sha256'] for record in applied}}
+            if current_inventory(copy_root)!=name_inventory:raise RuntimeError('Display-name edit changed unapproved copied files')
         transfer_inventory=None
         if transfers:
             transfer_inventory={**source_before,**{record['target']:record['after_sha256'] for record in applied}}
@@ -517,10 +552,10 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
                 if p.returncode: raise RuntimeError('structural semantic verification failed: '+p.stderr.strip())
                 post_validation=validate(copy_root,audit_dir/'post-validation',ruby,mutator,skip_script_syntax=True,backend='python')
                 if not post_validation['copy_mutation_ready']: raise RuntimeError('post-copy project validation failed')
-                if regions or upper_tiles or map_entries or transfers:
+                if regions or upper_tiles or map_entries or transfers or map_names:
                     from vxace_map_audit import audit as map_audit
                     from vxace_index_query import Index
-                    reports=[map_audit(Index(post),c['locator']['map_id']) for c in regions+upper_tiles]
+                    reports=[map_audit(Index(post),c['locator']['map_id']) for c in regions+upper_tiles+map_names]
                     reports += [map_audit(Index(post),c['mutation']['new_id']) for c in map_entries]
                     reports += [map_audit(Index(post),mid) for c in transfers for mid in (c['locator']['map_id'],c['ruby_spec']['mutation']['commands'][0]['parameters'][1])]
                     if any(r['findings'] for r in reports): raise RuntimeError('post-copy selected-map tile audit failed')
@@ -543,6 +578,7 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
             from vxace_transfers import final_context
             for c in transfers:final_context(c['ruby_spec']['mutation'],copy_root)
             if current_inventory(copy_root)!=transfer_inventory:raise RuntimeError('Transfer final copied-file preservation check failed')
+        if map_names and current_inventory(copy_root)!=name_inventory:raise RuntimeError('Display-name final copied-file preservation check failed')
         if current_inventory(project)!=source_before: raise RuntimeError('SOURCE_CHANGED: source changed during final verification')
         result={'version':VERSION,'title':str(spec.get('title') or 'VX Ace staged patch'),'status':'ok','source_project_omitted_from_persistent_output':True,'freshness':freshness,'roundtrip_preflight':preflights,'changes':applied,'source_integrity_after':source_integrity,'copy_path':str(copy_root),'reindex':reindex,'index_diff':index_diff,'rollback':{'strategy':'delete staged project copy','source_project_modified':False}}
         dump_json(audit_dir/'audit.json',result); (audit_dir/'audit.md').write_text(render_audit(result),encoding='utf-8')

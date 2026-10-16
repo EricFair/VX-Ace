@@ -73,7 +73,7 @@ def normalize_spec(spec: dict) -> dict:
         if not isinstance(raw, dict):
             raise ValueError(f"Change #{i} must be an object")
         kind = raw.get("kind")
-        if kind not in {"script", "script_slot", "event", "database", "map_region", "map_tile", "map_event", "map_entry", "database_entry"}:
+        if kind not in {"script", "script_slot", "event", "database", "map_region", "map_tile", "map_event", "map_entry", "database_entry", "map_name"}:
             raise ValueError(f"Change #{i} has unsupported kind: {kind}")
         item = dict(raw)
         if kind == "script":
@@ -96,7 +96,7 @@ def normalize_spec(spec: dict) -> dict:
         elif kind == 'database_entry':
             if item.get('locator') != {'table':'items'} or not item.get('proposal'):
                 raise ValueError('Key-item entry proposal requires the exact items locator and proposal')
-        elif kind in ('map_region','map_tile','map_event'):
+        elif kind in ('map_region','map_tile','map_event','map_name'):
             locator=item.get('locator')
             if not isinstance(locator,dict) or set(locator) != {'map_id'} or type(locator['map_id']) is not int or not 1 <= locator['map_id'] <= 999999:
                 raise ValueError('Region change requires exact map_id locator')
@@ -184,6 +184,10 @@ def regression_checks(changes: list[dict]) -> list[str]:
         checks += ['Review dynamic map IDs/loaders, old save state and existing tile/region consumers before appending a static map.',
                    'Verify the new root map and empty event list in VX Ace, native transfer/render/movement and save/full-process restart.',
                    'Confirm all existing maps, old tree entries, System/version and other copied files are unchanged.']
+    if 'map_name' in kinds:
+        checks += ['Review custom display_name, map-loading and save hooks; native map-name windows are project-specific.',
+                   'Verify the display name in VX Ace, actual map-name window, older-save reload, movement and save/full-process restart.',
+                   'Confirm only the native display_name and reload version changed; editor/tree names and all other copied files stay unchanged.']
     checks.append("Re-run the Project Reader and compare the new index/codex against the pre-change snapshot.")
     return checks
 
@@ -223,6 +227,18 @@ def build_plan(index: Path, project: Path, spec_path: Path, output: Path) -> dic
             changes.append(structural_change(change))
         elif change['kind']=='script':changes.append(script_diff(index,change))
         elif change['kind']=='script_slot':changes.append(script_slot_plan(index,project,change))
+        elif change['kind']=='map_name':
+            if len(spec['changes'])!=1:raise ValueError('Display-name edit requires its own single-change plan')
+            from vxace_map_names import indexed_snapshot,validate as validate_name
+            from vxace_index_query import Index,unlinked
+            from vxace_python_mutator import load
+            from vxace_copy_patcher import normalize_changes
+            proposed=normalize_changes(index,{'changes':[change]})[0]
+            data=Index(index);snap=indexed_snapshot(data,project,proposed['locator']['map_id']);data.unchanged()
+            value=validate_name(load(unlinked(project/proposed['target']))[0],proposed['mutation'])
+            planned=structural_change(change)
+            planned.update(apply_mode='proposal_only',risk='high',before=snap['display_name'],after=value,map_sha256=snap['map_sha256'])
+            changes.append(planned)
         elif change['kind']=='map_entry':
             from vxace_maps import snapshot as map_snapshot,candidates as map_candidates
             from vxace_index_query import Index

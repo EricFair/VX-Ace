@@ -86,3 +86,5 @@ v1.2 is complete. v1.3 separately adds [read-only baseline-relative schema compa
 v1.3 is complete. v1.4 separately adds [one guarded native direct transfer](references/direct-map-transfer.md), connecting an existing blank action-button event to a verified empty inert map. Broader event/map authoring is not required for this milestone.
 
 v1.4 is complete. v1.4.1 is a separate diagnostic patch correcting [upper-tile snapshot passage ordering](references/upper-tile-painting.md), with one regression test and read-only comparison against recorded native evidence. It enables no additional authoring operation.
+
+v1.4.1 is complete. v1.5 separately adds [one existing-map display-name change](references/map-display-names.md), without general map-property or tree editing. The453-test local suite and native editor/window/older-save/movement/save/restart checks passed; the finite prior releases stay closed.

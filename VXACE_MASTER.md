@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v1.4.1
+# VX Ace Masterfile — v1.5.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -94,6 +94,7 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Verified copy patching | Existing scalar database fields, existing map/common/troop command parameters and unique script replacements; backend-specific limits apply |
 | Guarded event structure | Python copy backend: atomic command insertion/deletion and conditioned same-owner map/troop page cloning/deletion; exact native hashes, repeating-trigger refusal, native project-version advancement, mandatory post-copy validation |
 | Guarded existing-map regions | Python copy backend: 1..256 unique cells, editor IDs0..63, exact native Table/current-region preconditions; preserve graphics/lower metadata/other fields, review encounter/script consumers, version advance and mandatory postgates |
+| Guarded map display name | Python copy backend: one existing map's plain UTF-8 display_name, exact native map/current-name guards and schema; preserve tree/editor name and other fields/aliases, advance reload version, require postgates/final whole-copy hashes and native editor/window/save checks |
 | Guarded key-item append | Python copy backend: one inert native Key Item at the next static ID, exact template/array hashes/schema, preserved existing records, impact and mandatory postgates; no deletion, reuse, arbitrary effects or other new object types |
 | Guarded script slot | Python copy backend: one new exact UTF-8 source entry before unique canonical Main, exact archive/anchor hashes and explicit unused ID/unique name; preserve all old entries/order/bytes, review proposed-code impact and require postgates; no reorder/delete/custom Main/overlapping Scripts edits |
 | Guarded upper scenery tiles | Python copy backend: 1..256 ordinary B-E cells on layer2 only, native Table/current-cell/tileset/selected-image hashes and explicit RTP; preserve ground/shadows/regions/unknown fields, advance reload version and require postgates; no ground/A5/autotile synthesis or arbitrary layers |
@@ -236,6 +237,10 @@ Read [the guarded direct-transfer workflow](references/direct-map-transfer.md) t
 ## Blank-map creation
 
 For one new empty root map, read [the guarded blank-map workflow](references/blank-map-append.md). Capture fresh read-only native evidence with `vxace_maps.py`, bind every guard and use one reviewed `map_entry` transaction through the explicit Python copy backend. Existing maps/tree entries/System are preserved. Review dynamic IDs/loaders/save hooks and verify native editor, transfer, collision-aware movement, old save, saving and process restart. No transfers are authored automatically.
+
+## Existing-map display name
+
+Read [the guarded display-name workflow](references/map-display-names.md). Capture fresh exact native evidence with `vxace_map_names.py`, use one reviewed `map_name` change through the Python copy chain and require version reload, candidate/full-copy preservation and all postgates. The editor/tree name and every other map property stay unchanged. Review native name-window/font behavior, older saves and custom name/map/save consumers.
 
 ## Remaining boundaries
 

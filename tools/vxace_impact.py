@@ -421,6 +421,33 @@ def map_entry_impact(index,change):
                           'Review native editor tree/map, real transfer/render/passability, old save and native save/process restart.']}
 
 
+def map_name_impact(index,change):
+    from vxace_map_names import FIELDS,integer,name
+    from vxace_index_query import Index
+    from vxace_search import search
+    import re
+    loc=change.get('locator');mutation=change.get('mutation')
+    if not isinstance(loc,dict) or set(loc)!={'map_id'} or not isinstance(mutation,dict) or set(mutation)!=FIELDS or mutation.get('action')!='set_display_name':
+        raise ValueError('Exact native display-name proposal required')
+    mid=integer(loc['map_id'],'map ID',1,999);data=Index(index);root=data.json(f'maps/map-{mid:03d}.json')
+    if not isinstance(root,dict) or root.get('__class__')!='RPG::Map' or root.get('display_name')!=mutation['expected_display_name']:
+        raise ValueError('Indexed map/display-name precondition disagrees')
+    if not isinstance(mutation['expected_map_sha256'],str) or not re.fullmatch('[a-f0-9]{64}',mutation['expected_map_sha256']):
+        raise ValueError('Exact native map fingerprint required')
+    old=name(mutation['expected_display_name']);value=name(mutation['value'])
+    if old==value:raise ValueError('No-op display-name proposal')
+    evidence=[]
+    for query in ('display_name','Window_MapName','Game_Map','DataManager'):
+        found=search(data,query=query,scopes=('scripts','events'),limit=10)
+        evidence.append({'literal':query,'matches':found['matches'],'evidence':found['hits'],'truncated':found['truncated']})
+    data.unchanged()
+    return {'kind':'map_name','severity':'high','target':{'map_id':mid,'before':old,'after':value},'consumer_mentions':evidence,
+            'limitations':['Native map fingerprint and all-other-field preservation are separately enforced by the Python copy chain.',
+                          'Literal mentions cannot resolve custom name windows, dynamic map replacement, old saves or hidden consumers.',
+                          'Only display_name changes; MapInfos/editor name, tree, tiles, events and resources remain unchanged.',
+                          'Verify the native name window, older-save map reload, movement and full-process save/restart.']}
+
+
 def build(index: Path, spec_path: Path):
     spec=load(spec_path)
     if not isinstance(spec,dict) or not isinstance(spec.get("changes"),list) or not spec["changes"]:
@@ -442,6 +469,7 @@ def build(index: Path, spec_path: Path):
         elif kind=='map_tile': impacts.append(upper_tile_impact(index,change))
         elif kind=='map_event': impacts.append(map_event_impact(index,change))
         elif kind=='map_entry': impacts.append(map_entry_impact(index,change))
+        elif kind=='map_name': impacts.append(map_name_impact(index,change))
         else: raise ValueError(f"unsupported change kind: {kind}")
     high=sum(1 for x in impacts if x.get("severity")=="high")
     return {"impact_version":VERSION,"title":str(spec.get("title") or "VX Ace impact analysis"),"impact_count":len(impacts),

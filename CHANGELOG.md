@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.0 — One guarded existing-map display name
+
+- Add a fresh read-only native map-name snapshot and one guarded single-change `map_name` transaction for bounded plain UTF-8 display text. Bind complete native map/current-name guards and supported schema; require actual low-level native path agreement, detached string/candidate preservation, version reload and full-copy/post-project gates.
+- Preserve editor/tree names, tiles/events/resources, other native fields and aliases, and all prior saves. Unknown schema/encoding, stale/no-op/mixed changes and unsupported backends refuse; failed staging removes the whole copy.
+- Eleven independent authored Ruby fixture/planner/copy/refusal/rollback tests and the complete453-test local suite passed. Native UTF-8 window rendering, older-save reload, ordinary movement, new save and full Game-process restart passed on disposable copies; source/RTP/20 original hashes and both saves were preserved. The first movement fixture used blocking water and was replaced with a separately guarded walkable fixture; no assertion was relaxed.
+- Native editor inspection confirmed the UTF-8 Display Name field while Name/tree remained MAP001, with all inspection-copy hashes unchanged. See [commands, evidence and limits](references/map-display-names.md). Custom name windows/fonts/maps/save hooks still need project-specific testing.
+
 ## 1.4.1 — Correct upper-tile snapshot passage ordering
 
 - Supply cell layers bottom-to-top to the shared passage helper, which examines the uppermost non-star tile first. Earlier snapshots could report passable ground instead of a blocked upper tile; regenerate those reports.

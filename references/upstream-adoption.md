@@ -28,6 +28,7 @@ Adopt useful capabilities incrementally under **our** rules: VX Ace first, fresh
 | Codec encoding preservation and code-page reporting | Codec bytes retained; v0.21 exact UTF-8 script/newline exports and unsupported-source refusal; v0.22 exact bounded host parsing and v0.23 separate native compile-only diagnostics; broader presentation later | Source hashes/counts, UTF-8/mixed-ending fixtures, native CRLF patch and private non-execution/compiler reports; non-UTF-8 source requires explicit code-page review, never guessed lossy conversion |
 | Per-file stale checks, backups, dry runs, logs | Retain our freshness/plans/audit/clone controls; adapt useful diagnostics | Do not replace source immutability with in-place backups or confuse per-file atomicity with whole-patch transactions |
 | Raw arbitrary field writes | Do not expose in production | Our verified-field and schema restrictions remain authoritative |
+| Existing-map display-name property | v1.5: one bounded plain UTF-8 display_name string; general properties/tree-name edits deferred | Exact native map/current-name guards, schema/context agreement, detached string/alias preservation, single-change Python copy/version/postgates/full-copy hashes and native editor/window/older-save/movement/save/restart checks |
 | VX support | Reference only for now | Separate explicitly requested scope; never silently broaden our Ace behavior |
 
 ## Batch 1: experimental read-only audit
