@@ -25,6 +25,15 @@ def validate_project_references(index, mutation, source_path=None):
     switches = system.get('switches', [])
     commons = data('common-events.json') or []
     common_ids = {x.get('id') for x in commons if isinstance(x,dict)}
+    from vxace_transfers import has_transfers,validate as validate_transfer,snapshot as transfer_snapshot
+    if has_transfers(mutation):
+        from vxace_python_mutator import load
+        from vxace_index_query import Index,unlinked
+        if source_path is None:raise ValueError('Transfers require actual native source context')
+        source=unlinked(source_path);evidence=validate_transfer(load(source)[0],mutation,source)
+        target=evidence['destination'];observed=Index(index)
+        transfer_snapshot(observed,source.parent.parent,evidence['source_map_id'],mutation['event_id'],target['map_id'],target['x'],target['y'],target['direction'],target['fade'])
+        observed.unchanged()
     from vxace_event_rewards import has_rewards,reward_rows
     if has_rewards(mutation):
         from vxace_event_rewards import validate,snapshot
@@ -165,6 +174,10 @@ def new_commands(rows, convert, scope, terminal=False):
         elif code == 230:
             if len(p) != 1: raise ValueError("Invalid wait")
             native_int(p[0], "wait frames", 1, 3600)
+        elif code == 201:
+            from vxace_transfers import transfer_rows
+            if scope!='map':raise ValueError('New transfers are map-event only')
+            transfer_rows([row])
         elif code == 125:
             if scope!='map' or len(p)!=3 or any(type(value) is not int for value in p) or p[:2]!=[0,0]:raise ValueError('Only constant positive map gold additions are enabled')
             native_int(p[2],'gold addition',1,99999999)
@@ -226,12 +239,15 @@ def snapshot(root, mutation, object_by_id):
 def apply(root, mutation, convert, object_by_id, *, source_path=None):
     action, scope = mutation["action"], mutation["scope"]
     common = {"scope", "event_id", "troop_id", "common_event_id", "page", "command_index", "action"}
-    specific = {"insert_commands": {"expected_list_sha256", "commands", "reward_guard"},
+    specific = {"insert_commands": {"expected_list_sha256", "commands", "reward_guard", "transfer_guard"},
                 "delete_commands": {"expected_list_sha256", "count"},
                 "insert_page": {"expected_pages_sha256", "expected_template_sha256", "template_page", "conditions", "commands", "acknowledge_page_priority_change"},
                 "delete_page": {"expected_pages_sha256", "expected_page_sha256", "acknowledge_page_priority_change"}}
     if action not in specific or set(mutation) - common - specific[action]:
         raise ValueError("Unknown structural mutation fields")
+    from vxace_transfers import has_transfers,validate as validate_transfers
+    if has_transfers(mutation):validate_transfers(root,mutation,source_path)
+    elif 'transfer_guard' in mutation:raise ValueError('Transfer guard requires an actual direct transfer')
     from vxace_event_rewards import has_rewards,validate as validate_rewards
     if has_rewards(mutation):validate_rewards(root,mutation,source_path)
     elif 'reward_guard' in mutation:raise ValueError('Reward guard requires actual reward commands')

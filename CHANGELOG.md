@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0 — One guarded direct native transfer
+
+- Insert one literal Transfer Player201 command into an exact blank one-page stationary unconditional action-button event, targeting a different verified inert empty map. Bind actual source/event/list/destination/tree/inventory/tileset context and strict native coordinates/direction/fade.
+- Require the single-change Python copy chain, immediate/project byte gates, exact candidate preservation, System/version reload, impact/re-index/semantic/post-validation/both-map audits and final complete-copy hashes. Failed staging rolls back the whole copy.
+- Add 10 independent Ruby fixture/candidate/planner/copy/refusal/rollback tests (441 total). Native older-save reconstruction, actual event command201 execution, movement, saving, full restart and editor display passed on disposable default-project copies.
+- See [commands, evidence and limits](references/direct-map-transfer.md). General transfer/event/map authoring remains deferred; proprietary data stay private.
+
 ## 1.3.0 — Baseline-relative observed schema comparison
 
 - Add a standalone bounded read-only comparison of class/field/normalized-type observations against an explicitly selected fresh baseline, with exact evidence and object/field/type counts on both sides.

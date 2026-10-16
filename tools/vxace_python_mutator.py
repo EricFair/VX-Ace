@@ -202,6 +202,10 @@ def apply(root, spec, *, source_path=None):
         owner.ivars[key] = convert(value, old)
     elif kind == "event":
         from vxace_event_structure import ACTIONS, apply as structural_apply
+        rows=mutation.get('commands',[])
+        transfer_rows=isinstance(rows,list) and any(isinstance(row,dict) and type(row.get('code')) is int and row['code']==201 for row in rows)
+        if (transfer_rows or 'transfer_guard' in mutation) and mutation.get('action')!='insert_commands':
+            raise ValueError('Transfer fields require the guarded insertion operation')
         if mutation.get('action') in ACTIONS:
             structural_apply(root, mutation, convert, object_by_id,source_path=source_path)
             return

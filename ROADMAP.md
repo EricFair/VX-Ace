@@ -81,3 +81,6 @@ v1.0 and v1.1 are complete releases. v1.2 is the separately bounded [blank-map a
 
 
 v1.2 is complete. v1.3 separately adds [read-only baseline-relative schema comparison](references/schema-comparison.md), without widening mutation or reopening earlier release scope.
+
+
+v1.3 is complete. v1.4 separately adds [one guarded native direct transfer](references/direct-map-transfer.md), connecting an existing blank action-button event to a verified empty inert map. Broader event/map authoring is not required for this milestone.

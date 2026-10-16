@@ -132,6 +132,11 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
                         'ruby_spec':{'type':'map_region','mutation':mut},'description':c.get('description',''),
                         'locator':loc,'mutation':mut})
         elif kind=='event':
+            rows=mut.get('commands',[])
+            if isinstance(rows,list) and any(isinstance(row,dict) and type(row.get('code')) is int and row['code']==201 for row in rows):
+                from vxace_transfers import validate_locator
+                validate_locator(loc)
+                if set(mut)!={'action','expected_list_sha256','commands','transfer_guard'} or mut.get('action')!='insert_commands':raise ValueError('Exact direct transfer insertion schema required')
             action=mut.get('action')
             structural={'insert_commands','delete_commands','insert_page','delete_page'}
             if action not in {'set_parameter','set_parameters'} | structural: raise ValueError(f'event change #{n} unsupported mutation.action')
@@ -202,6 +207,11 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         from vxace_python_mutator import load
         from vxace_event_rewards import validate as validate_rewards
         reward_root=load(target)[0];reward_evidence=validate_rewards(reward_root,mutation,target)
+    from vxace_transfers import has_transfers,validate as validate_transfer
+    transfer_root=None
+    if structural_action and has_transfers(mutation):
+        from vxace_python_mutator import load
+        transfer_root=load(target)[0];transfer_evidence=validate_transfer(transfer_root,mutation,target)
     def structural_snapshot(file,after=False):
         from vxace_python_mutator import load,object_by_id
         from vxace_event_structure import snapshot,owner_for
@@ -256,6 +266,9 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if reward_root is not None:
         from vxace_event_rewards import verify_transition as verify_rewards
         verify_rewards(reward_root,load(tmp)[0],mutation,target)
+    if transfer_root is not None:
+        from vxace_transfers import verify_transition as verify_transfer
+        verify_transfer(transfer_root,load(tmp)[0],mutation,target)
     if region_cells:
         from vxace_map_regions import verify_transition
         verify_transition(before_region_root,load(tmp)[0],mutation)
@@ -275,6 +288,7 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     os.replace(tmp,target)
     rec={'kind':change['kind'],'target':rel,'description':change.get('description',''),'before_sha256':before_raw,'after_sha256':after_raw,'before_semantic_sha256':before_sem,'after_semantic_sha256':after_sem}
     if reward_root is not None:rec['one_time_rewards']={**reward_evidence,'only_approved_native_map_change':True}
+    if transfer_root is not None:rec['direct_transfer']={**transfer_evidence,'only_approved_native_map_change':True}
     if change['kind']=='map_event':
         rec['map_event']={'before':before_event,'after':event_snapshot(load(target)[0],mutation['template_id']),
                           'new_id':mutation['new_id'],'name':mutation['name'],'x':mutation['x'],'y':mutation['y'],
@@ -359,6 +373,9 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
     upper_tiles=[c for c in changes if c['kind']=='map_tile']
     map_events=[c for c in changes if c['kind']=='map_event']
     map_entries=[c for c in changes if c['kind']=='map_entry']
+    from vxace_transfers import has_transfers
+    transfers=[c for c in structural if has_transfers(c['ruby_spec']['mutation'])]
+    if transfers and len(changes)!=1:raise ValueError('Direct transfer requires its own single-change transaction')
     reload_required=bool(structural or regions or upper_tiles or map_events)
     post_required=bool(reload_required or entries or slots or map_entries)
     if map_entries:
@@ -471,6 +488,11 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         if current_inventory(copy_root)!=source_before: raise RuntimeError('clone inventory differs from the verified source snapshot')
         applied=[]
         for i,c in enumerate(changes,1): applied.append(apply_one(ruby,mutator,copy_root,c,audit_dir,i))
+        transfer_inventory=None
+        if transfers:
+            transfer_inventory={**source_before,**{record['target']:record['after_sha256'] for record in applied}}
+            if current_inventory(copy_root)!=transfer_inventory:
+                raise RuntimeError('Transfer changed unapproved copied files')
         source_after=current_inventory(project); src_problems=[]
         if source_before!=source_after:
             for rel in sorted(set(source_before)|set(source_after)):
@@ -495,11 +517,12 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
                 if p.returncode: raise RuntimeError('structural semantic verification failed: '+p.stderr.strip())
                 post_validation=validate(copy_root,audit_dir/'post-validation',ruby,mutator,skip_script_syntax=True,backend='python')
                 if not post_validation['copy_mutation_ready']: raise RuntimeError('post-copy project validation failed')
-                if regions or upper_tiles or map_entries:
+                if regions or upper_tiles or map_entries or transfers:
                     from vxace_map_audit import audit as map_audit
                     from vxace_index_query import Index
                     reports=[map_audit(Index(post),c['locator']['map_id']) for c in regions+upper_tiles]
                     reports += [map_audit(Index(post),c['mutation']['new_id']) for c in map_entries]
+                    reports += [map_audit(Index(post),mid) for c in transfers for mid in (c['locator']['map_id'],c['ruby_spec']['mutation']['commands'][0]['parameters'][1])]
                     if any(r['findings'] for r in reports): raise RuntimeError('post-copy selected-map tile audit failed')
                     dump_json(audit_dir/'post-map-audit.json',reports)
         if upper_tiles:
@@ -516,6 +539,10 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
             for c in reward_changes:item_context(c['ruby_spec']['mutation'],copy_root/c['target'])
         for c in map_entries:
             if current_inventory(copy_root)!=c['_expected_copy_inventory']:raise RuntimeError('Map append final copied-file preservation check failed')
+        if transfers:
+            from vxace_transfers import final_context
+            for c in transfers:final_context(c['ruby_spec']['mutation'],copy_root)
+            if current_inventory(copy_root)!=transfer_inventory:raise RuntimeError('Transfer final copied-file preservation check failed')
         if current_inventory(project)!=source_before: raise RuntimeError('SOURCE_CHANGED: source changed during final verification')
         result={'version':VERSION,'title':str(spec.get('title') or 'VX Ace staged patch'),'status':'ok','source_project_omitted_from_persistent_output':True,'freshness':freshness,'roundtrip_preflight':preflights,'changes':applied,'source_integrity_after':source_integrity,'copy_path':str(copy_root),'reindex':reindex,'index_diff':index_diff,'rollback':{'strategy':'delete staged project copy','source_project_modified':False}}
         dump_json(audit_dir/'audit.json',result); (audit_dir/'audit.md').write_text(render_audit(result),encoding='utf-8')

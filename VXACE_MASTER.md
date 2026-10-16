@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v1.3.0
+# VX Ace Masterfile — v1.4.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -226,6 +226,10 @@ A release is complete when its documented scope is implemented, tests pass, real
 ## Comparing observed schemas
 
 For custom class/field/type observations relative to an explicit baseline project, use [the read-only schema comparison](references/schema-comparison.md). Both project/index pairs must be fresh and reports external. Review exact evidence and content coverage; differences do not authorize unknown writes. The standalone comparison leaves master policy and MCP unchanged.
+
+## Direct transfer from a blank event
+
+Read [the guarded direct-transfer workflow](references/direct-map-transfer.md) to connect an existing blank stationary action-button event to a different verified inert empty map. Capture exact native evidence, review impact and stage one201 insertion through the Python copy chain; mandatory version reload, both-map audits and final complete-copy preservation apply. Test actual event execution and old/save/restart behavior. Broader transfer authoring stays deferred.
 
 ## Blank-map creation
 

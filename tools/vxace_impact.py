@@ -86,6 +86,9 @@ def event_impact(graph, maps, change, index=None):
         if isinstance(rows,list) and any(isinstance(row,dict) and type(row.get('code')) is int and row['code'] in (125,126) for row in rows):
             if index is None:raise ValueError('Reward impact requires the complete source index')
             result.update(severity='high',one_time_rewards=reward_impact(index,change))
+        if isinstance(rows,list) and any(isinstance(row,dict) and type(row.get('code')) is int and row['code']==201 for row in rows):
+            if index is None:raise ValueError('Transfer impact requires a complete source index')
+            result.update(severity='high',direct_transfer=transfer_impact(index,change))
         return result
     if "common_event_id" in loc:
         cid=int(loc["common_event_id"]); node=f"common_event:{cid}"
@@ -103,6 +106,29 @@ def event_impact(graph, maps, change, index=None):
         return {"kind":"event","scope":"troop","target":target,"graph_node":node,"dependencies":graph_neighbors(graph,node),"severity":"high" if mutation.get('action') in {'insert_page','delete_page'} else "medium",
                 "limitations":["Troop page/command dependency extraction is less complete than map-event dependency extraction."]}
     raise ValueError("event locator requires map_id/event_id/page, common_event_id, or troop_id")
+
+def transfer_impact(index,change):
+    from vxace_transfers import transfer_rows,GUARD_FIELDS,validate_locator
+    from vxace_index_query import Index
+    from vxace_search import search
+    import re
+    loc=change.get('locator');mutation=change.get('mutation')
+    validate_locator(loc)
+    if mutation.get('action')!='insert_commands':raise ValueError('Transfer command insertion required')
+    target=transfer_rows(mutation.get('commands'));guard=mutation.get('transfer_guard')
+    if not isinstance(guard,dict) or set(guard)!=GUARD_FIELDS or any(not isinstance(v,str) or not re.fullmatch('[a-f0-9]{64}',v) for v in guard.values()):raise ValueError('Exact native transfer bindings required')
+    data=Index(index);native=data.json(f"maps/map-{target['map_id']:03d}.json")
+    if target['map_id']==loc['map_id'] or type(native.get('width')) is not int or type(native.get('height')) is not int or target['x']>=native['width'] or target['y']>=native['height']:raise ValueError('Indexed transfer bounds/source disagree')
+    mentions=[]
+    for marker in ('command_201','reserve_transfer','perform_transfer','setup','DataManager','load_data'):
+        found=search(data,query=marker,scopes=('scripts','events'),limit=10)
+        mentions.append({'literal':marker,'matches':found['matches'],'evidence':found['hits'],'truncated':found['truncated']})
+    data.unchanged()
+    return {'destination':target,'guard':guard,'consumer_mentions':mentions,
+            'limitations':['Actual native blank-event/destination/tree/inventory/tileset bindings run independently in the Python copy chain.',
+                          'Static direct coordinates cannot prove runtime passability, assets, custom loader/transfer hooks or save migration.',
+                          'Verify native editor, older-save source-map reconstruction, actual event transfer, movement, saving and process restart.']}
+
 
 def reward_impact(index,change):
     from vxace_event_rewards import reward_rows,GUARD_FIELDS,integer

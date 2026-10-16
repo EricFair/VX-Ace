@@ -214,7 +214,14 @@ def build_plan(index: Path, project: Path, spec_path: Path, output: Path) -> dic
         raise RuntimeError("STALE_INDEX:"+json.dumps(freshness,ensure_ascii=False))
     spec=normalize_spec(load_json(spec_path)); changes=[]
     for change in spec["changes"]:
-        if change['kind']=='script':changes.append(script_diff(index,change))
+        rows=(change.get('mutation') or {}).get('commands',[])
+        if change['kind']=='event' and isinstance(rows,list) and any(isinstance(row,dict) and type(row.get('code')) is int and row['code']==201 for row in rows):
+            from vxace_copy_patcher import normalize_changes
+            from vxace_event_structure import validate_project_references
+            proposed=normalize_changes(index,{'changes':[change]})[0]
+            validate_project_references(index,proposed['ruby_spec']['mutation'],project/proposed['target'])
+            changes.append(structural_change(change))
+        elif change['kind']=='script':changes.append(script_diff(index,change))
         elif change['kind']=='script_slot':changes.append(script_slot_plan(index,project,change))
         elif change['kind']=='map_entry':
             from vxace_maps import snapshot as map_snapshot,candidates as map_candidates
