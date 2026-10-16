@@ -88,3 +88,5 @@ v1.3 is complete. v1.4 separately adds [one guarded native direct transfer](refe
 v1.4 is complete. v1.4.1 is a separate diagnostic patch correcting [upper-tile snapshot passage ordering](references/upper-tile-painting.md), with one regression test and read-only comparison against recorded native evidence. It enables no additional authoring operation.
 
 v1.4.1 is complete. v1.5 separately adds [one existing-map display-name change](references/map-display-names.md), without general map-property or tree editing. The453-test local suite and native editor/window/older-save/movement/save/restart checks passed; the finite prior releases stay closed.
+
+v1.5 is complete. v1.6 separately adds [one existing editor/tree map-name change](references/map-tree-names.md), preserving all maps, display names, other tree metadata, System/version and saves. The465-test local suite and native editor/tree/window/existing-save/movement/save/restart checks passed; broader tree/property authoring remains separately scoped.

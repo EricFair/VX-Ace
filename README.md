@@ -1,6 +1,8 @@
-# RPG Maker VX Ace Developer — v1.5
+# RPG Maker VX Ace Developer — v1.6
 
-v1.5 adds [one guarded existing-map display-name edit](references/map-display-names.md): exact native whole-map/current-name guards, plain UTF-8 text and a single-change Python copy/version/postgate chain. All **453 tests** passed locally, together with native editor/name-window/older-save/movement/save/restart checks on disposable copies. Editor/tree names, other map data and previous saves are preserved. General map-property editing stays deferred; verify the current commit's actual CI result before claiming online success.
+v1.6 adds [one guarded editor/tree map-name edit](references/map-tree-names.md). Exact native tree/entry/name/map-inventory guards and the single-change Python copy/postgate chain preserve every map, player-visible name, System/version and prior save. Native editor/tree/window/older-save/movement/save/restart checks and all **465 tests** passed locally. Broader tree/property editing remains deferred; check the exact commit's actual CI result before claiming online success.
+
+v1.5 adds [one guarded existing-map display-name edit](references/map-display-names.md): exact native whole-map/current-name guards, plain UTF-8 text and a single-change Python copy/version/postgate chain. That milestone passed **453 tests**, together with native editor/name-window/older-save/movement/save/restart checks on disposable copies. Editor/tree names, other map data and previous saves are preserved. General map-property editing stays deferred.
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 

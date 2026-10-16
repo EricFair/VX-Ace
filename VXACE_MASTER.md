@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v1.5.0
+# VX Ace Masterfile — v1.6.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -95,6 +95,7 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Guarded event structure | Python copy backend: atomic command insertion/deletion and conditioned same-owner map/troop page cloning/deletion; exact native hashes, repeating-trigger refusal, native project-version advancement, mandatory post-copy validation |
 | Guarded existing-map regions | Python copy backend: 1..256 unique cells, editor IDs0..63, exact native Table/current-region preconditions; preserve graphics/lower metadata/other fields, review encounter/script consumers, version advance and mandatory postgates |
 | Guarded map display name | Python copy backend: one existing map's plain UTF-8 display_name, exact native map/current-name guards and schema; preserve tree/editor name and other fields/aliases, advance reload version, require postgates/final whole-copy hashes and native editor/window/save checks |
+| Guarded editor/tree map name | Python copy backend: one existing MapInfo.name, exact native tree/entry/current-name/map-inventory guards and schema; preserve all maps/display names/metadata/aliases/System/version/saves, require postgates/final whole-copy hashes and native editor/window/save checks |
 | Guarded key-item append | Python copy backend: one inert native Key Item at the next static ID, exact template/array hashes/schema, preserved existing records, impact and mandatory postgates; no deletion, reuse, arbitrary effects or other new object types |
 | Guarded script slot | Python copy backend: one new exact UTF-8 source entry before unique canonical Main, exact archive/anchor hashes and explicit unused ID/unique name; preserve all old entries/order/bytes, review proposed-code impact and require postgates; no reorder/delete/custom Main/overlapping Scripts edits |
 | Guarded upper scenery tiles | Python copy backend: 1..256 ordinary B-E cells on layer2 only, native Table/current-cell/tileset/selected-image hashes and explicit RTP; preserve ground/shadows/regions/unknown fields, advance reload version and require postgates; no ground/A5/autotile synthesis or arbitrary layers |
@@ -243,6 +244,8 @@ For one new empty root map, read [the guarded blank-map workflow](references/bla
 Read [the guarded display-name workflow](references/map-display-names.md). Capture fresh exact native evidence with `vxace_map_names.py`, use one reviewed `map_name` change through the Python copy chain and require version reload, candidate/full-copy preservation and all postgates. The editor/tree name and every other map property stay unchanged. Review native name-window/font behavior, older saves and custom name/map/save consumers.
 
 ## Remaining boundaries
+
+For an existing map's editor/tree label, read [the separate guarded map-name workflow](references/map-tree-names.md). Capture exact native evidence with `vxace_map_labels.py`, use one reviewed `map_label` change through the explicit Python copy chain and preserve all maps, display names, System/version and saves. Review custom name caches and verify new-process existing-save behavior. Reparent/delete/resize and general tree/property writes remain outside this operation.
 
 Structural edits outside [guarded commands/pages](references/event-structure.md) and [stationary dialogue-event append](references/map-event-creation.md), map creation beyond [one guarded blank-map append](references/blank-map-append.md), map resizing, tile painting beyond [ordinary upper-layer cells](references/upper-tile-painting.md), database entry creation beyond [inert key-item append](references/key-item-append.md), entry deletion/ID reuse, arbitrary raw writes, general save migration, encrypted archives, and VX/RGSS2 remain outside this release. Writable MCP tools, full asset decoding and deeper control-flow/termination analysis remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
 

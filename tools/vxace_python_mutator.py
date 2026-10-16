@@ -170,6 +170,13 @@ def apply(root, spec, *, source_path=None):
             raise ValueError('Upper tile native path/explicit asset context is unsupported')
         from vxace_upper_tiles import apply as paint_upper_tiles
         paint_upper_tiles(root,mutation,source_file.parent.parent,context['rtp'])
+    elif kind == 'map_label':
+        from vxace_index_query import unlinked
+        from vxace_map_labels import apply as rename_label
+        if source_path is None:raise ValueError('Map-tree name edits require an actual canonical native MapInfos path')
+        source_file=unlinked(source_path)
+        if source_file.parent.name!='Data' or source_file.name!='MapInfos.rvdata2':raise ValueError('Canonical native MapInfos path required')
+        rename_label(root,mutation,source_file.parent.parent)
     elif kind == 'map_name':
         from vxace_index_query import unlinked
         from vxace_map_names import apply as rename_display,fingerprint

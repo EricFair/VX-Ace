@@ -5,7 +5,7 @@ description: Analyze, validate, debug, and safely stage RPG Maker VX Ace databas
 
 # RPG Maker VX Ace Developer
 
-Version: 1.5.0
+Version: 1.6.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -182,7 +182,7 @@ v0.20 adds [append-only inert native key items](references/key-item-append.md) f
 
 v0.21 fixes [exact UTF-8 script exports and multiline anchors](references/script-byte-fidelity.md), preserving original line-ending bytes on Windows and recording source hashes/counts. Re-index old evidence; construct exact anchors from byte-preserving UTF-8 reads. Invalid compressed/non-UTF-8 source refuses complete extraction rather than producing lossy text or placeholder code; extraction errors block copy admission.
 
-The expanded suite has 453 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
+The expanded suite has 465 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
 
 Real-project evidence is recorded in [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md). It covers a small editor-produced project and disposable native map/common/battle/save scenarios; it does not establish compatibility with arbitrary customized games. Structural operations outside the documented subset remain disabled.
 
@@ -201,6 +201,8 @@ For a visible new dialogue NPC, v0.27 adds [optional bound character graphics](r
 For native one-time map rewards, v1.0 adds [guarded constant gold/item grants](references/one-time-event-rewards.md). Require an exact blank lower page and a higher literal-only self-switch page, native Items/hash/context checks, one change per Python copy transaction and final context/candidate postgates. Native caps and external self-switch/gain/save hooks remain project-specific concerns; test grant, repeat interaction, inventory, old save and restart.
 
 ## Release scope
+
+v1.6 adds [one existing editor/tree map-name edit](references/map-tree-names.md). Bind actual full native MapInfos/entry/current-name/map-inventory evidence and supported tree schema, use one explicit Python copy transaction, detach the UTF-8 string and require candidate/full-copy/postgates. Preserve every map, display_name, parent/order/scroll metadata, other entries/aliases, System/version and saves. Review custom name/cache/map/save consumers; test actual editor/tree/window, existing-save setup behavior, movement and save/full restart. This operation does not advance the native reload version or enable tree restructuring/general property writes.
 
 v1.5 adds [one existing-map display-name edit](references/map-display-names.md). Require exact whole-map/current-name guards, supported native schema, bounded plain UTF-8 text, fresh evidence and a single-change explicit Python copy/version/postgate chain. Preserve other map fields/aliases, tree/editor names, all other copied files and saves. Review custom map-name/save hooks and test the actual editor/name window, older-save reload, movement and save/full restart before project-specific promotion. General map-property writes remain disabled.
 

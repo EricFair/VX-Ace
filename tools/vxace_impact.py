@@ -448,6 +448,35 @@ def map_name_impact(index,change):
                           'Verify the native name window, older-save map reload, movement and full-process save/restart.']}
 
 
+def map_label_impact(index,change):
+    from vxace_map_labels import FIELDS,integer,name
+    from vxace_index_query import Index
+    from vxace_search import search
+    import re
+    loc=change.get('locator');mutation=change.get('mutation')
+    if not isinstance(loc,dict) or set(loc)!={'map_id'} or not isinstance(mutation,dict) or set(mutation)!=FIELDS-{'map_id'} or mutation.get('action')!='set_tree_name':
+        raise ValueError('Exact map-tree name proposal required')
+    mid=integer(loc['map_id'],'map ID',1,999);data=Index(index);infos=data.json('database/map-infos.json')
+    entry=infos.get(str(mid)) if isinstance(infos,dict) else None
+    if not isinstance(entry,dict) or entry.get('__class__')!='RPG::MapInfo' or entry.get('name')!=mutation['expected_name']:
+        raise ValueError('Indexed map-tree/name precondition disagrees')
+    for field in ('expected_infos_sha256','expected_entry_sha256','expected_inventory_sha256'):
+        if not isinstance(mutation[field],str) or not re.fullmatch('[a-f0-9]{64}',mutation[field]):raise ValueError('Exact native map-tree/entry/inventory guards required')
+    old=name(mutation['expected_name']);value=name(mutation['value'])
+    if old==value:raise ValueError('No-op map-tree name proposal')
+    evidence=[]
+    for query in ('$data_mapinfos','MapInfo','DataManager',*([old] if old else [])):
+        found=search(data,query=query,scopes=('scripts','events'),limit=10)
+        evidence.append({'literal':query,'matches':found['matches'],'evidence':found['hits'],'truncated':found['truncated']})
+    graph=data.json('codex/graph.json');data.unchanged()
+    return {'kind':'map_label','severity':'high','target':{'map_id':mid,'before':old,'after':value},'consumer_mentions':evidence,
+            'dependencies':graph_neighbors(graph,f'map:{mid}'),
+            'limitations':['Exact native whole-tree/entry/map inventory and candidate preservation are enforced separately by the Python copy chain.',
+                          'Names are labels rather than IDs; duplicate labels are valid and literal searches cannot resolve hidden name-based consumers/caches.',
+                          'All native maps, display_name, parent/order/scroll metadata and System/version remain unchanged.',
+                          'Default MapInfos reloads on process startup; review custom caches and verify editor/window/older-save/movement/save/restart.']}
+
+
 def build(index: Path, spec_path: Path):
     spec=load(spec_path)
     if not isinstance(spec,dict) or not isinstance(spec.get("changes"),list) or not spec["changes"]:
@@ -470,6 +499,7 @@ def build(index: Path, spec_path: Path):
         elif kind=='map_event': impacts.append(map_event_impact(index,change))
         elif kind=='map_entry': impacts.append(map_entry_impact(index,change))
         elif kind=='map_name': impacts.append(map_name_impact(index,change))
+        elif kind=='map_label': impacts.append(map_label_impact(index,change))
         else: raise ValueError(f"unsupported change kind: {kind}")
     high=sum(1 for x in impacts if x.get("severity")=="high")
     return {"impact_version":VERSION,"title":str(spec.get("title") or "VX Ace impact analysis"),"impact_count":len(impacts),

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.6.0 — One guarded editor/tree map name
+
+- Add fresh read-only native MapInfos label evidence and a single-change `map_label` / `set_tree_name` Python copy operation. Bind complete tree/entry/current-name/map-file inventory, supported tree/schema agreement and actual canonical low-level context.
+- Detach the selected UTF-8 string and verify the full approved candidate, preserving other entries/metadata/aliases, every map, player-visible display name, System/version, resources and saves. Require project/immediate byte gates, planner/impact/re-index/semantic/post-validation/map audit and final complete-copy hashes; roll back failed staging.
+- Add12 independent authored Ruby child-tree/alias/schema/guard/context/planner/copy/refusal/rollback tests (465 total). Native existing-save load preserved map setup/position/display name; the new startup tree label, ordinary movement, native saving, full process restart and editor tree/Name field passed on disposable copies. All three save hashes, maps/System/other Data, source/RTP and20 original hashes were preserved.
+- Default MapInfos reloads on startup; no project-version bump or map rewrite is needed for this label. Custom name/cache/map/save consumers still require project-specific review. See [commands, evidence and limits](references/map-tree-names.md); no tree restructuring or general map-property writer is enabled.
+
 ## 1.5.0 — One guarded existing-map display name
 
 - Add a fresh read-only native map-name snapshot and one guarded single-change `map_name` transaction for bounded plain UTF-8 display text. Bind complete native map/current-name guards and supported schema; require actual low-level native path agreement, detached string/candidate preservation, version reload and full-copy/post-project gates.
