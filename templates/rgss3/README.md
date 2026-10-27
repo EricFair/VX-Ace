@@ -28,4 +28,8 @@ For any script that stores state also run the checklist in `../../references/dat
 
 ## Sources and licensing
 
-These files are original and contain no default or third-party script code. The class and method names they hook (for example `Game_Switches#[]=`, `DataManager.load_database`, `Window_MenuCommand#add_original_commands`) are standard VX Ace names; where a signature could not be confirmed from memory the header says so.
+These files are original and contain no default or third-party script code. The class and method names they hook (for example `Game_Switches#[]=`, `DataManager.load_database`, `Window_MenuCommand#add_original_commands`) are standard VX Ace names, checked against the default script signatures.
+
+## Native evidence (v1.7)
+
+All five templates were installed above Main in a disposable copy of an editor-created project (with two unrelated custom scripts present) and exercised by a temporary in-engine harness under the actual RGSS3 runtime (`RUBY_VERSION` 1.9.2), in Playtest and in a normal run. Passed: load/compile; notetag parsing, load-time cache and typed accessors; lazy save defaults, migration, a real save/load round trip and loading a save written before the extension existed; the menu command alongside the default commands, its Scene_Menu handler and common-event reservation; HUD creation, refresh on gold change and disposal with Scene_Map; switch/variable logging, the restarting-autorun warning, parallel interpreters ignored; and no logger hooks or log file outside Playtest. This is not a gameplay test of any particular project: re-test after configuring IDs and alongside other scripts that touch the same methods.
