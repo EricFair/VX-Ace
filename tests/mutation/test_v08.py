@@ -1,4 +1,4 @@
-import hashlib, json, subprocess, sys, tempfile, unittest
+import hashlib, json, shutil, subprocess, sys, tempfile, unittest
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -30,6 +30,7 @@ def script_source(path,index=0):
     code="require 'zlib'; x=Marshal.load(File.binread(ARGV[0])); STDOUT.write(Zlib::Inflate.inflate(x[ARGV[1].to_i][2]))"
     p=run('ruby','-e',code,path,str(index)); assert p.returncode==0,p.stderr; return p.stdout
 
+@unittest.skipUnless(shutil.which("ruby"), "Ruby required for fixture and mutator")
 class MutationV08Tests(unittest.TestCase):
     def setUp(self):
         self.t=tempfile.TemporaryDirectory(); self.base=Path(self.t.name); self.project=self.base/'Project'
