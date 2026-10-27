@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Test and documentation hardening
+
+- Sync `VERSION` with the 1.6.0 release (it still read 1.4.0) and skip the v0.8 mutation suite when Ruby is unavailable, matching every other Ruby-dependent suite instead of erroring.
+- Resolve the temporary base directory in the map-append, reward and transfer structure tests. Their final-tampering cases compared an unresolved Windows 8.3 short path (for example `C:\Users\ERICFA~1`) with the copy patcher's resolved long path, so the tampering was never injected and the expected rollback was not exercised. The patcher's rollback behaviour is unchanged.
+- Condense the README into a current capability summary with links; per-release detail remains in this changelog. No tool, gate or capability changes; still 465 tests.
+
 ## 1.6.0 — One guarded editor/tree map name
 
 - Add fresh read-only native MapInfos label evidence and a single-change `map_label` / `set_tree_name` Python copy operation. Bind complete tree/entry/current-name/map-file inventory, supported tree/schema agreement and actual canonical low-level context.

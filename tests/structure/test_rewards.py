@@ -24,7 +24,7 @@ def row(code,parameters):return {'code':code,'indent':0,'parameters':parameters}
 class RewardTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-        self.base=Path(self.temp.name);self.game=self.base/'game';self.index=self.base/'index';self.specfile=self.base/'spec.json'
+        self.base=Path(self.temp.name).resolve();self.game=self.base/'game';self.index=self.base/'index';self.specfile=self.base/'spec.json'
         subprocess.run(['ruby',str(ROOT/'tests/structure/make_reward_fixture.rb'),str(self.game)],check=True,capture_output=True)
         self.before,_=backend.load(self.game/'Data/Map001.rvdata2');self.read()
         snap=rewards.snapshot(Index(self.index),self.game,1,1,1)

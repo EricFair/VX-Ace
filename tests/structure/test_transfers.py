@@ -13,7 +13,7 @@ from vxace_python_mutator import load,marshal_rb,apply,convert
 @unittest.skipUnless(shutil.which('ruby'),'Ruby required for independent native fixture')
 class TransferTests(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.base=Path(self.temp.name)
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.base=Path(self.temp.name).resolve()
         self.game=self.base/'game';self.index=self.base/'index'
         subprocess.run(['ruby',str(ROOT/'tests/structure/make_transfer_template.rb'),str(self.game)],check=True,capture_output=True)
         subprocess.run([sys.executable,str(ROOT/'tools/vxace_project_reader.py'),str(self.game),'--output',str(self.index)],check=True,capture_output=True)
