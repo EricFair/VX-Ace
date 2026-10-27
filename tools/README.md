@@ -118,6 +118,15 @@ python tools/vxace_text_export.py PROJECT_INDEX --project PROJECT --json NEW.jso
 
 Balance evaluates damage formulas without executing Ruby and reports stat/EXP curves, matchups, troop rewards and shop prices ([balance](../references/balance-analysis.md)). The notetag registry cross-references note/comment tags with script regexes ([notetags](../references/notetag-registry.md)). Text export writes dialogue and database text for proofreading or translation and lints messages ([text export](../references/text-export.md)). All three are heuristic, write only new files outside the project and index, and never authorize mutation.
 
+## In-engine smoke tests — v1.8
+
+```powershell
+python tools/vxace_smoke.py stage PROJECT --work NEW_WORK_DIR --suite my_checks.rb
+python tools/vxace_smoke.py run NEW_WORK_DIR --mode test --frames 600 --json NEW.json --markdown NEW.md
+```
+
+`stage` inserts the harness slot through the guarded validator/reader/slot/planner/impact/copy chain; `run` launches the copy's `Game.exe` (Windows) with a fresh nonce and validates the results file. The harness is inert without the launcher's nonce. See [smoke testing](../references/smoke-testing.md) and `tools/smoke/example_suite.rb`.
+
 ## Tests
 
 ```bash

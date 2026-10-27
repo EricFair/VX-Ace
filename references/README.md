@@ -32,6 +32,7 @@ Use the smallest relevant reference first.
 - `notetag-registry.md` — notetags in data/comments cross-referenced with script parsers.
 - `text-export.md` — dialogue/database text export and message lint.
 - `impact-analysis.md` — patch impact and semantic before/after diff.
+- `smoke-testing.md` — in-engine smoke runs of a staged disposable copy.
 - `mcp-read-only.md` — optional read-only MCP adapter.
 
 ## Planning and copy mutation
