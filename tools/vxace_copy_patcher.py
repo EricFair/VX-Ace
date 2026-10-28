@@ -151,6 +151,14 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             out.append({'kind':'map_region','target':f'Data/Map{mid:03d}.rvdata2',
                         'ruby_spec':{'type':'map_region','mutation':mut},'description':c.get('description',''),
                         'locator':loc,'mutation':mut})
+        elif kind=='map_encounter':
+            from vxace_map_encounters import FIELDS,ACTION,integer
+            if not isinstance(loc,dict) or set(loc)!={'map_id'}:raise ValueError('Encounter locator must contain exactly map_id')
+            mid=integer(loc['map_id'],'map ID',1,999)
+            if not isinstance(mut,dict) or set(mut)!=FIELDS or mut.get('action')!=ACTION:raise ValueError('Exact append_encounter mutation required')
+            out.append({'kind':'map_encounter','target':f'Data/Map{mid:03d}.rvdata2',
+                        'ruby_spec':{'type':'map_encounter','mutation':mut},'description':c.get('description',''),
+                        'locator':loc,'mutation':mut})
         elif kind=='event':
             rows=mut.get('commands',[])
             if isinstance(rows,list) and any(isinstance(row,dict) and type(row.get('code')) is int and row['code']==201 for row in rows):
@@ -251,6 +259,12 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if region_cells:
         from vxace_python_mutator import load
         before_region_root=load(target)[0]
+    before_encounter_root=None
+    if change['kind']=='map_encounter':
+        from vxace_python_mutator import load
+        from vxace_map_encounters import existing as encounter_rows,troops_for
+        before_encounter_root=load(target)[0];encounter_troops=troops_for(target);before_encounters=encounter_rows(before_encounter_root)
+        before_encounter_step=before_encounter_root.get('encounter_step')
     before_entry_root=None
     if change['kind']=='database_entry':
         from vxace_python_mutator import load
@@ -306,6 +320,9 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if region_cells:
         from vxace_map_regions import verify_transition
         verify_transition(before_region_root,load(tmp)[0],mutation)
+    if change['kind']=='map_encounter':
+        from vxace_map_encounters import verify_transition as verify_encounter
+        verify_encounter(before_encounter_root,load(tmp)[0],mutation,encounter_troops)
     if change['kind']=='database_entry':
         if entry_table=='items':
             from vxace_database_entries import verify_transition as verify_entry
@@ -342,6 +359,12 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         rec['map_name']={'map_id':change['locator']['map_id'],'before':before_name,'after':display_name(load(target)[0]),
                          'only_display_name_changed':True,'other_native_fields_and_aliases_preserved':True}
         rec['diff']=''.join(difflib.unified_diff([before_name+'\n'],[rec['map_name']['after']+'\n'],fromfile='source-display-name',tofile='staged-display-name'))
+    if change['kind']=='map_encounter':
+        final_map=load(target)[0]
+        rec['encounter']={'locator':change['locator'],'before':{'encounters':before_encounters,'encounter_step':before_encounter_step},
+                          'after':{'encounters':encounter_rows(final_map),'encounter_step':final_map.get('encounter_step')},
+                          'existing_encounters_unchanged':True,'other_map_fields_unchanged':True,'troops_unchanged':True}
+        rec['diff']=''.join(difflib.unified_diff(json.dumps(rec['encounter']['before'],indent=2).splitlines(True),json.dumps(rec['encounter']['after'],indent=2).splitlines(True),fromfile='source-encounters',tofile='staged-encounters'))
     if change['kind']=='map_event':
         rec['map_event']={'before':before_event,'after':event_snapshot(load(target)[0],mutation['template_id']),
                           'new_id':mutation['new_id'],'name':mutation['name'],'x':mutation['x'],'y':mutation['y'],
@@ -442,7 +465,20 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         for c in map_names:
             name_data=Index(index);indexed_snapshot(name_data,project,c['locator']['map_id']);name_data.unchanged()
             validate_name(load(unlinked(project/c['target']))[0],c['mutation'])
-    reload_required=bool(structural or regions or upper_tiles or map_events or map_names)
+    encounters=[c for c in changes if c['kind']=='map_encounter']
+    if encounters:
+        if len(encounters)!=1:raise ValueError('Use one map encounter append per transaction')
+        if any(c is not encounters[0] and c['target'] in (encounters[0]['target'],'Data/Troops.rvdata2') for c in changes):
+            raise ValueError('Encounter append cannot be combined with other changes to the same map or to Troops')
+        if no_reindex or mutator.resolve()!=(Path(__file__).resolve().parent/'vxace_python_mutator.py'):
+            raise ValueError('Encounter appends require the explicit Python backend and mandatory post-copy re-indexing')
+        from vxace_index_query import Index,unlinked
+        from vxace_python_mutator import load
+        from vxace_map_encounters import indexed_snapshot as encounter_snapshot,troops_for,apply as encounter_apply
+        for c in encounters:
+            encounter_data=Index(index);encounter_snapshot(encounter_data,project,c['locator']['map_id']);encounter_data.unchanged()
+            encounter_apply(load(unlinked(project/c['target']))[0],c['mutation'],troops_for(project/c['target']))
+    reload_required=bool(structural or regions or upper_tiles or map_events or map_names or encounters)
     map_labels=[c for c in changes if c['kind']=='map_label']
     if map_labels:
         if len(changes)!=1:raise ValueError('Map-tree name edit requires its own single-change transaction')
@@ -606,10 +642,10 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
                 if p.returncode: raise RuntimeError('structural semantic verification failed: '+p.stderr.strip())
                 post_validation=validate(copy_root,audit_dir/'post-validation',ruby,mutator,skip_script_syntax=True,backend='python')
                 if not post_validation['copy_mutation_ready']: raise RuntimeError('post-copy project validation failed')
-                if regions or upper_tiles or map_entries or transfers or map_names or map_labels:
+                if regions or upper_tiles or map_entries or transfers or map_names or map_labels or encounters:
                     from vxace_map_audit import audit as map_audit
                     from vxace_index_query import Index
-                    reports=[map_audit(Index(post),c['locator']['map_id']) for c in regions+upper_tiles+map_names+map_labels]
+                    reports=[map_audit(Index(post),c['locator']['map_id']) for c in regions+upper_tiles+map_names+map_labels+encounters]
                     reports += [map_audit(Index(post),c['mutation']['new_id']) for c in map_entries]
                     reports += [map_audit(Index(post),mid) for c in transfers for mid in (c['locator']['map_id'],c['ruby_spec']['mutation']['commands'][0]['parameters'][1])]
                     if any(r['findings'] for r in reports): raise RuntimeError('post-copy selected-map tile audit failed')

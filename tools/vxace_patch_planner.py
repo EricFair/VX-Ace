@@ -73,7 +73,7 @@ def normalize_spec(spec: dict) -> dict:
         if not isinstance(raw, dict):
             raise ValueError(f"Change #{i} must be an object")
         kind = raw.get("kind")
-        if kind not in {"script", "script_slot", "event", "database", "map_region", "map_tile", "map_event", "map_entry", "database_entry", "map_name", "map_label"}:
+        if kind not in {"script", "script_slot", "event", "database", "map_region", "map_tile", "map_event", "map_entry", "database_entry", "map_name", "map_label", "map_encounter"}:
             raise ValueError(f"Change #{i} has unsupported kind: {kind}")
         item = dict(raw)
         if kind == "script":
@@ -100,7 +100,7 @@ def normalize_spec(spec: dict) -> dict:
             action=mutation.get('action') if isinstance(mutation,dict) else None
             if (locator['table']=='items',action) not in ((True,'append_key_item'),(False,'append_database_entry')):
                 raise ValueError('Entry action does not match the table (items: append_key_item; others: append_database_entry)')
-        elif kind in ('map_region','map_tile','map_event','map_name','map_label'):
+        elif kind in ('map_region','map_tile','map_event','map_name','map_label','map_encounter'):
             locator=item.get('locator')
             if not isinstance(locator,dict) or set(locator) != {'map_id'} or type(locator['map_id']) is not int or not 1 <= locator['map_id'] <= 999999:
                 raise ValueError('Region change requires exact map_id locator')
@@ -196,6 +196,10 @@ def regression_checks(changes: list[dict]) -> list[str]:
         checks += ['Review custom display_name, map-loading and save hooks; native map-name windows are project-specific.',
                    'Verify the display name in VX Ace, actual map-name window, older-save reload, movement and save/full-process restart.',
                    'Confirm only the native display_name and reload version changed; editor/tree names and all other copied files stay unchanged.']
+    if 'map_encounter' in kinds:
+        checks += ['Review the referenced troop, its enemies and battle events, plus custom encounter/region consumers, before staging.',
+                   'Verify the new entry in the VX Ace map properties, a random battle on the intended area (encounters enabled), older-save map reload and restart-based save/load.',
+                   'Confirm only encounter_list (and an optional encounter_step) changed; the map Table, events, Troops and all other copied files stay unchanged.']
     if 'map_label' in kinds:
         checks += ['Review custom MapInfos/name caches/map/save consumers; labels are not map IDs or display names.',
                    'Verify the native editor tree/Name field, unchanged display-name window and new-process older-save/movement/save/restart behavior.',
@@ -262,6 +266,20 @@ def build_plan(index: Path, project: Path, spec_path: Path, output: Path) -> dic
             value=validate_name(load(unlinked(project/proposed['target']))[0],proposed['mutation'])
             planned=structural_change(change)
             planned.update(apply_mode='proposal_only',risk='high',before=snap['display_name'],after=value,map_sha256=snap['map_sha256'])
+            changes.append(planned)
+        elif change['kind']=='map_encounter':
+            if len(spec['changes'])!=1:raise ValueError('Encounter append requires its own single-change plan')
+            from vxace_map_encounters import indexed_snapshot,validate as validate_encounter,troops_for
+            from vxace_index_query import Index,unlinked
+            from vxace_python_mutator import load
+            from vxace_copy_patcher import normalize_changes
+            proposed=normalize_changes(index,{'changes':[change]})[0]
+            data=Index(index);snap=indexed_snapshot(data,project,proposed['locator']['map_id']);data.unchanged()
+            row,step=validate_encounter(load(unlinked(project/proposed['target']))[0],proposed['mutation'],troops_for(project/proposed['target']))
+            planned=structural_change(change)
+            planned.update(apply_mode='proposal_only',risk='high',before={'encounters':snap['encounters'],'encounter_step':snap['encounter_step']},
+                           added={'troop_id':row[0],'weight':row[1],'region_set':row[2]},encounter_step=step,
+                           map_sha256=snap['map_sha256'],troops_sha256=snap['troops_sha256'])
             changes.append(planned)
         elif change['kind']=='map_entry':
             from vxace_maps import snapshot as map_snapshot,candidates as map_candidates

@@ -42,6 +42,7 @@ Use the smallest relevant reference first.
 - `copy-mutation.md` — disposable-copy mutation foundation.
 - `event-structure.md` — guarded command/page insertion and deletion.
 - `map-region-editing.md` — region cells on an existing map.
+- `map-encounters.md` — one random-encounter entry on an existing map.
 - `key-item-append.md` — inert key-item append.
 - `database-append.md` — template-clone append of enemies, skills, states, weapons, armors and troops.
 - `script-slot-insertion.md` — one script slot before Main.
