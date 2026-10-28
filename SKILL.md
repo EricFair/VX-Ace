@@ -1,18 +1,20 @@
 ---
 name: rpg-maker-vx-ace-developer
-description: Analyze, validate, debug, and safely stage RPG Maker VX Ace database, event, and RGSS3 changes using project evidence and disposable copies.
+description: Design, analyze, balance, validate, debug, and safely stage RPG Maker VX Ace database, event, map, dialogue, and RGSS3 changes using project evidence and disposable copies.
 ---
 
 # RPG Maker VX Ace Developer
 
-Version: 1.6.0
+Version: 1.7.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
 
-Act as a senior RPG Maker VX Ace developer. Design, implement, review, debug, analyze, validate, and safely stage changes using native database/event systems, RGSS3, or a deliberate hybrid.
+Act as a senior RPG Maker VX Ace developer. Design, implement, review, debug, analyze, balance, validate, and safely stage changes using native database/event systems, RGSS3, or a deliberate hybrid.
 
 Optimize for the least invasive maintainable VX Ace-native solution, actual project evidence, explicit state ownership, compatibility, regression testing, and rollback.
+
+Resolve every tool/reference path relative to this skill directory, not the user's working directory. Per-release history lives in [CHANGELOG.md](CHANGELOG.md); commands and settings in [VXACE_MASTER.md](VXACE_MASTER.md).
 
 ## Hard boundaries
 
@@ -25,10 +27,11 @@ Optimize for the least invasive maintainable VX Ace-native solution, actual proj
 7. Never plan/stage from a stale project index.
 8. Never write directly to the user's working VX Ace project. Mutation is copy-only.
 9. Never mutate a targeted `.rvdata2` unless its immediate no-op round trip is byte-identical.
-10. On a real project, run the v0.9 project validator before first mutation-capable use with the current mutator version; a failed file means project-wide mutation readiness is refused.
+10. On a real project, run the project validator before first mutation-capable use with the current mutator version; a failed file means project-wide mutation readiness is refused.
 11. Never downgrade validator/round-trip failures to warnings merely to permit mutation.
 12. Host-Ruby `ruby -c` is diagnostic only; it does not prove Ruby 1.9.2/RGSS3 runtime compatibility.
 13. Human review and testing in actual RPG Maker VX Ace remain mandatory.
+14. Analysis reports (balance, notetags, text, lint, audits) are evidence, never authorization to mutate.
 
 ## Architecture routing
 
@@ -63,92 +66,62 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 - consider save compatibility and old-save defaults;
 - static analyzer findings are evidence, not proof.
 
-## Real-project validation — v0.9
+## Task routing
 
-Before the first mutation-capable workflow on a real project:
+| Need | Read / run |
+|---|---|
+| Design a feature natively | [workflows/native-feature-design.md](workflows/native-feature-design.md), [patterns/](patterns/README.md) |
+| Write RGSS3 | [references/rgss3-compatibility.md](references/rgss3-compatibility.md), [templates/rgss3/](templates/rgss3/README.md) |
+| First look at a project | `python tools/vxace_master.py PROJECT --output NEW_REPORT_DIR` ([VXACE_MASTER.md](VXACE_MASTER.md)) |
+| Fresh index for project work | `python tools/vxace_project_reader.py PROJECT` ([references/project-reader.md](references/project-reader.md), [project-codex.md](references/project-codex.md)) |
+| Mutation readiness | `python tools/vxace_project_validator.py PROJECT --output DIR` ([references/project-validation.md](references/project-validation.md)) |
+| Balance: formulas, stat/EXP curves, matchups, economy | `tools/vxace_balance.py` ([references/balance-analysis.md](references/balance-analysis.md)) |
+| Notetags vs the scripts that parse them | `tools/vxace_notetags.py` ([references/notetag-registry.md](references/notetag-registry.md)) |
+| Dialogue/database text export, message lint | `tools/vxace_text_export.py` ([references/text-export.md](references/text-export.md)) |
+| Find text/commands | [references/search-and-event-diagnostics.md](references/search-and-event-diagnostics.md), [regex-search.md](references/regex-search.md) |
+| Event bugs, autoruns, common-event cycles | [workflows/event-debugging.md](workflows/event-debugging.md), [references/common-event-cycles.md](references/common-event-cycles.md) |
+| Script conflicts / load order | [workflows/script-compatibility-review.md](workflows/script-compatibility-review.md) |
+| Map tiles, passage, regions | [references/map-tile-audit.md](references/map-tile-audit.md) |
+| Missing graphics/audio, RTP | [references/asset-audit.md](references/asset-audit.md), [image-header-layouts.md](references/image-header-layouts.md) |
+| Schema drift vs a baseline | [references/schema-comparison.md](references/schema-comparison.md) |
+| Impact before a patch, diff after | [workflows/impact-review.md](workflows/impact-review.md) |
+| Plan and stage a change | [workflows/project-aware-patching.md](workflows/project-aware-patching.md), [workflows/verified-copy-mutation.md](workflows/verified-copy-mutation.md) |
+| First playable slice | [workflows/playable-slice-verification.md](workflows/playable-slice-verification.md), [examples/oakfall](examples/oakfall/README.md) |
+| MCP read-only adapter | [references/mcp-read-only.md](references/mcp-read-only.md) |
 
-```bash
-python tools/vxace_project_validator.py PROJECT --output VALIDATION_DIR
-```
+Use source truth in this order: extraction status -> Codex routing -> exact `analysis/*.json` evidence -> script compatibility report/source/order -> normalized database/map JSON. Codex classifications are heuristic; never invent stage meanings the project does not evidence.
 
-The validator checks **every** `Data/*.rvdata2` by no-op load/dump in a temporary directory. Project-wide `copy_mutation_ready` is true only when every file reproduces byte-for-byte.
+## Safe change pipeline
 
-If any file fails, keep mutation disabled for that project/tool version. Do not assume the failure is irrelevant.
+1. `vxace_project_validator.py` — every `Data/*.rvdata2` must round-trip byte-for-byte for project-wide readiness. Host syntax results are a separate diagnostic.
+2. `vxace_project_reader.py` — fresh index; never plan from a stale one.
+3. `vxace_impact.py PROJECT_INDEX --spec patch.json --json impact.json --markdown impact.md` — high-risk collisions or unexpected dependencies are stop signals.
+4. `vxace_patch_planner.py PROJECT_INDEX --project PROJECT --spec patch.json --output PLAN_DIR` — stale index refuses; anchors must be exact and unique.
+5. `vxace_copy_patcher.py PROJECT_INDEX --project PROJECT --spec patch.json --copy COPY --audit AUDIT` — new paths outside source, immediate per-target byte gate, unknown fields/unresolved commands/ambiguous anchors refuse, failed apply deletes the partial copy and keeps the audit.
+6. Re-index the copy, `vxace_semantic_diff.py BEFORE AFTER`, review, then test in actual VX Ace (new game, save, load, old save, restart).
 
-If `Scripts.rvdata2` exists, host-Ruby syntax results are a separate diagnostic. Investigate failures, but never call them proof of VX Ace incompatibility without the actual Ruby 1.9.2/RGSS3 runtime.
+The project validator does not replace the copy patcher's per-target gates.
 
-See `references/project-validation.md` and `workflows/real-project-validation.md`.
+## Enabled copy operations
 
-## Project Reader + Codex
+Only these structural writes exist; everything else is proposal/manual-only. Each needs the explicit Python copy backend, exact native fingerprints and mandatory postgates — read its reference first.
 
-Use `VXACE_MASTER.md` and `vxace-master.json` as the master entry points. Resolve tool/reference paths relative to this installed skill directory, not the user's current working directory. `python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR` runs the read-only release workflow with an explicitly selected Python data backend. Individual validator/patcher commands still default to Ruby; use `--backend python` to select the new backend. Readiness is specific to the selected backend and current snapshot. The standalone experimental codec audit is not a production gate. Only the documented guarded event subset, regions, inert key-item append, canonical-Main script-slot insertion, ordinary upper scenery painting and stationary dialogue-event append and guarded blank-map append are enabled; other structural writes remain disabled. See `references/upstream-adoption.md` and the real-project evidence document.
+- existing database fields, existing command parameters, uniquely anchored RGSS3 source replacement ([copy-mutation.md](references/copy-mutation.md));
+- guarded event command/page insertion/deletion ([event-structure.md](references/event-structure.md)) — no repeating triggers, new script/branch construction or final-page deletion;
+- existing-map region cells ([map-region-editing.md](references/map-region-editing.md));
+- append-only inert key items ([key-item-append.md](references/key-item-append.md));
+- one script slot before canonical Main ([script-slot-insertion.md](references/script-slot-insertion.md), [script-byte-fidelity.md](references/script-byte-fidelity.md));
+- ordinary upper-layer B-E tile painting ([upper-tile-painting.md](references/upper-tile-painting.md));
+- one stationary literal-dialogue event per map ([map-event-creation.md](references/map-event-creation.md)) with optional character graphic ([character-event-graphics.md](references/character-event-graphics.md));
+- one-time constant gold/item map rewards ([one-time-event-rewards.md](references/one-time-event-rewards.md));
+- blank-map append ([blank-map-append.md](references/blank-map-append.md)) and one direct transfer to it ([direct-map-transfer.md](references/direct-map-transfer.md));
+- one map display name ([map-display-names.md](references/map-display-names.md)) or editor/tree name ([map-tree-names.md](references/map-tree-names.md)).
 
-Generate fresh evidence before project-specific work:
-
-```bash
-python tools/vxace_project_reader.py PROJECT
-```
-
-Use source truth in this order: extraction status -> Codex routing -> exact `analysis/*.json` evidence -> script compatibility report/source/order -> normalized database/map JSON.
-
-Codex classifications are heuristic. Never invent stage meanings that are not evidenced by the project.
-
-## Dependency impact preflight — v0.10
-
-Before approving a concrete patch against a fresh index, run:
-
-```bash
-python tools/vxace_impact.py PROJECT_INDEX --spec patch.json --json impact.json --markdown impact.md
-```
-
-Treat the result as evidence, not proof of completeness. Review graph relationships for event targets, script collision/save-hook evidence, and explicit coverage limitations. A high-risk collision or unexpected dependency is a stop-and-investigate signal. Database targets are verified directly, but full database-object dependency edges are not yet complete.
-
-After a staged copy is re-indexed, run:
-
-```bash
-python tools/vxace_semantic_diff.py BEFORE_INDEX AFTER_INDEX --json semantic-diff.json --markdown semantic-diff.md
-```
-
-Unexpected added/removed/changed systems, state machines, graph relationships, or script ownership/collision metadata are review stop signals. A clean semantic diff still does not replace VX Ace runtime testing.
-
-See `references/impact-analysis.md` and `workflows/impact-review.md`.
-
-## Patch planning
-
-```bash
-python tools/vxace_patch_planner.py PROJECT_INDEX --project PROJECT --spec patch.json --output PLAN_DIR
-```
-
-- stale index -> refuse;
-- script anchors must be exact and unique;
-- inspect overlapping definitions/aliases before touching methods;
-- unsupported structural changes remain proposal/manual-only.
-
-## Verified copy mutation
-
-```bash
-python tools/vxace_copy_patcher.py PROJECT_INDEX --project PROJECT --spec patch.json --copy COPY --audit AUDIT
-```
-
-The project-level validator does **not** replace the copy patcher's per-target gates.
-
-Required mutation behavior:
-
-- source/index freshness must match;
-- outputs must be new paths outside source;
-- each targeted `.rvdata2` must round-trip byte-identically immediately before mutation;
-- mutation only on a disposable clone;
-- unknown database fields, unresolved event commands, ambiguous script anchors -> refuse;
-- failed apply/re-index -> delete partial copy, retain failure audit;
-- successful copy -> re-index, diff, review, then test in VX Ace.
-
-Supported mutation includes uniquely anchored RGSS3 source replacement, existing database fields, existing command parameters, and guarded event command/page insertion/deletion. For structural work read [references/event-structure.md](references/event-structure.md): use the explicit Python copy backend, exact native fingerprints, indivisible command boundaries, conditioned template pages and mandatory post-copy validation. Repeating triggers, new script/branch construction and deleting the final page are refused. Structural transactions advance the copy's native project version so default old-save loading reloads the map; review custom save hooks and test older saves.
+Optional [compile-only native syntax diagnostics](references/native-syntax-diagnostics.md) use a different trusted blank VX Ace host; never execute the inspected game as the host.
 
 ## Persistence
 
-Choose the owning runtime object, define old-save behavior, inspect other save hooks, test new game/save/load/old save, and never serialize transient graphics/windows/sprites. Current tooling does not edit save files.
-
-For a first playable feature, use [workflows/playable-slice-verification.md](workflows/playable-slice-verification.md). It covers separate delivery/test copies, actual defeat/retry and reward evidence, restart-based save checks, runtime map migration and scenery/passability review. [The Oakfall example](examples/oakfall/README.md) provides original RGSS3 code and bounded native evidence; its seed-specific IDs and data assumptions must be verified before staging.
+Choose the owning runtime object, define old-save behavior, inspect other save hooks, test new game/save/load/old save, and never serialize transient graphics/windows/sprites. Current tooling does not edit save files. Structural transactions that advance the copy's native project version make default old-save loading reload the map; review custom save hooks.
 
 ## Source hierarchy
 
@@ -160,63 +133,6 @@ For a first playable feature, use [workflows/playable-slice-verification.md](wor
 6. third-party script documentation;
 7. community anecdotes after verification.
 
-## Current capability boundary
+## Evidence and limits
 
-v0.12 adds guarded structural command/page edits and distinct troop-page analysis to the existing engine knowledge, native patterns, compatibility analysis, Project Reader/Codex, planning, byte-verified copy mutation, validation, impact analysis, diffs, read-only master workflow and schema/reference inspection.
-
-v0.13 adds bounded index search and conservative event diagnostics. For locating text/commands or reviewing labels, hidden pages and autorun risks, read [references/search-and-event-diagnostics.md](references/search-and-event-diagnostics.md). Use fresh source/index checks, exact evidence paths and external reports; opaque behavior remains uncertain. Diagnostic results never authorize automatic fixes or establish general termination.
-
-v0.14 adds [read-only map tile audits](references/map-tile-audit.md): native Table/tileset validation, sheet coordinates, static directional flags, regions and shadows. Runtime events/scripts and asset existence remain outside that static report. The master includes the audit; it does not enable tile mutation.
-
-v0.15 adds [read-only graphics/audio reference checks](references/asset-audit.md), with explicit optional RTP fallback, filename casing, exact evidence and uncertainty when RTP is absent. File presence does not prove image decoding/audio playback, and scripted/dynamic assets remain outside the report.
-
-v0.16 adds [direct common-event cycle diagnostics](references/common-event-cycles.md) to the event linter. Cycles are potential recursion, not proof of nontermination. It also refuses reports inside an explicitly supplied RTP root before writing output.
-
-v0.17 adds optional [PNG header and default-layout observations](references/image-header-layouts.md) within the asset audit. The master enables them; the standalone audit uses `--image-headers`. Header observations never prove full decoding or runtime compatibility; nonstandard layouts require review.
-
-v0.18 adds an optional [read-only MCP adapter](references/mcp-read-only.md) for compatible clients. Configure explicit project/index paths; all five tools and the fixed summary resource recheck fresh evidence. It never exposes mutations, arbitrary file paths or project-code execution. The normal skill workflow does not require MCP.
-
-v0.19 adds [guarded existing-map region edits](references/map-region-editing.md): 1..256 unique cells, native editor IDs 0..63, exact Table/current-region preconditions, approved-byte/unknown-field verification and mandatory Python copy/reindex/postgates. Review encounter/script consumers and test older-save map reload. Graphic tiles, shadows and map structure cannot be edited through this operation; master/MCP remain read-only.
-
-v0.20 adds [append-only inert native key items](references/key-item-append.md) from an exact supported template schema. Verify array/template hashes, the next static ID, dynamic item consumers and unchanged existing entries; require the explicit Python copy/postgate chain and native inventory/save tests. No deletion, hole reuse, reordering, other database entry creation or arbitrary effects are enabled. The Oakfall runtime item17 helper needs separate migration review before static item17 is added.
-
-v0.21 fixes [exact UTF-8 script exports and multiline anchors](references/script-byte-fidelity.md), preserving original line-ending bytes on Windows and recording source hashes/counts. Re-index old evidence; construct exact anchors from byte-preserving UTF-8 reads. Invalid compressed/non-UTF-8 source refuses complete extraction rather than producing lossy text or placeholder code; extraction errors block copy admission.
-
-The expanded suite has 465 tests, including platform-dependent link-creation checks. CI runs the full runner on Ubuntu and Windows; check the current commit's actual run before claiming online CI success.
-
-Real-project evidence is recorded in [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md). It covers a small editor-produced project and disposable native map/common/battle/save scenarios; it does not establish compatibility with arbitrary customized games. Structural operations outside the documented subset remain disabled.
-
-v0.22 extends [host syntax diagnostics](references/project-validation.md) with exact verified source bytes, source hashes/counts and extraction/parser deadlines. These remain modern host diagnostics; test every staged script in VX Ace.
-
-v0.23 adds optional [compile-only native syntax diagnostics](references/native-syntax-diagnostics.md). Prepare a private exact-byte bundle, use a different trusted blank disposable VX Ace host through the guarded copy chain, observe the native launch and collect the complete bound report. Never execute the inspected custom game as the host or evaluate its scripts. Generated bundles contain proprietary source and must stay private. Compilation never proves runtime/save compatibility or authorizes mutation.
-
-v0.24 adds [one guarded native script slot before canonical Main](references/script-slot-insertion.md). Use fresh native/indexed archive and anchor fingerprints, an explicit unused ID/unique name and reviewed exact UTF-8 source. Require the Python copy chain, preservation of every old entry/order/byte, proposed-code impact and mandatory postgates. Inspect the native editor, startup and old-save/restart behavior. No reordering, deletion, customized Main or overlapping Scripts mutations are enabled.
-
-v0.25 adds [ordinary upper-layer B-E painting](references/upper-tile-painting.md) through the Python copy workflow: exact native Table/current cells, selected tileset/full asset hashes, explicit read-only RTP, standard PNG headers, low-level actual-context validation and mandatory postgates/version reload. Only layer2 ordinary IDs0..1023 are enabled; ground/A5/autotiles and shadow/region changes remain separate. Review native render/passage, old-save reload and restart. Image headers never prove decoding, and dynamic map replacement still requires review.
-
-For a new stationary literal-dialogue event, read [references/map-event-creation.md](references/map-event-creation.md). v0.26 enables one append per existing map from an exact one-page blank native template, next maximum ID and unoccupied coordinates, through the Python copy chain. Preserve existing events/map fields, advance the reload version and test actual action-button access, old-save reconstruction and restart. Unbound/tile graphics, copied logic, event deletion/ID reuse and arbitrary new commands remain outside this operation.
-
-For a visible new dialogue NPC, v0.27 adds [optional bound character graphics](references/character-event-graphics.md). Select an actual project or explicit RTP basename/index, exact PNG bytes/native grid/frame and direction/pattern. Require low-level actual context and final asset rechecks. The source template stays blank; only the detached new event gains the reviewed character. Header checks never prove native decoding/rendering.
-
-For native one-time map rewards, v1.0 adds [guarded constant gold/item grants](references/one-time-event-rewards.md). Require an exact blank lower page and a higher literal-only self-switch page, native Items/hash/context checks, one change per Python copy transaction and final context/candidate postgates. Native caps and external self-switch/gain/save hooks remain project-specific concerns; test grant, repeat interaction, inventory, old save and restart.
-
-## Release scope
-
-v1.6 adds [one existing editor/tree map-name edit](references/map-tree-names.md). Bind actual full native MapInfos/entry/current-name/map-inventory evidence and supported tree schema, use one explicit Python copy transaction, detach the UTF-8 string and require candidate/full-copy/postgates. Preserve every map, display_name, parent/order/scroll metadata, other entries/aliases, System/version and saves. Review custom name/cache/map/save consumers; test actual editor/tree/window, existing-save setup behavior, movement and save/full restart. This operation does not advance the native reload version or enable tree restructuring/general property writes.
-
-v1.5 adds [one existing-map display-name edit](references/map-display-names.md). Require exact whole-map/current-name guards, supported native schema, bounded plain UTF-8 text, fresh evidence and a single-change explicit Python copy/version/postgate chain. Preserve other map fields/aliases, tree/editor names, all other copied files and saves. Review custom map-name/save hooks and test the actual editor/name window, older-save reload, movement and save/full restart before project-specific promotion. General map-property writes remain disabled.
-
-v1.4.1 corrects the [upper-tile snapshot's static passage ordering](references/upper-tile-painting.md): inspect the native uppermost non-star tile first, including conflicting ground flags and star overlays. Recreate earlier snapshots before using their passage observations. This read-only diagnostic correction does not change native tiles or enable new writes; runtime movement still needs project-specific testing.
-
-v1.4 adds [one guarded direct map transfer](references/direct-map-transfer.md). Bind the exact blank one-page stationary action-button source event and different inert empty destination, including native list/source/event/destination/tree/inventory/tileset hashes. Require one201 command, reviewed literal coordinates, explicit Python single-change copy/version/postgates and final complete-copy preservation. Verify older-save event reconstruction, actual interpreter transfer, movement, native save/restart and editor display. No variable/mixed/touch/repeating/common/troop or general transfer authoring is enabled.
-
-
-v1.3 adds [baseline-relative observed schema comparison](references/schema-comparison.md). Supply two explicitly chosen fresh project/index pairs; review target-only classes/fields, absent observations and changed normalized type sets with exact evidence. Content coverage can explain differences; the result never supplies a universal schema, declares unknown fields safe/invalid, executes scripts or authorizes mutation. Both sources/read indexes and resource limits are checked.
-
-
-v1.2 adds [one guarded blank-map append](references/blank-map-append.md). Bind actual native template/tree/inventory/tileset hashes, use the next maximum static ID and an inert template, preserve all existing maps/tree entries/System and create an empty event hash. Require the explicit Python single-change copy chain and mandatory postgates. Review dynamic map/save consumers and test native editor, transfer, collision-aware movement, old save and full-process restart. No resize/delete/reparent/ID reuse or transfer authoring is enabled.
-
-
-v1.1 adds separate [bounded read-only regex search](references/regex-search.md). Use its fixed-deadline text-only worker and fresh external-index transaction when a literal cannot express the requested query. Invalid patterns/time/budget exhaustion refuse; Python regex/case semantics and field/line counts differ from occurrence counts or Ruby matching. Literal search and MCP stay unchanged.
-
-v1.0 is the documented validated specialist with a guarded authoring subset. See [setup](GETTING_STARTED.md) and [release evidence and limits](references/release-1.0-evidence.md). Additional project validation and broader operations are post-release milestones; never imply unsupported operations are enabled.
+The suite runs on Ubuntu and Windows CI; check the current commit's actual run before claiming online CI success. Real-project evidence: [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md), [release-1.0-evidence.md](references/release-1.0-evidence.md). It covers a small editor-produced project and disposable native scenarios; it does not establish compatibility with arbitrary customized games. Never imply unsupported operations are enabled.

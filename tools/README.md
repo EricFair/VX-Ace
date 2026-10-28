@@ -108,6 +108,16 @@ python tools/vxace_asset_audit.py PROJECT_INDEX --project PROJECT --output NEW_E
 
 The RTP argument is optional. Unresolved references without it remain uncertain; no RTP is guessed or installed. See [asset audit coverage and limits](../references/asset-audit.md).
 
+## Read-only game-development analysis — v1.7
+
+```powershell
+python tools/vxace_balance.py PROJECT_INDEX --project PROJECT --json NEW.json --markdown NEW.md --levels 1,10,30
+python tools/vxace_notetags.py PROJECT_INDEX --project PROJECT --json NEW.json --markdown NEW.md
+python tools/vxace_text_export.py PROJECT_INDEX --project PROJECT --json NEW.json --csv NEW.csv --markdown NEW.md
+```
+
+Balance evaluates damage formulas without executing Ruby and reports stat/EXP curves, matchups, troop rewards and shop prices ([balance](../references/balance-analysis.md)). The notetag registry cross-references note/comment tags with script regexes ([notetags](../references/notetag-registry.md)). Text export writes dialogue and database text for proofreading or translation and lints messages ([text export](../references/text-export.md)). All three are heuristic, write only new files outside the project and index, and never authorize mutation.
+
 ## Tests
 
 ```bash

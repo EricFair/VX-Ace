@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased — Test and documentation hardening
+## 1.7.0 — Game-development analysis and design knowledge
+
+- Add read-only `vxace_balance.py`: a restricted damage-formula parser with Ruby integer semantics (no Ruby evaluation; unsupported expressions are `opaque`), class parameter and default-formula EXP curves, actor/enemy base-damage and hits-to-kill matchups, troop EXP/gold/drops, and shop listings from commands 302/605 with heuristic warnings.
+- Add read-only `vxace_notetags.py`: notetags from database/map notes and event comments cross-referenced with notetag regexes in scripts, with unrecognized/typo, case-mismatch, collision and unused classifications.
+- Add read-only `vxace_text_export.py`: dialogue, choices, scrolling text and database text to JSON, BOM-prefixed CSV and Markdown with stable keys and source fingerprints, plus heuristic message lint (line count, visible width, control codes, ID ranges). Export only; no import is enabled.
+- All three use the existing fresh-index, budget and external-output guards and never authorize mutation. Run read-only against an editor-created VX Ace project index (10 actors, 30 enemies, 64 formulas all evaluable, 846 text entries); no project-specific evidence is published.
+- Add eight native-first patterns (crafting, day/night, shops/economy, party management, puzzles, minigames, bestiary/collections, boss battles) and five original RGSS3 templates (notetag parser, map HUD, menu command, save-safe extension, playtest debug logger). Template hooks were checked against the default script signatures and 19 in-engine checks passed under the actual RGSS3 runtime (Ruby 1.9.2) in a disposable copy, including Playtest and normal runs and an existing pre-extension save; see [native evidence](templates/rgss3/README.md#native-evidence-v17). The menu template now aliases `add_original_commands` and the logger accumulates restarting autoruns per map event instead of per interpreter run.
+- Restructure `SKILL.md` around a task-routing table and enabled-operation list; per-release history stays here. Complete the reference index.
+- Add `tests/balance`, `tests/notetags` and `tests/text_export` (50 tests) to the full runner.
+
+## Included in 1.7.0 — Test and documentation hardening
 
 - Sync `VERSION` with the 1.6.0 release (it still read 1.4.0) and skip the v0.8 mutation suite when Ruby is unavailable, matching every other Ruby-dependent suite instead of erroring.
 - Resolve the temporary base directory in the map-append, reward and transfer structure tests. Their final-tampering cases compared an unresolved Windows 8.3 short path (for example `C:\Users\ERICFA~1`) with the copy patcher's resolved long path, so the tampering was never injected and the expected rollback was not exercised. The patcher's rollback behaviour is unchanged.

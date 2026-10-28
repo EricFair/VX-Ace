@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v1.6
+# RPG Maker VX Ace Developer — v1.7
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -23,6 +23,9 @@ python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR
 | Map tile, asset, PNG-header and common-event cycle audits | [map tiles](references/map-tile-audit.md), [assets](references/asset-audit.md), [image headers](references/image-header-layouts.md), [cycles](references/common-event-cycles.md) |
 | Patch impact analysis and semantic Codex diff | [impact](references/impact-analysis.md) |
 | Baseline-relative observed schema comparison | [schema comparison](references/schema-comparison.md) |
+| Balance: damage formulas, stat/EXP curves, matchups, troop rewards, shop economy | [balance](references/balance-analysis.md) |
+| Notetag registry: note/comment tags vs script parsers, typo hints | [notetags](references/notetag-registry.md) |
+| Dialogue/database text export (JSON/CSV/Markdown) and message lint | [text export](references/text-export.md) |
 | Read-only stdio MCP interface | [MCP](references/mcp-read-only.md) |
 | Independent Python codec audit | [upstream adoption](references/upstream-adoption.md) |
 
@@ -44,6 +47,11 @@ Each operation is a narrow, separately evidenced subset with exact native guards
 | Map display name and editor/tree name | [display names](references/map-display-names.md), [tree names](references/map-tree-names.md) |
 
 Anything outside these subsets — for example ground/autotile painting, event deletion, general database or map-property authoring — is refused. See each reference for exact refusal rules.
+
+### Design knowledge
+
+- [Pattern library](patterns/README.md): native-first designs for quests, gated events, crafting, day/night, shops, party management, puzzles, minigames, bestiaries and boss battles.
+- [RGSS3 templates](templates/rgss3/README.md): original notetag parser, map HUD, menu command, save-safe data extension and playtest debug logger.
 
 ## Recommended real-project sequence
 
@@ -172,7 +180,7 @@ Uses a pinned MIT-declared codec subset from `azureknight63/rpgvxace-mcp`, needs
 
 ## Automated validation
 
-The suite has **465 tests** (see [CHANGELOG.md](CHANGELOG.md) for per-release counts). CI runs on Ubuntu and Windows with Python 3.11 and Ruby 3.2; consult the latest Actions run for actual status. Ruby-dependent tests skip when Ruby is not installed.
+The suite has **515 tests** (see [CHANGELOG.md](CHANGELOG.md) for per-release counts). CI runs on Ubuntu and Windows with Python 3.11 and Ruby 3.2; consult the latest Actions run for actual status. Ruby-dependent tests skip when Ruby is not installed.
 
 ```bash
 python tools/run_tests.py
