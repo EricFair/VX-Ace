@@ -83,6 +83,74 @@ class ValidationTests(unittest.TestCase):
         bad({'type': 'append_learning', 'class_id': 1, 'level': 5}, 'missing keys')
         bad({**good, 'expected_class_sha256': '0' * 64}, 'unknown keys')
 
+    def shop_recipe(self):
+        return {'steps': [
+            {'type': 'append_entry', 'table': 'weapons', 'template_id': 1, 'overrides': {'name': 'Blade'}},
+            {'type': 'append_entry', 'table': 'armors', 'template_id': 1, 'overrides': {'name': 'Plate'}},
+            {'type': 'append_key_item', 'template_item': 1, 'name': 'Charm', 'description': 'x'},
+            {'type': 'append_dialogue_event', 'map_id': 1, 'template_event': 1, 'x': 3, 'y': 4, 'name': 'Smith', 'lines': ['Hello.']},
+            {'type': 'add_shop', 'map_id': 1, 'event_id': {'from_step': 4}, 'purchase_only': False,
+             'goods': [{'type': 'weapon', 'id': {'from_step': 1}, 'price': None}, {'type': 'armor', 'id': {'from_step': 2}, 'price': 5},
+                       {'type': 'item', 'id': {'from_step': 3}, 'price': 0}, {'type': 'item', 'id': 2, 'price': None}]}]}
+
+    def shop_bad(self, mutate, text):
+        data = self.shop_recipe()
+        mutate(data)
+        with self.assertRaises(recipe.RecipeError) as ctx:
+            recipe.validate_recipe(data)
+        self.assertIn(text, str(ctx.exception))
+
+    def test_shop_and_dialogue_event_steps_validate(self):
+        self.assertEqual(len(recipe.validate_recipe(self.shop_recipe())), 5)
+        data = self.shop_recipe()
+        data['steps'][4].update(event_id=2, purchase_only=True)
+        recipe.validate_recipe(data)
+
+    def test_dialogue_event_step_is_strict(self):
+        for key, value, text in (('map_id', 0, 'map_id'), ('map_id', True, 'map_id'), ('template_event', 0, 'template_event'), ('x', -1, 'x'),
+                                 ('y', True, 'y'), ('name', '', 'name'), ('name', 3, 'name'), ('lines', [], 'lines'), ('lines', ['a'] * 5, 'lines'),
+                                 ('lines', 'text', 'lines'), ('lines', [1], 'lines'), ('lines', [{'from_step': 1}], 'lines')):
+            self.shop_bad(lambda d, k=key, v=value: d['steps'][3].update({k: v}), text)
+        self.shop_bad(lambda d: d['steps'][3].update(graphic={}), 'unknown keys')
+        self.shop_bad(lambda d: d['steps'][3].pop('lines'), 'missing keys')
+        self.shop_bad(lambda d: d['steps'][3].update(expected_map_sha256='0' * 64), 'unknown keys')
+        self.shop_bad(lambda d: d['steps'][3].update(x={'from_step': 1}), 'x')
+
+    def test_shop_step_is_strict(self):
+        self.shop_bad(lambda d: d['steps'][4].update(purchase_only='no'), 'purchase_only')
+        self.shop_bad(lambda d: d['steps'][4].update(purchase_only=1), 'purchase_only')
+        self.shop_bad(lambda d: d['steps'][4].pop('purchase_only'), 'missing keys')
+        self.shop_bad(lambda d: d['steps'][4].update(goods=[]), 'goods')
+        self.shop_bad(lambda d: d['steps'][4].update(goods=[{'type': 'item', 'id': 1, 'price': None}] * 2), 'duplicate')
+        self.shop_bad(lambda d: d['steps'][4].update(goods=[{'type': 'item', 'id': i % 5 + 1, 'price': None} for i in range(33)]), 'goods')
+        self.shop_bad(lambda d: d['steps'][4].update(map_id=0), 'map_id')
+        self.shop_bad(lambda d: d['steps'][4].update(event_id=0), 'event_id')
+        self.shop_bad(lambda d: d['steps'][4].update(event_id=True), 'event_id')
+        self.shop_bad(lambda d: d['steps'][4].update(expected_items_sha256='0' * 64), 'unknown keys')
+        for good, text in (({'type': 'gem', 'id': 1, 'price': None}, 'each good'), ({'type': 'item', 'id': 1}, 'each good'),
+                           ({'type': 'item', 'id': 1, 'price': None, 'x': 1}, 'each good'), ({'type': 'item', 'id': 0, 'price': None}, 'goods id'),
+                           ({'type': 'item', 'id': True, 'price': None}, 'goods id'), ({'type': 'item', 'id': 1.5, 'price': None}, 'goods id'),
+                           ({'type': 'item', 'id': 1, 'price': -1}, 'price'), ({'type': 'item', 'id': 1, 'price': 10000000}, 'price'),
+                           ({'type': 'item', 'id': 1, 'price': True}, 'price'), ({'type': 'item', 'id': 1, 'price': '5'}, 'price'),
+                           ({'type': 'item', 'id': 1, 'price': {'from_step': 1}}, 'price'), ('item', 'each good')):
+            self.shop_bad(lambda d, g=good: d['steps'][4].update(goods=[g]), text)
+
+    def test_shop_from_step_rules(self):
+        self.shop_bad(lambda d: d['steps'][4].update(event_id={'from_step': 5}), 'earlier step')
+        self.shop_bad(lambda d: d['steps'][4].update(event_id={'from_step': 9}), 'earlier step')
+        self.shop_bad(lambda d: d['steps'][4].update(event_id={'from_step': 1}), 'append_dialogue_event')
+        self.shop_bad(lambda d: d['steps'][4].update(event_id={'from_step': 4, 'x': 1}), 'exactly')
+        self.shop_bad(lambda d: d['steps'][4].update(map_id=2), 'different map')
+        self.shop_bad(lambda d: d['steps'][4]['goods'][0].update(id={'from_step': 2}), 'table weapons')
+        self.shop_bad(lambda d: d['steps'][4]['goods'][1].update(id={'from_step': 1}), 'table armors')
+        self.shop_bad(lambda d: d['steps'][4]['goods'][2].update(id={'from_step': 1}), 'append_key_item')
+        self.shop_bad(lambda d: d['steps'][4]['goods'][0].update(id={'from_step': 4}), 'table weapons')
+        self.shop_bad(lambda d: d['steps'][4]['goods'][0].update(id={'from_step': 5}), 'earlier step')
+        self.shop_bad(lambda d: d['steps'][4]['goods'][0].update(id={'from_step': 1, 'y': 2}), 'exactly')
+        self.shop_bad(lambda d: d['steps'][4]['goods'][0].update(type='item'), 'append_key_item')
+        self.shop_bad(lambda d: d['steps'][3].update(name={'from_step': 1}), 'name')
+        self.shop_bad(lambda d: d['steps'][1]['overrides'].update(price={'from_step': 1}), 'only allowed')
+
     def test_resolve_from_step(self):
         value = {'a': [{'enemy_id': {'from_step': 1}}, {'from_step': 3}], 'b': 2}
         self.assertEqual(recipe.resolve_refs(value, {1: 31, 3: 7}), {'a': [{'enemy_id': 31}, 7], 'b': 2})
@@ -148,6 +216,27 @@ class SpecBuildingTests(unittest.TestCase):
                                    {'before_index': 5, 'unused_id_candidate': 99, 'archive_sha256': 'a' * 64, 'anchor_sha256': 'b' * 64}, 'puts 1')
         self.assertEqual((script['changes'][0]['locator'], script['changes'][0]['mutation']['new_id']), ({'before_index': 5}, 99))
 
+
+    SHOP = {'map_sha256': 'm' * 64, 'event_sha256': 'e' * 64, 'list_sha256': 'l' * 64, 'items_sha256': 'i' * 64,
+            'weapons_sha256': 'w' * 64, 'armors_sha256': 'a' * 64, 'append_supported': True}
+
+    def test_dialogue_event_and_shop_specs_take_everything_from_snapshots(self):
+        step = {'type': 'append_dialogue_event', 'map_id': 2, 'template_event': 3, 'x': 1, 'y': 2, 'name': 'Smith', 'lines': ['Hi.']}
+        spec = recipe.build_spec('T', 1, step, {'next_event_id': 7, 'map_sha256': 'm' * 64, 'template_sha256': 't' * 64})
+        change = spec['changes'][0]
+        self.assertEqual((change['kind'], change['locator']), ('map_event', {'map_id': 2}))
+        self.assertEqual(change['mutation'], {'action': 'append_dialogue_event', 'template_id': 3, 'new_id': 7, 'name': 'Smith', 'x': 1, 'y': 2,
+                                              'text': ['Hi.'], 'expected_map_sha256': 'm' * 64, 'expected_template_sha256': 't' * 64})
+        shop = {'type': 'add_shop', 'map_id': 2, 'event_id': 7, 'purchase_only': True, 'goods': [{'type': 'weapon', 'id': 3, 'price': None}]}
+        change = recipe.build_spec('T', 2, shop, self.SHOP)['changes'][0]
+        self.assertEqual((change['kind'], change['locator']), ('map_shop', {'map_id': 2, 'event_id': 7}))
+        self.assertEqual(change['mutation'], {'action': 'add_shop', 'expected_map_sha256': 'm' * 64, 'expected_event_sha256': 'e' * 64,
+                                              'expected_list_sha256': 'l' * 64, 'expected_items_sha256': 'i' * 64, 'expected_weapons_sha256': 'w' * 64,
+                                              'expected_armors_sha256': 'a' * 64, 'goods': [{'type': 'weapon', 'id': 3, 'price': None}], 'purchase_only': True})
+        with self.assertRaises(recipe.RecipeError):
+            recipe.build_spec('T', 2, shop, {**self.SHOP, 'append_supported': False, 'unsupported_reason': 'two pages'})
+        self.assertEqual(recipe.created_id(step, {'next_event_id': 7}), 7)
+        self.assertIsNone(recipe.created_id(shop, {'next_event_id': 7}))
 
 @unittest.skipUnless(shutil.which('ruby'), 'Ruby required for the authored native fixture project')
 class EndToEndTests(unittest.TestCase):
@@ -335,6 +424,67 @@ class EndToEndTests(unittest.TestCase):
         self.assertTrue(Path(report['steps'][0]['spec']).is_file())
         actors, _ = backend.load(Path(report['final_copy']) / 'Data/Actors.rvdata2')
         self.assertEqual(actors[1].get('name').data, b'Alicia the Bold')
+
+    def add_items(self):
+        script = self.base / 'items.rb'
+        script.write_text("module RPG; class Item; end; end\nitem = RPG::Item.new\nitem.instance_variable_set(:@id, 1)\n"
+                          "item.instance_variable_set(:@name, 'Potion')\n"
+                          "File.binwrite(ARGV[0] + '/Data/Items.rvdata2', Marshal.dump([nil, item]))\n", encoding='utf-8')
+        subprocess.run(['ruby', str(script), str(self.game)], check=True, capture_output=True)
+
+    def test_new_weapon_dialogue_event_and_shop_chain_with_from_step(self):
+        self.add_items()
+        data = {'title': 'Smithy', 'steps': [
+            {'type': 'append_entry', 'table': 'weapons', 'template_id': 1, 'overrides': {'name': 'Smith Blade', 'price': 300}},
+            {'type': 'append_dialogue_event', 'map_id': 1, 'template_event': 1, 'x': 8, 'y': 8, 'name': 'Smith', 'lines': ['Fine steel.']},
+            {'type': 'add_shop', 'map_id': 1, 'event_id': {'from_step': 2}, 'purchase_only': True,
+             'goods': [{'type': 'weapon', 'id': {'from_step': 1}, 'price': None}, {'type': 'weapon', 'id': 1, 'price': 150},
+                       {'type': 'item', 'id': 1, 'price': 20}, {'type': 'armor', 'id': 2, 'price': None}]}]}
+        path = self.base / 'smithy.json'
+        path.write_text(json.dumps(data), encoding='utf-8')
+        before = current_inventory(self.game)
+        result = self.cli(path)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertEqual(current_inventory(self.game), before)
+        report = self.report()
+        self.assertEqual([s['status'] for s in report['steps']], ['ok'] * 3)
+        self.assertEqual([s['created_id'] for s in report['steps']], [3, 2, None])
+        resolved = report['steps'][2]['resolved_parameters']
+        self.assertEqual(resolved['event_id'], 2)
+        self.assertEqual([g['id'] for g in resolved['goods']], [3, 1, 1, 2])
+        self.assertEqual(report['steps'][2]['source'], str(self.work.resolve() / 'step-02/copy'))
+        final = Path(report['final_copy'])
+        game_map, _ = backend.load(final / 'Data/Map001.rvdata2')
+        event = dict(game_map.get('events').pairs)[2]
+        commands = event.get('pages')[0].get('list')
+        self.assertEqual([c.get('code') for c in commands], [101, 401, 302, 605, 605, 605, 0])
+        self.assertEqual([c.get('parameters') for c in commands[2:6]],
+                         [[1, 3, 0, 0, True], [1, 1, 1, 150], [0, 1, 1, 20], [2, 2, 0, 0]])
+        weapons, _ = backend.load(final / 'Data/Weapons.rvdata2')
+        self.assertEqual(weapons[3].get('name').data, b'Smith Blade')
+        original, _ = backend.load(self.game / 'Data/System.rvdata2')
+        system, _ = backend.load(final / 'Data/System.rvdata2')
+        self.assertEqual(system.get('version_id'), original.get('version_id') + 2)
+        spec = json.loads(Path(report['steps'][2]['spec']).read_text(encoding='utf-8'))
+        self.assertEqual(spec['changes'][0]['locator'], {'map_id': 1, 'event_id': 2})
+        for step in report['steps']:
+            for key in ('spec', 'plan', 'impact', 'audit', 'copy'):
+                self.assertTrue(Path(step[key]).exists(), (step['step'], key))
+            self.assertEqual(set(step['exit_codes'].values()), {0})
+
+    def test_shop_step_with_absent_goods_id_stops_chain(self):
+        self.add_items()
+        data = {'title': 'Bad shop', 'steps': [
+            {'type': 'add_shop', 'map_id': 1, 'event_id': 1, 'purchase_only': False, 'goods': [{'type': 'item', 'id': 9, 'price': None}]}]}
+        path = self.base / 'bad_shop.json'
+        path.write_text(json.dumps(data), encoding='utf-8')
+        before = current_inventory(self.game)
+        result = self.cli(path)
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(current_inventory(self.game), before)
+        report = self.report()
+        self.assertEqual((report['status'], report['steps'][0]['status']), ('step_failed', 'failed'))
+        self.assertIsNone(report['final_copy'])
 
     def test_smoke_option_with_fake_launcher(self):
         import test_smoke as smoke_tests

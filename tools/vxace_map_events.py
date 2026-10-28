@@ -66,7 +66,7 @@ def events_for(root):
     return events
 
 
-def template(root,template_id):
+def template(root,template_id,blank_list=True):
     from vxace_python_mutator import RubyString
     events=events_for(root);integer(template_id,'template event ID',1,999)
     selected=next((event for key,event in events.pairs if key==template_id),None)
@@ -101,6 +101,7 @@ def template(root,template_id):
     if not isinstance(route_list,list) or len(route_list)!=1:raise ValueError('Template route must be empty')
     command=exact(route_list[0],'RPG::MoveCommand',{'code','parameters'})
     if type(command.get('code')) is not int or command.get('code')!=0 or command.get('parameters')!=[]:raise ValueError('Template route terminator required')
+    if not blank_list:return event
     commands=page.get('list')
     if not isinstance(commands,list) or len(commands)!=1:raise ValueError('Template event command list must be empty')
     command=exact(commands[0],'RPG::EventCommand',{'code','indent','parameters'})

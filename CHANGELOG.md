@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.15.0 — Map shops
+
+- Add `map_shop` / `add_shop` and the read-only `vxace_map_shops.py` snapshot: insert Shop Processing (302 plus 605 continuations, 1..32 unique goods, database or specified prices, purchase-only flag) before the terminator of an existing one-page stationary unconditional action-button event whose list is blank or exactly one literal Show Text block. Goods must be existing static items/weapons/armors bound by their array hashes; every other byte is verified unchanged; `System.version_id` advances once. One per transaction; Python backend and postgates only.
+- Recipe steps `append_dialogue_event` (existing v0.26 operation, needs a blank template event) and `add_shop`, with `from_step` references to the created event and to appended weapons/armors/key items.
+- Native evidence: a recipe on a disposable editor-created project copy appended a weapon, a Smith dialogue event and a shop; in a smoke run the greeting showed and `Scene_Shop` opened with the expected goods.
+- Add `tests/structure/test_map_shops.py` (23 tests) and recipe tests.
+
 ## 1.14.0 — Class skill learnings
 
 - Add `append_class_learning` (locator `{"table": "classes", "id": N}`) and `vxace_class_learning.py`: append one native `RPG::Class::Learning` (`skill_id` of an existing static skill bound by `expected_skills_sha256`, `level` 1..99, empty note) to an existing class. The class and every existing learning must have the exact native schema; duplicates refuse; every other byte is verified unchanged and Skills is checked byte-identical. One per transaction; Python backend and postgates only; no reload-version advance.

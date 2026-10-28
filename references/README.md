@@ -51,6 +51,7 @@ Use the smallest relevant reference first.
 - `map-event-creation.md` — stationary dialogue-event append.
 - `character-event-graphics.md` — character graphic on a new dialogue event.
 - `one-time-event-rewards.md` — one-time gold/item rewards.
+- `map-shops.md` — Shop Processing on a blank or single-dialogue event.
 - `blank-map-append.md` — blank map append.
 - `direct-map-transfer.md` — direct transfer to a blank map.
 - `map-display-names.md` — player-visible map name.

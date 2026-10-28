@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.14.0
+Version: 1.15.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -89,6 +89,7 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Impact before a patch, diff after | [workflows/impact-review.md](workflows/impact-review.md) |
 | Plan and stage a change | [workflows/project-aware-patching.md](workflows/project-aware-patching.md), [workflows/verified-copy-mutation.md](workflows/verified-copy-mutation.md) |
 | Chain several guarded additions (enemy -> skill -> troop -> encounter -> smoke run) | `tools/vxace_recipe.py run` ([references/recipes.md](references/recipes.md)) |
+| Sell items/weapons/armors from a shopkeeper | [references/map-shops.md](references/map-shops.md) |
 | Make a troop appear as a random encounter | [references/map-encounters.md](references/map-encounters.md) |
 | Add an enemy, skill, state, weapon, armor, troop or class skill learning | [references/database-append.md](references/database-append.md) |
 | Ship a build | [workflows/release-checklist.md](workflows/release-checklist.md) |
@@ -122,6 +123,7 @@ Only these structural writes exist; everything else is proposal/manual-only. Eac
 - ordinary upper-layer B-E tile painting ([upper-tile-painting.md](references/upper-tile-painting.md));
 - one stationary literal-dialogue event per map ([map-event-creation.md](references/map-event-creation.md)) with optional character graphic ([character-event-graphics.md](references/character-event-graphics.md));
 - one-time constant gold/item map rewards ([one-time-event-rewards.md](references/one-time-event-rewards.md));
+- Shop Processing (1..32 existing goods) on a blank or single-dialogue action-button event ([map-shops.md](references/map-shops.md));
 - blank-map append ([blank-map-append.md](references/blank-map-append.md)) and one direct transfer to it ([direct-map-transfer.md](references/direct-map-transfer.md));
 - one map display name ([map-display-names.md](references/map-display-names.md)) or editor/tree name ([map-tree-names.md](references/map-tree-names.md)).
 
