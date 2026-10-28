@@ -48,7 +48,7 @@ Use the smallest relevant reference first.
 - `database-append.md` — template-clone append of enemies, skills, states, weapons, armors and troops.
 - `script-slot-insertion.md` — one script slot before Main.
 - `upper-tile-painting.md` — upper-layer B-E tile painting.
-- `map-event-creation.md` — stationary dialogue-event append.
+- `map-event-creation.md` — blank-event (schema donor) and stationary dialogue-event append.
 - `character-event-graphics.md` — character graphic on a new dialogue event.
 - `one-time-event-rewards.md` — one-time gold/item rewards.
 - `map-shops.md` — Shop Processing on a blank or single-dialogue event.

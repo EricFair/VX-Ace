@@ -1,0 +1,6 @@
+{"title": "Smith on an untouched map", "steps": [
+ {"type": "append_entry", "table": "weapons", "template_id": 1, "overrides": {"name": "Iron Fang", "description": "A jagged blade.", "price": 320, "params": [0,0,18,0,0,0,0,0]}},
+ {"type": "append_blank_event", "map_id": 1, "donor_event": 1, "x": 9, "y": 11},
+ {"type": "append_dialogue_event", "map_id": 1, "template_event": {"from_step": 2}, "x": 13, "y": 11, "name": "Smith", "lines": ["Fine steel for sale."]},
+ {"type": "add_shop", "map_id": 1, "event_id": {"from_step": 3}, "purchase_only": false,
+  "goods": [{"type": "weapon", "id": {"from_step": 1}, "price": null}, {"type": "item", "id": 1, "price": 25}]}]}
