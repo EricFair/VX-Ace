@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only native event snapshots, guarded stationary dialogue-event append and blank-event append from a schema donor and staged quest-event append."""
+"""Read-only native event snapshots, guarded stationary dialogue-event append and blank-event append from a schema donor and staged quest-event append (v1.19: nested choices, conditions, battles and more)."""
 from __future__ import annotations
 import argparse
 import hashlib
@@ -9,8 +9,9 @@ import re
 import sys
 from vxace_index_query import execute, unlinked
 from vxace_map_regions import integer, table_for
+from vxace_staged_commands import commands_shape, staged_ids as _staged_ids, ref_fields, check_references, native_rows, structure_check, reference_snapshot
 
-VERSION = '1.18.0'
+VERSION = '1.19.0'
 FIELDS = {'action','template_id','new_id','name','x','y','text',
           'expected_map_sha256','expected_template_sha256'}
 BLANK_FIELDS = {'action','donor_event_id','new_id','name','x','y','expected_map_sha256','expected_donor_sha256'}
@@ -60,42 +61,12 @@ def staged_shape(pages):
         key=condition_key(condition)
         if key in seen:raise ValueError('Two pages have identical conditions; the later page would shadow the earlier one')
         seen.add(key)
-        commands=page['commands']
-        if not isinstance(commands,list) or not 1<=len(commands)<=MAX_COMMANDS:raise ValueError(f'Each page needs 1..{MAX_COMMANDS} commands')
-        for op in commands:
-            if not isinstance(op,dict):raise ValueError('Staged command must be an object')
-            keys=set(op)
-            if keys=={'text'}:
-                lines=op['text']
-                if not isinstance(lines,list) or not 1<=len(lines)<=4:raise ValueError('Dialogue requires one to four literal lines')
-                if not any([text(line,'dialogue line',500,True) for line in lines]):raise ValueError('Dialogue must contain text')
-            elif keys=={'set_switch','value'}:
-                plain_int(op['set_switch'],'set_switch id',1,2**31-1)
-                if type(op['value']) is not bool:raise ValueError('set_switch value must be true or false')
-            elif keys=={'set_variable','op','value'}:
-                plain_int(op['set_variable'],'set_variable id',1,2**31-1)
-                if not isinstance(op['op'],str) or op['op'] not in VARIABLE_OPS:raise ValueError('set_variable op must be set, add or sub')
-                plain_int(op['value'],'set_variable value',-VALUE_LIMIT,VALUE_LIMIT)
-            elif keys=={'set_self_switch','value'}:
-                if not isinstance(op['set_self_switch'],str) or op['set_self_switch'] not in ('A','B','C','D'):raise ValueError('set_self_switch must be A, B, C or D')
-                if type(op['value']) is not bool:raise ValueError('set_self_switch value must be true or false')
-            else:raise ValueError('Unsupported staged command; use text, set_switch, set_variable or set_self_switch with exact keys')
+        commands_shape(page['commands'])
 
 
 def staged_ids(pages,switch_count,variable_count):
-    """Every switch/variable id referenced by the pages must exist in the native System (1..count-1)."""
-    def switch(value,label):
-        if not 1<=value<=switch_count-1:raise ValueError(f'{label} {value} is outside the native System switches 1..{switch_count-1}')
-    def variable(value,label):
-        if not 1<=value<=variable_count-1:raise ValueError(f'{label} {value} is outside the native System variables 1..{variable_count-1}')
-    for page in pages:
-        condition=page['condition']
-        for key in ('switch1','switch2'):
-            if key in condition:switch(condition[key],'condition '+key)
-        if 'variable' in condition:variable(condition['variable']['id'],'condition variable')
-        for op in page['commands']:
-            if 'set_switch' in op:switch(op['set_switch'],'set_switch')
-            elif 'set_variable' in op:variable(op['set_variable'],'set_variable')
+    """Every switch/variable id referenced by the pages (including nested branches) must exist in the native System (1..count-1)."""
+    return _staged_ids(pages,switch_count,variable_count)
 
 
 def system_info(project,expected=None):
@@ -129,7 +100,7 @@ def staged_event(root,mutation,project):
     if identifier!=max((key for key,_ in events.pairs),default=0)+1:raise ValueError('Append at the next maximum event ID; never reuse holes')
     if mutation['expected_map_sha256']!=digest(root) or mutation['expected_template_sha256']!=digest(selected):raise ValueError('Native map/template is stale')
     info=system_info(project,mutation['expected_system_sha256'])
-    pages=mutation['pages'];staged_shape(pages);staged_ids(pages,len(info['switches']),len(info['variables']))
+    pages=mutation['pages'];staged_shape(pages);staged_ids(pages,len(info['switches']),len(info['variables']));check_references(mutation,project)
     name=text(mutation['name'],'new event name',100)
     for _,event in events.pairs:
         if event.get('name').data.decode('utf-8','strict')==name:raise ValueError('New event name must be unique')
@@ -138,7 +109,6 @@ def staged_event(root,mutation,project):
     event=marshal_rb.load(marshal_rb.dump(selected))
     event.set('id',identifier);event.set('name',convert(name,selected.get('name')));event.set('x',x);event.set('y',y)
     base=event.get('pages')[0]
-    def command(code,parameters):return RubyObject('RPG::EventCommand',{'@code':code,'@indent':0,'@parameters':parameters})
     def literal(value):return RubyString(value.encode('utf-8'),{'E':True})
     built=[]
     for spec in pages:
@@ -149,13 +119,9 @@ def staged_event(root,mutation,project):
         if 'variable' in wanted:
             condition.set('variable_valid',True);condition.set('variable_id',wanted['variable']['id']);condition.set('variable_value',wanted['variable']['at_least'])
         if 'self_switch' in wanted:condition.set('self_switch_valid',True);condition.set('self_switch_ch',convert(wanted['self_switch'],condition.get('self_switch_ch')))
-        rows=[]
-        for op in spec['commands']:
-            if 'text' in op:rows+=[command(101,[literal(''),0,0,2])]+[command(401,[literal(line)]) for line in op['text']]
-            elif 'set_switch' in op:rows.append(command(121,[op['set_switch'],op['set_switch'],0 if op['value'] else 1]))
-            elif 'set_variable' in op:rows.append(command(122,[op['set_variable'],op['set_variable'],VARIABLE_OPS[op['op']],0,op['value']]))
-            else:rows.append(command(123,[literal(op['set_self_switch']),0 if op['value'] else 1]))
-        page.set('list',rows+[command(0,[])])
+        rows=native_rows(spec['commands'],lambda code,indent,parameters:RubyObject('RPG::EventCommand',{'@code':code,'@indent':indent,'@parameters':parameters}),literal)
+        structure_check(rows)
+        page.set('list',rows)
         built.append(page)
     event.set('pages',built)
     return event
@@ -164,7 +130,7 @@ def staged_event(root,mutation,project):
 
 def schema(mutation):
     if isinstance(mutation,dict) and mutation.get('action')=='append_staged_event':
-        if set(mutation)!=STAGED_FIELDS:raise ValueError('Exact append_staged_event schema required')
+        if set(mutation)!=STAGED_FIELDS|ref_fields(mutation.get('pages')):raise ValueError('Exact append_staged_event schema required (plus one expected hash per referenced database)')
         staged_shape(mutation['pages']);return
     if isinstance(mutation,dict) and mutation.get('action')=='append_blank_event':
         if set(mutation)!=BLANK_FIELDS:raise ValueError('Exact append_blank_event schema required')
@@ -388,7 +354,7 @@ def verify_transition(before,after,mutation,project=None,rtp=None):
     if unrelated(before)!=unrelated(after):raise ValueError('Candidate changed unrelated map fields or unknown aliases')
 
 
-def indexed_snapshot(data,project,map_id,template_id,graphic=None,rtp=None,donor=False,staged=False):
+def indexed_snapshot(data,project,map_id,template_id,graphic=None,rtp=None,donor=False,staged=False,transfer_maps=()):
     from vxace_python_mutator import load, RubyObject, RubyString
     integer(map_id,'map ID',1,999999)
     root,_=load(unlinked(Path(project)/f'Data/Map{map_id:03d}.rvdata2'))
@@ -417,9 +383,10 @@ def indexed_snapshot(data,project,map_id,template_id,graphic=None,rtp=None,donor
         info=system_info(project)
         result.update(system_sha256=info['system_sha256'],switch_count=len(info['switches'])-1,variable_count=len(info['variables'])-1,
                       switch_names=info['switches'][1:],variable_names=info['variables'][1:])
-        result['limits']=['One blank-graphic action-button event with 1..8 condition pages built from literal text, switch, variable and self-switch commands only.',
-                          'Switch/variable ids must exist in the native System (bound by system_sha256); the highest valid page wins at runtime, so review page order.',
-                          'No branches, autorun, parallel process, graphics or item/actor conditions. Next maximum ID only.']
+        result.update(reference_snapshot(project,transfer_maps))
+        result['limits']=['One blank-graphic action-button event with 1..8 condition pages built from literal text, switch/variable/self-switch, choices, if/else, battle, party, common-event, gold, item, transfer and wait commands (nesting <= 4).',
+                          'Switch/variable ids must exist in the native System (bound by system_sha256); referenced Troops/Actors/CommonEvents/Items/MapInfos and transfer destination maps are bound by their own hashes. The highest valid page wins at runtime, so review page order.',
+                          'No autorun, parallel process, graphics or item/actor conditions. Next maximum ID only.']
     if graphic is not None:
         from vxace_character_graphics import binding
         result.update(proposed_graphic=graphic,asset=binding(project,rtp,graphic))
@@ -431,6 +398,7 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('index');parser.add_argument('--project',required=True)
     parser.add_argument('--map',dest='map_id',type=int,required=True);group=parser.add_mutually_exclusive_group(required=True);group.add_argument('--template-event',type=int);group.add_argument('--donor-event',type=int)
     parser.add_argument('--staged',action='store_true',help='With --template-event: also report the native System hash, switch/variable counts and names')
+    parser.add_argument('--transfer-map',type=int,action='append',default=[],help='With --staged: also report the hash and size of a transfer destination map')
     parser.add_argument('--output',required=True)
     parser.add_argument('--character');parser.add_argument('--character-index',type=int);parser.add_argument('--direction',type=int,default=2);parser.add_argument('--pattern',type=int,default=1);parser.add_argument('--rtp')
     args=parser.parse_args(argv)
@@ -444,8 +412,9 @@ def main(argv=None):
         graphic={'character_name':args.character,'character_index':args.character_index,'direction':args.direction,'pattern':args.pattern} if args.character is not None else None
         if args.donor_event is not None and (graphic is not None or args.rtp):raise ValueError('Donor snapshots take no graphic options')
         if args.staged and (args.template_event is None or graphic is not None):raise ValueError('--staged needs --template-event and takes no graphic options')
+        if args.transfer_map and not args.staged:raise ValueError('--transfer-map needs --staged')
         if graphic is None and (args.rtp or args.direction!=2 or args.pattern!=1):raise ValueError('Graphic-only options require a selected character')
-        result=execute(args.index,project,output,lambda data:indexed_snapshot(data,project,args.map_id,args.template_event if args.donor_event is None else args.donor_event,graphic,rtp,args.donor_event is not None,args.staged),'map-event-snapshot')
+        result=execute(args.index,project,output,lambda data:indexed_snapshot(data,project,args.map_id,args.template_event if args.donor_event is None else args.donor_event,graphic,rtp,args.donor_event is not None,args.staged,tuple(args.transfer_map)),'map-event-snapshot')
     except Exception as error:print('Event snapshot refused: '+str(error),file=sys.stderr);return 2
     print(json.dumps({'version':VERSION,'next_event_id':result['next_event_id']}));return 0
 

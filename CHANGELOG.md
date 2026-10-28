@@ -2,6 +2,10 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.19.0 — Branching event commands
+
+- Staged event pages gain Show Choices with branches, Conditional Branch (switch, variable, self switch, gold, item) with else, Battle Processing with win/escape/lose branches, Change Party Member, Call Common Event, Change Gold/Items, Transfer Player and Wait; nesting up to 4 levels. Each referenced database and destination map is bound by its own hash; recipes can feed a new troop or key item into a battle or item check. Verified in the real engine: a choice recruit, a locked/open door and a boss battle lost into its lose branch. See [staged events](references/staged-events.md).
+
 ## 1.18.0 — Quest-stage events
 
 - `append_staged_event` builds one event with 1..8 action-button pages (switch, variable and self-switch conditions), literal dialogue and Control Switches/Variables/Self Switch commands; recipe step `append_staged_event`. Verified in the real engine: three talks advanced a quest NPC through all pages. See [staged events](references/staged-events.md).

@@ -521,10 +521,11 @@ def map_event_impact(index,change):
     staged_report=None
     if staged:
         from vxace_map_events import staged_ids
+        from vxace_staged_commands import iter_ops,index_check
         system=data.json('database/system.json')
         if not isinstance(system,dict) or not isinstance(system.get('switches'),list) or not isinstance(system.get('variables'),list) or len(system['switches'])<2 or len(system['variables'])<2:
             raise ValueError('Indexed native System switches/variables required')
-        pages=mutation['pages'];staged_ids(pages,len(system['switches']),len(system['variables']))
+        pages=mutation['pages'];staged_ids(pages,len(system['switches']),len(system['variables']));index_check(data.json,pages)
         def label(names,number):
             return names[number] if isinstance(names[number],str) and names[number] else None
         warnings=[];rows=[]
@@ -536,9 +537,15 @@ def map_event_impact(index,change):
             for key in ('switch1','switch2'):
                 if key in condition and not label(system['switches'],condition[key]):warnings.append(f'Page {number} condition {key} {condition[key]} is an unnamed switch.')
             if 'variable' in condition and not label(system['variables'],condition['variable']['id']):warnings.append(f'Page {number} condition variable {condition["variable"]["id"]} is an unnamed variable.')
-            for op in page['commands']:
+            for op in iter_ops(page['commands']):
                 if 'set_switch' in op and not label(system['switches'],op['set_switch']):warnings.append(f'Page {number} sets unnamed switch {op["set_switch"]}.')
                 if 'set_variable' in op and not label(system['variables'],op['set_variable']):warnings.append(f'Page {number} sets unnamed variable {op["set_variable"]}.')
+                cond=op.get('if') if isinstance(op.get('if'),dict) else {}
+                if 'switch' in cond and not label(system['switches'],cond['switch']):warnings.append(f'Page {number} tests unnamed switch {cond["switch"]}.')
+                if 'variable' in cond and not label(system['variables'],cond['variable']):warnings.append(f'Page {number} tests unnamed variable {cond["variable"]}.')
+                if 'battle' in op:warnings.append(f'Page {number} starts a battle (troop {op["battle"]}): check escape/lose branches and that the player cannot soft-lock.')
+                if 'transfer' in op:warnings.append(f'Page {number} transfers the player to map {op["transfer"]["map_id"]}: check the destination cell is passable.')
+                if 'gold' in op and op['gold']<0:warnings.append(f'Page {number} removes gold; the engine clamps at zero without a branch, so guard it with a gold_at_least condition.')
         staged_report={'page_count':len(pages),'pages':rows,'priority_note':'The engine runs the highest-numbered page whose conditions are all met; verify the page order against the quest state machine.',
                        'warnings':warnings}
     data.unchanged()
@@ -549,7 +556,7 @@ def map_event_impact(index,change):
                           'Literal consumers miss dynamic ownership; inspect custom map/save hooks and action-button accessibility.',
                           'Stationary, one unconditional action-button page; optional character assets require independent native/header/hash checks.',
                           'Review character/object prefix semantics, native rendering, old-save reload, dialogue and restart.',
-                          *(['Staged pages: conditions use only switch/variable/self-switch; no branches, autorun, parallel or item/actor conditions. Self-switch state of the new event id may pre-exist in saves.'] if staged else [])]}
+                          *(['Staged pages: conditions use only switch/variable/self-switch; commands may nest choices, if/else and battles (depth <= 4); no autorun, parallel or item/actor page conditions. Self-switch state of the new event id may pre-exist in saves.'] if staged else [])]}
 
 
 def map_entry_impact(index,change):
