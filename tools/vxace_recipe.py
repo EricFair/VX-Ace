@@ -16,7 +16,7 @@ from pathlib import Path
 from vxace_copy_patcher import current_inventory
 from vxace_index_query import unlinked
 
-VERSION = '1.14.0'
+VERSION = '1.15.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -26,6 +26,8 @@ STEP_KEYS = {
     'append_key_item': ({'type', 'template_item', 'name', 'description'}, {'type', 'template_item', 'name', 'description'}),
     'append_learning': ({'type', 'class_id', 'skill_id', 'level'}, {'type', 'class_id', 'skill_id', 'level'}),
     'append_encounter': ({'type', 'map_id', 'troop_id', 'weight'}, {'type', 'map_id', 'troop_id', 'weight', 'region_ids', 'encounter_step'}),
+    'append_dialogue_event': ({'type', 'map_id', 'template_event', 'x', 'y', 'name', 'lines'}, {'type', 'map_id', 'template_event', 'x', 'y', 'name', 'lines'}),
+    'add_shop': ({'type', 'map_id', 'event_id', 'goods', 'purchase_only'}, {'type', 'map_id', 'event_id', 'goods', 'purchase_only'}),
     'insert_script': ({'type', 'name', 'source_file'}, {'type', 'name', 'source_file'}),
     'set_map_display_name': ({'type', 'map_id', 'name'}, {'type', 'map_id', 'name'}),
     'text_import': ({'type', 'csv'}, {'type', 'csv', 'allow_shorter'}),
@@ -60,6 +62,36 @@ def check_ref(value, number, steps, want_table, where):
     earlier = steps[k - 1]
     if earlier.get('type') != 'append_entry' or earlier.get('table') != want_table:
         raise RecipeError(f'step {number}: {where} from_step {k} must be an append_entry step on table {want_table}')
+
+
+GOODS_TABLE = {'weapon': ('append_entry', 'weapons'), 'armor': ('append_entry', 'armors'), 'item': ('append_key_item', None)}
+
+
+def check_goods_ref(value, number, steps, goods_type):
+    """A goods reference must name an earlier step that appends an entry of the same goods type (items via append_key_item)."""
+    if set(value) != {'from_step'} or not is_int(value['from_step']):
+        raise RecipeError(f'step {number}: goods id reference must be exactly {{"from_step": N}}')
+    k = value['from_step']
+    if not 1 <= k < number:
+        raise RecipeError(f'step {number}: goods id from_step {k} must refer to an earlier step')
+    kind, table = GOODS_TABLE[goods_type]
+    earlier = steps[k - 1]
+    if earlier.get('type') != kind or (table is not None and earlier.get('table') != table):
+        raise RecipeError(f'step {number}: goods id from_step {k} must be an {kind} step'
+                          + (f' on table {table}' if table else '') + f' for a {goods_type}')
+
+
+def check_event_ref(value, number, steps, map_id):
+    if set(value) != {'from_step'} or not is_int(value['from_step']):
+        raise RecipeError(f'step {number}: event_id reference must be exactly {{"from_step": N}}')
+    k = value['from_step']
+    if not 1 <= k < number:
+        raise RecipeError(f'step {number}: event_id from_step {k} must refer to an earlier step')
+    earlier = steps[k - 1]
+    if earlier.get('type') != 'append_dialogue_event':
+        raise RecipeError(f'step {number}: event_id from_step {k} must be an append_dialogue_event step')
+    if earlier.get('map_id') != map_id:
+        raise RecipeError(f'step {number}: event_id from_step {k} creates its event on a different map')
 
 
 def strip_refs(value):
@@ -146,6 +178,52 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: region_ids must be a list of integers')
             if step.get('encounter_step') is not None and not is_int(step['encounter_step']):
                 raise RecipeError(f'step {number}: encounter_step must be an integer or null')
+        elif kind == 'append_dialogue_event':
+            if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
+                raise RecipeError(f'step {number}: map_id must be an integer 1..999')
+            if not is_int(step['template_event']) or not 1 <= step['template_event'] <= 999:
+                raise RecipeError(f'step {number}: template_event must be an integer 1..999')
+            for key in ('x', 'y'):
+                if not is_int(step[key]) or not 0 <= step[key] <= 9999:
+                    raise RecipeError(f'step {number}: {key} must be a non-negative integer')
+            if not isinstance(step['name'], str) or not 1 <= len(step['name']) <= 100:
+                raise RecipeError(f'step {number}: name must be a string of 1..100 characters')
+            if not isinstance(step['lines'], list) or not 1 <= len(step['lines']) <= 4 or not all(isinstance(line, str) for line in step['lines']):
+                raise RecipeError(f'step {number}: lines must be a list of 1..4 strings')
+        elif kind == 'add_shop':
+            if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
+                raise RecipeError(f'step {number}: map_id must be an integer 1..999')
+            if is_ref(step['event_id']):
+                check_event_ref(step['event_id'], number, steps, step['map_id'])
+            elif not is_int(step['event_id']) or not 1 <= step['event_id'] <= 999:
+                raise RecipeError(f'step {number}: event_id must be an integer 1..999 or {{"from_step": N}}')
+            if type(step['purchase_only']) is not bool:
+                raise RecipeError(f'step {number}: purchase_only must be a boolean')
+            goods = step['goods']
+            if not isinstance(goods, list) or not 1 <= len(goods) <= 32:
+                raise RecipeError(f'step {number}: goods must be a list of 1..32 entries')
+            literal = set()
+            for good in goods:
+                if not isinstance(good, dict) or set(good) != {'type', 'id', 'price'} or good['type'] not in GOODS_TABLE:
+                    raise RecipeError(f'step {number}: each good needs exactly type (item/weapon/armor), id and price')
+                if is_ref(good['id']):
+                    check_goods_ref(good['id'], number, steps, good['type'])
+                elif not is_int(good['id']) or not 1 <= good['id'] <= 999:
+                    raise RecipeError(f'step {number}: goods id must be an integer 1..999 or {{"from_step": N}}')
+                else:
+                    if (good['type'], good['id']) in literal:
+                        raise RecipeError(f'step {number}: duplicate goods entry')
+                    literal.add((good['type'], good['id']))
+                if good['price'] is not None and (not is_int(good['price']) or not 0 <= good['price'] <= 9999999):
+                    raise RecipeError(f'step {number}: goods price must be null or an integer 0..9999999')
+            shadow = copymod.deepcopy(step)
+            if is_ref(shadow['event_id']):
+                shadow['event_id'] = 0
+            for good in shadow['goods']:
+                if is_ref(good['id']):
+                    good['id'] = 0
+            if contains_ref_key(shadow):
+                raise RecipeError(f'step {number}: from_step is only allowed for event_id and goods id')
         elif kind == 'insert_script':
             for key in ('name', 'source_file'):
                 if not isinstance(step[key], str) or not step[key]:
@@ -160,7 +238,7 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: csv must be a non-empty string')
             if 'allow_shorter' in step and type(step['allow_shorter']) is not bool:
                 raise RecipeError(f'step {number}: allow_shorter must be a boolean')
-        if kind not in ('append_entry', 'append_encounter', 'append_learning') and contains_ref_key(step):
+        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop') and contains_ref_key(step):
             raise RecipeError(f'step {number}: from_step is not allowed in a {kind} step')
         if kind == 'append_encounter' and contains_ref_key({k: v for k, v in step.items() if k != 'troop_id'}):
             raise RecipeError(f'step {number}: from_step is only allowed for troop_id')
@@ -233,6 +311,21 @@ def build_spec(title, number, step, snapshot, source=None):
                                'expected_encounter_count': snapshot['encounter_count'], 'expected_troops_sha256': snapshot['troops_sha256'],
                                'troop_id': step['troop_id'], 'weight': step['weight'], 'region_ids': step.get('region_ids', []),
                                'encounter_step': step.get('encounter_step')}}
+    elif kind == 'append_dialogue_event':
+        change = {'kind': 'map_event', 'locator': {'map_id': step['map_id']},
+                  'proposal': f'Recipe step {number}: append one literal dialogue event "{step["name"]}" to map {step["map_id"]}.',
+                  'mutation': {'action': 'append_dialogue_event', 'template_id': step['template_event'], 'new_id': snapshot['next_event_id'],
+                               'name': step['name'], 'x': step['x'], 'y': step['y'], 'text': step['lines'],
+                               'expected_map_sha256': snapshot['map_sha256'], 'expected_template_sha256': snapshot['template_sha256']}}
+    elif kind == 'add_shop':
+        if not snapshot.get('append_supported'):
+            raise RecipeError('event has no supported shop slot: ' + str(snapshot.get('unsupported_reason')))
+        change = {'kind': 'map_shop', 'locator': {'map_id': step['map_id'], 'event_id': step['event_id']},
+                  'proposal': f'Recipe step {number}: add a {len(step["goods"])}-item shop to event {step["event_id"]} on map {step["map_id"]}.',
+                  'mutation': {'action': 'add_shop', 'expected_map_sha256': snapshot['map_sha256'], 'expected_event_sha256': snapshot['event_sha256'],
+                               'expected_list_sha256': snapshot['list_sha256'], 'expected_items_sha256': snapshot['items_sha256'],
+                               'expected_weapons_sha256': snapshot['weapons_sha256'], 'expected_armors_sha256': snapshot['armors_sha256'],
+                               'goods': step['goods'], 'purchase_only': step['purchase_only']}}
     elif kind == 'insert_script':
         change = {'kind': 'script_slot', 'locator': {'before_index': snapshot['before_index']},
                   'proposal': f'Recipe step {number}: insert the reviewed script "{step["name"]}" before canonical Main.',
@@ -254,6 +347,8 @@ def created_id(step, snapshot):
         return snapshot['next_id']
     if step['type'] == 'append_key_item':
         return snapshot['next_item_id']
+    if step['type'] == 'append_dialogue_event':
+        return snapshot['next_event_id']
     return None
 
 
@@ -362,6 +457,12 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
             elif kind == 'append_learning':
                 script, args, name = ('vxace_database_entries.py', [index, '--project', source, '--table', 'classes', '--class-id', resolved['class_id']],
                                       'item-entry-snapshot')
+            elif kind == 'append_dialogue_event':
+                script, args, name = ('vxace_map_events.py', [index, '--project', source, '--map', resolved['map_id'],
+                                                              '--template-event', resolved['template_event']], 'map-event-snapshot')
+            elif kind == 'add_shop':
+                script, args, name = ('vxace_map_shops.py', [index, '--project', source, '--map', resolved['map_id'],
+                                                             '--event', resolved['event_id']], 'map-shop-snapshot')
             elif kind == 'append_encounter':
                 script, args, name = 'vxace_map_encounters.py', [index, '--project', source, '--map', resolved['map_id']], 'map-encounter-snapshot'
             elif kind == 'set_map_display_name':
@@ -393,7 +494,8 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
             fail('copy patcher reported success but the copy is missing')
         if record['created_id'] is not None:
             try:
-                audited = read_json(audit / 'audit.json')['changes'][0]['entry']['created_id']
+                audit_change = read_json(audit / 'audit.json')['changes'][0]
+                audited = audit_change['map_event']['new_id'] if kind == 'append_dialogue_event' else audit_change['entry']['created_id']
             except (OSError, KeyError, IndexError, ValueError):
                 audited = None
             if audited != record['created_id']:

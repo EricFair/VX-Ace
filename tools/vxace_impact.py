@@ -625,6 +625,49 @@ def map_encounter_impact(index,change):
                            'Native old-save map reload (System.version_id advance) and restart-based persistence testing remain required.']}
 
 
+def map_shop_impact(index,change):
+    from vxace_map_shops import schema,GOODS,MAX_GOODS
+    from vxace_map_regions import integer
+    from vxace_index_query import Index
+    from vxace_search import search
+    loc=change.get('locator');mutation=change.get('mutation')
+    if not isinstance(loc,dict) or set(loc)!={'map_id','event_id'}:raise ValueError('Exact native shop proposal required')
+    schema(mutation)
+    mid=integer(loc['map_id'],'map ID',1,999);eid=integer(loc['event_id'],'event ID',1,999)
+    data=Index(index);root=data.json(f'maps/map-{mid:03d}.json')
+    events=root.get('events') if isinstance(root,dict) else None
+    event=events.get(str(eid)) if isinstance(events,dict) else None
+    if not isinstance(event,dict) or not isinstance(event.get('pages'),list) or len(event['pages'])!=1:raise ValueError('Indexed one-page shop event required')
+    page=event['pages'][0];commands=page.get('list') if isinstance(page,dict) else None
+    if not isinstance(commands,list) or not commands:raise ValueError('Indexed shop event command list required')
+    codes=[c.get('code') for c in commands if isinstance(c,dict)]
+    if codes[-1:]!=[0] or any(code not in (0,101,401) for code in codes):raise ValueError('Indexed shop event must be blank or literal dialogue')
+    goods=[]
+    for good in mutation['goods']:
+        label=GOODS[good['type']][1];table=data.json(f'database/{label}.json')
+        entry=table[good['id']] if isinstance(table,list) and good['id']<len(table) else None
+        if not isinstance(entry,dict) or entry.get('id')!=good['id']:raise ValueError('Indexed '+label+' entry absent: '+str(good['id']))
+        goods.append({'type':good['type'],'id':good['id'],'name':entry.get('name'),'database_price':entry.get('price'),
+                      'effective_price':entry.get('price') if good['price'] is None else good['price'],
+                      'price_type':0 if good['price'] is None else 1})
+    mentions=[]
+    for query in ('Scene_Shop','command_302','Window_ShopBuy','buying_price','selling_price'):
+        found=search(data,query=query,scopes=('scripts','events'),limit=10)
+        mentions.append({'literal':query,'matches':found['matches'],'evidence':found['hits'],'truncated':found['truncated']})
+    data.unchanged()
+    return {'kind':'map_shop','severity':'high','target':{'map_id':mid,'event_id':eid,'event_name':event.get('name'),
+                                                          'event_shape':'blank' if len(commands)==1 else 'dialogue','good_count':len(goods),
+                                                          'purchase_only':mutation['purchase_only']},
+            'goods':goods,'consumer_mentions':mentions,
+            'limitations':['Native map/event/list and Items/Weapons/Armors fingerprints and exact candidate preservation are enforced separately by the Python copy chain.',
+                           'Items, Weapons and Armors are read-only; only the one event page list gains Shop Processing rows before its terminator.',
+                           'Shop menus honor the native database price unless a specified price is set; custom shop scenes or price/tax scripts can change what is shown or charged.',
+                           'Unless purchase-only is set the shop also offers selling, which follows the native database sell rules.',
+                           'Literal script mentions cannot resolve dynamic or custom shop logic.',
+                           'Native old-save map reload (System.version_id advance) and restart-based persistence testing remain required.'],
+            'max_goods':MAX_GOODS}
+
+
 def map_label_impact(index,change):
     from vxace_map_labels import FIELDS,integer,name
     from vxace_index_query import Index
@@ -678,6 +721,7 @@ def build(index: Path, spec_path: Path):
         elif kind=='map_name': impacts.append(map_name_impact(index,change))
         elif kind=='map_label': impacts.append(map_label_impact(index,change))
         elif kind=='map_encounter': impacts.append(map_encounter_impact(index,change))
+        elif kind=='map_shop': impacts.append(map_shop_impact(index,change))
         else: raise ValueError(f"unsupported change kind: {kind}")
     high=sum(1 for x in impacts if x.get("severity")=="high")
     return {"impact_version":VERSION,"title":str(spec.get("title") or "VX Ace impact analysis"),"impact_count":len(impacts),

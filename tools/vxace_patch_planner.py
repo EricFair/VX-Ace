@@ -73,7 +73,7 @@ def normalize_spec(spec: dict) -> dict:
         if not isinstance(raw, dict):
             raise ValueError(f"Change #{i} must be an object")
         kind = raw.get("kind")
-        if kind not in {"script", "script_slot", "event", "database", "map_region", "map_tile", "map_event", "map_entry", "database_entry", "map_name", "map_label", "map_encounter"}:
+        if kind not in {"script", "script_slot", "event", "database", "map_region", "map_tile", "map_event", "map_entry", "database_entry", "map_name", "map_label", "map_encounter", "map_shop"}:
             raise ValueError(f"Change #{i} has unsupported kind: {kind}")
         item = dict(raw)
         if kind == "script":
@@ -105,6 +105,12 @@ def normalize_spec(spec: dict) -> dict:
                 action=mutation.get('action') if isinstance(mutation,dict) else None
                 if (locator['table']=='items',action) not in ((True,'append_key_item'),(False,'append_database_entry')):
                     raise ValueError('Entry action does not match the table (items: append_key_item; others: append_database_entry)')
+        elif kind == 'map_shop':
+            locator=item.get('locator')
+            if not isinstance(locator,dict) or set(locator)!={'map_id','event_id'} or any(type(locator[k]) is not int or not 1<=locator[k]<=999 for k in locator):
+                raise ValueError('Shop proposal requires exact map_id and event_id locator')
+            if not item.get('proposal'):
+                raise ValueError('Shop proposal requires proposal')
         elif kind in ('map_region','map_tile','map_event','map_name','map_label','map_encounter'):
             locator=item.get('locator')
             if not isinstance(locator,dict) or set(locator) != {'map_id'} or type(locator['map_id']) is not int or not 1 <= locator['map_id'] <= 999999:
@@ -209,6 +215,10 @@ def regression_checks(changes: list[dict]) -> list[str]:
         checks += ['Review the referenced troop, its enemies and battle events, plus custom encounter/region consumers, before staging.',
                    'Verify the new entry in the VX Ace map properties, a random battle on the intended area (encounters enabled), older-save map reload and restart-based save/load.',
                    'Confirm only encounter_list (and an optional encounter_step) changed; the map Table, events, Troops and all other copied files stay unchanged.']
+    if 'map_shop' in kinds:
+        checks += ['Review custom shop scenes/scripts, price or stock consumers and the chosen goods (names, database prices, key-item status) before staging.',
+                   'Verify the Shop Processing command in the VX Ace editor, open the shop in play (buy and, unless purchase-only, sell), test an older save (map reload) and restart-based save/load.',
+                   'Confirm only that event page list gained the shop rows; Items/Weapons/Armors, every other map field and event, and all other copied files stay unchanged.']
     if 'map_label' in kinds:
         checks += ['Review custom MapInfos/name caches/map/save consumers; labels are not map IDs or display names.',
                    'Verify the native editor tree/Name field, unchanged display-name window and new-process older-save/movement/save/restart behavior.',
@@ -275,6 +285,19 @@ def build_plan(index: Path, project: Path, spec_path: Path, output: Path) -> dic
             value=validate_name(load(unlinked(project/proposed['target']))[0],proposed['mutation'])
             planned=structural_change(change)
             planned.update(apply_mode='proposal_only',risk='high',before=snap['display_name'],after=value,map_sha256=snap['map_sha256'])
+            changes.append(planned)
+        elif change['kind']=='map_shop':
+            if len(spec['changes'])!=1:raise ValueError('Shop append requires its own single-change plan')
+            from vxace_map_shops import indexed_snapshot,validate as validate_shop,goods_arrays
+            from vxace_index_query import Index,unlinked
+            from vxace_python_mutator import load
+            from vxace_copy_patcher import normalize_changes
+            proposed=normalize_changes(index,{'changes':[change]})[0]
+            data=Index(index);snap=indexed_snapshot(data,project,proposed['locator']['map_id'],proposed['locator']['event_id']);data.unchanged()
+            _,evidence=validate_shop(load(unlinked(project/proposed['target']))[0],proposed['ruby_spec']['mutation'],goods_arrays(project/proposed['target']))
+            planned=structural_change(change)
+            planned.update(apply_mode='proposal_only',risk='high',event_shape=evidence['event_shape'],goods=evidence['goods'],
+                           purchase_only=evidence['purchase_only'],map_sha256=snap['map_sha256'],event_sha256=snap['event_sha256'])
             changes.append(planned)
         elif change['kind']=='map_encounter':
             if len(spec['changes'])!=1:raise ValueError('Encounter append requires its own single-change plan')

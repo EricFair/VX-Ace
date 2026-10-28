@@ -122,6 +122,14 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             out.append({'kind':'map_event','target':f'Data/Map{mid:03d}.rvdata2',
                         'ruby_spec':{'type':'map_event','mutation':mut},'description':c.get('description',''),
                         'locator':loc,'mutation':mut})
+        elif kind=='map_shop':
+            from vxace_map_shops import schema,integer
+            if not isinstance(loc,dict) or set(loc)!={'map_id','event_id'}:raise ValueError('Shop locator requires exactly map_id and event_id')
+            mid=integer(loc['map_id'],'map ID',1,999);eid=integer(loc['event_id'],'event ID',1,999)
+            schema(mut)
+            out.append({'kind':'map_shop','target':f'Data/Map{mid:03d}.rvdata2',
+                        'ruby_spec':{'type':'map_shop','mutation':{'event_id':eid,**mut}},'description':c.get('description',''),
+                        'locator':loc,'mutation':mut})
         elif kind=='map_tile':
             from vxace_upper_tiles import FIELDS,integer
             if not isinstance(loc,dict) or set(loc)!={'map_id'}:raise ValueError('Upper tile locator must contain exactly map_id')
@@ -287,6 +295,11 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
             entry_key=mutation['template_id']
         before_entry_root=load(target)[0]
         before_entry=entry_snapshot(before_entry_root,entry_key)
+    before_shop_root=None
+    if change['kind']=='map_shop':
+        from vxace_python_mutator import load
+        from vxace_map_shops import goods_arrays
+        before_shop_root=load(target)[0];shop_arrays=goods_arrays(target)
     before_event_root=None
     if change['kind']=='map_event':
         from vxace_python_mutator import load
@@ -332,6 +345,9 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if region_cells:
         from vxace_map_regions import verify_transition
         verify_transition(before_region_root,load(tmp)[0],mutation)
+    if change['kind']=='map_shop':
+        from vxace_map_shops import verify_transition as verify_shop
+        verify_shop(before_shop_root,load(tmp)[0],mutation,shop_arrays)
     if change['kind']=='map_encounter':
         from vxace_map_encounters import verify_transition as verify_encounter
         verify_encounter(before_encounter_root,load(tmp)[0],mutation,encounter_troops)
@@ -380,6 +396,12 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
                           'after':{'encounters':encounter_rows(final_map),'encounter_step':final_map.get('encounter_step')},
                           'existing_encounters_unchanged':True,'other_map_fields_unchanged':True,'troops_unchanged':True}
         rec['diff']=''.join(difflib.unified_diff(json.dumps(rec['encounter']['before'],indent=2).splitlines(True),json.dumps(rec['encounter']['after'],indent=2).splitlines(True),fromfile='source-encounters',tofile='staged-encounters'))
+    if change['kind']=='map_shop':
+        from vxace_map_shops import validate as validate_shop
+        rows,evidence=validate_shop(before_shop_root,mutation,shop_arrays)
+        rec['shop']={'locator':change['locator'],**evidence,'inserted_rows':[{'code':code,'indent':0,'parameters':params} for code,params in rows],
+                     'only_approved_event_list_changed':True,'goods_arrays_unchanged':True}
+        rec['diff']=''.join(difflib.unified_diff([],[json.dumps(row)+chr(10) for row in rec['shop']['inserted_rows']],fromfile='source-shop-rows',tofile='staged-shop-rows'))
     if change['kind']=='map_event':
         rec['map_event']={'before':before_event,'after':event_snapshot(load(target)[0],mutation['template_id']),
                           'new_id':mutation['new_id'],'name':mutation['name'],'x':mutation['x'],'y':mutation['y'],
@@ -497,7 +519,20 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         for c in encounters:
             encounter_data=Index(index);encounter_snapshot(encounter_data,project,c['locator']['map_id']);encounter_data.unchanged()
             encounter_apply(load(unlinked(project/c['target']))[0],c['mutation'],troops_for(project/c['target']))
-    reload_required=bool(structural or regions or upper_tiles or map_events or map_names or encounters)
+    shops=[c for c in changes if c['kind']=='map_shop']
+    if shops:
+        if len(shops)!=1:raise ValueError('Use one shop append per transaction')
+        if any(c is not shops[0] and c['target'] in (shops[0]['target'],'Data/Items.rvdata2','Data/Weapons.rvdata2','Data/Armors.rvdata2') for c in changes):
+            raise ValueError('Shop append cannot be combined with other changes to the same map or to Items/Weapons/Armors')
+        if no_reindex or mutator.resolve()!=(Path(__file__).resolve().parent/'vxace_python_mutator.py'):
+            raise ValueError('Shop appends require the explicit Python backend and mandatory post-copy re-indexing')
+        from vxace_index_query import Index,unlinked
+        from vxace_python_mutator import load
+        from vxace_map_shops import indexed_snapshot as shop_snapshot,goods_arrays as shop_goods,apply as shop_apply
+        for c in shops:
+            shop_data=Index(index);shop_snapshot(shop_data,project,c['locator']['map_id'],c['locator']['event_id']);shop_data.unchanged()
+            shop_apply(load(unlinked(project/c['target']))[0],c['ruby_spec']['mutation'],shop_goods(project/c['target']))
+    reload_required=bool(structural or regions or upper_tiles or map_events or map_names or encounters or shops)
     map_labels=[c for c in changes if c['kind']=='map_label']
     if map_labels:
         if len(changes)!=1:raise ValueError('Map-tree name edit requires its own single-change transaction')
@@ -639,6 +674,10 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         if map_names:
             name_inventory={**source_before,**{record['target']:record['after_sha256'] for record in applied}}
             if current_inventory(copy_root)!=name_inventory:raise RuntimeError('Display-name edit changed unapproved copied files')
+        shop_inventory=None
+        if shops:
+            shop_inventory={**source_before,**{record['target']:record['after_sha256'] for record in applied}}
+            if current_inventory(copy_root)!=shop_inventory:raise RuntimeError('Shop append changed unapproved copied files')
         transfer_inventory=None
         if transfers:
             transfer_inventory={**source_before,**{record['target']:record['after_sha256'] for record in applied}}
@@ -668,10 +707,10 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
                 if p.returncode: raise RuntimeError('structural semantic verification failed: '+p.stderr.strip())
                 post_validation=validate(copy_root,audit_dir/'post-validation',ruby,mutator,skip_script_syntax=True,backend='python')
                 if not post_validation['copy_mutation_ready']: raise RuntimeError('post-copy project validation failed')
-                if regions or upper_tiles or map_entries or transfers or map_names or map_labels or encounters:
+                if regions or upper_tiles or map_entries or transfers or map_names or map_labels or encounters or shops:
                     from vxace_map_audit import audit as map_audit
                     from vxace_index_query import Index
-                    reports=[map_audit(Index(post),c['locator']['map_id']) for c in regions+upper_tiles+map_names+map_labels+encounters]
+                    reports=[map_audit(Index(post),c['locator']['map_id']) for c in regions+upper_tiles+map_names+map_labels+encounters+shops]
                     reports += [map_audit(Index(post),c['mutation']['new_id']) for c in map_entries]
                     reports += [map_audit(Index(post),mid) for c in transfers for mid in (c['locator']['map_id'],c['ruby_spec']['mutation']['commands'][0]['parameters'][1])]
                     if any(r['findings'] for r in reports): raise RuntimeError('post-copy selected-map tile audit failed')
@@ -694,6 +733,10 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
             from vxace_transfers import final_context
             for c in transfers:final_context(c['ruby_spec']['mutation'],copy_root)
             if current_inventory(copy_root)!=transfer_inventory:raise RuntimeError('Transfer final copied-file preservation check failed')
+        if shops:
+            from vxace_map_shops import final_context as shop_final_context
+            for c in shops:shop_final_context(c['ruby_spec']['mutation'],copy_root)
+            if current_inventory(copy_root)!=shop_inventory:raise RuntimeError('Shop final copied-file preservation check failed')
         if map_labels and current_inventory(copy_root)!=label_inventory:raise RuntimeError('Map-tree name final copied-file preservation check failed')
         if map_names and current_inventory(copy_root)!=name_inventory:raise RuntimeError('Display-name final copied-file preservation check failed')
         if current_inventory(project)!=source_before: raise RuntimeError('SOURCE_CHANGED: source changed during final verification')
