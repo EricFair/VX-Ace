@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.7.0
+Version: 1.8.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -78,6 +78,7 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Balance: formulas, stat/EXP curves, matchups, economy | `tools/vxace_balance.py` ([references/balance-analysis.md](references/balance-analysis.md)) |
 | Notetags vs the scripts that parse them | `tools/vxace_notetags.py` ([references/notetag-registry.md](references/notetag-registry.md)) |
 | Dialogue/database text export, message lint | `tools/vxace_text_export.py` ([references/text-export.md](references/text-export.md)) |
+| Run a staged copy in the real engine (boot, map, scripted input, crash capture) | `tools/vxace_smoke.py stage/run` ([references/smoke-testing.md](references/smoke-testing.md)) |
 | Find text/commands | [references/search-and-event-diagnostics.md](references/search-and-event-diagnostics.md), [regex-search.md](references/regex-search.md) |
 | Event bugs, autoruns, common-event cycles | [workflows/event-debugging.md](workflows/event-debugging.md), [references/common-event-cycles.md](references/common-event-cycles.md) |
 | Script conflicts / load order | [workflows/script-compatibility-review.md](workflows/script-compatibility-review.md) |
@@ -98,7 +99,7 @@ Use source truth in this order: extraction status -> Codex routing -> exact `ana
 3. `vxace_impact.py PROJECT_INDEX --spec patch.json --json impact.json --markdown impact.md` — high-risk collisions or unexpected dependencies are stop signals.
 4. `vxace_patch_planner.py PROJECT_INDEX --project PROJECT --spec patch.json --output PLAN_DIR` — stale index refuses; anchors must be exact and unique.
 5. `vxace_copy_patcher.py PROJECT_INDEX --project PROJECT --spec patch.json --copy COPY --audit AUDIT` — new paths outside source, immediate per-target byte gate, unknown fields/unresolved commands/ambiguous anchors refuse, failed apply deletes the partial copy and keeps the audit.
-6. Re-index the copy, `vxace_semantic_diff.py BEFORE AFTER`, review, then test in actual VX Ace (new game, save, load, old save, restart).
+6. Re-index the copy, `vxace_semantic_diff.py BEFORE AFTER`, review, then test in actual VX Ace (new game, save, load, old save, restart). `vxace_smoke.py` automates boot/map/save-start/crash checks in a separate disposable copy; it supplements, never replaces, human playtesting.
 
 The project validator does not replace the copy patcher's per-target gates.
 

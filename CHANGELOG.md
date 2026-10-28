@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.8.0 — In-engine smoke tests
+
+- Add `vxace_smoke.py stage`: installs one harness slot (`tools/smoke/vxa_smoke_runtime.rb` plus an optional user suite) before canonical Main in a new disposable copy through the existing validator, reader, script-slot snapshot, planner, impact and Python copy-patcher chain, and records the staged hashes. The original project is rechecked unchanged.
+- Add `vxace_smoke.py run`: launches the copy's `Game.exe` (Playtest or normal) with a fresh nonce, start mode (`new` or `save:N`), frame budget and optional auto-confirm; enforces a wall-clock timeout; strictly validates the nonce-bound header/footer results file; maps `{NNNN}` backtrace entries to script names. Exit 0 pass, 3 failures/timeout/incomplete, 2 refusal.
+- The runtime is inert unless the launcher's nonce is present. It records uncaught exceptions instead of blocking on the error dialog, detects runaway autorun/action events (messages waiting for input are reported separately), supports virtual input and a suite DSL (`check`, `info`, `on_boot`, `on_map`, `at_frame`, `on_finish`).
+- Native evidence on an editor-created project copy: Playtest and normal runs, save-slot start, virtual movement, deliberate crash capture with correct script mapping, Ruby 1.9.2 header and inert direct launch. See [smoke testing](references/smoke-testing.md).
+- Add `tests/smoke` (31 tests; real launch is Windows-only and uses a fake launcher in CI).
+
 ## 1.7.0 — Game-development analysis and design knowledge
 
 - Add read-only `vxace_balance.py`: a restricted damage-formula parser with Ruby integer semantics (no Ruby evaluation; unsupported expressions are `opaque`), class parameter and default-formula EXP curves, actor/enemy base-damage and hits-to-kill matchups, troop EXP/gold/drops, and shop listings from commands 302/605 with heuristic warnings.
