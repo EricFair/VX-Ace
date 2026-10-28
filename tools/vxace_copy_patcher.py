@@ -92,6 +92,11 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             if table not in DB_FILES: raise ValueError(f'unsupported database table: {table}')
             if 'id' not in loc or not mut.get('field'): raise ValueError(f'database change #{n} requires locator.id and mutation.field')
             out.append({'kind':'database','target':'Data/'+DB_FILES[table],'ruby_spec':{'type':'database','mutation':{'id':loc['id'],'field':mut['field'],'value':mut.get('value')}},'description':c.get('description',''),'locator':loc,'mutation':mut})
+        elif kind=='database_entry' and isinstance(loc,dict) and loc.get('table')=='classes':
+            from vxace_class_learning import native_mutation
+            out.append({'kind':'database_entry','target':'Data/'+DB_FILES['classes'],
+                        'ruby_spec':{'type':'database_entry','mutation':native_mutation(loc,mut)},'description':c.get('description',''),
+                        'locator':loc,'mutation':mut})
         elif kind=='database_entry':
             if not isinstance(loc,dict) or set(loc)!={'table'} or loc['table'] not in ENTRY_TABLES:
                 raise ValueError('Entry creation supports only an exact items or append-table locator')
@@ -272,9 +277,16 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         from vxace_database_append import snapshot as table_snapshot, enemies_for
         entry_table=change['locator']['table']
         entry_enemies=enemies_for(target) if entry_table=='troops' else None
-        entry_snapshot=(lambda root,tid:items_snapshot(root,tid)) if entry_table=='items' else (lambda root,tid:table_snapshot(root,entry_table,tid,entry_enemies))
+        if entry_table=='classes':
+            from vxace_class_learning import snapshot as learning_snapshot, skills_for
+            entry_skills=skills_for(target);entry_skills_sha=sha256(target.parent/'Skills.rvdata2')
+            entry_snapshot=lambda root,cid:learning_snapshot(root,entry_skills,cid)
+            entry_key=mutation['class_id']
+        else:
+            entry_snapshot=(lambda root,tid:items_snapshot(root,tid)) if entry_table=='items' else (lambda root,tid:table_snapshot(root,entry_table,tid,entry_enemies))
+            entry_key=mutation['template_id']
         before_entry_root=load(target)[0]
-        before_entry=entry_snapshot(before_entry_root,mutation['template_id'])
+        before_entry=entry_snapshot(before_entry_root,entry_key)
     before_event_root=None
     if change['kind']=='map_event':
         from vxace_python_mutator import load
@@ -327,6 +339,9 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         if entry_table=='items':
             from vxace_database_entries import verify_transition as verify_entry
             verify_entry(before_entry_root,load(tmp)[0],mutation)
+        elif entry_table=='classes':
+            from vxace_class_learning import verify_transition as verify_learning
+            verify_learning(before_entry_root,load(tmp)[0],mutation,entry_skills)
         else:
             from vxace_database_append import verify_transition as verify_table_entry
             verify_table_entry(before_entry_root,load(tmp)[0],entry_table,mutation,entry_enemies)
@@ -385,8 +400,12 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
                         'only_approved_region_bytes_changed':True,'other_map_fields_unchanged':True}
         rec['diff']=''.join(difflib.unified_diff(json.dumps(before_regions,indent=2).splitlines(True),json.dumps(after_regions,indent=2).splitlines(True),fromfile='source-regions',tofile='staged-regions'))
     if change['kind']=='database_entry':
-        after_entry=entry_snapshot(load(target)[0],mutation['template_id'])
-        rec['entry']={'before':before_entry,'after':after_entry,'created_id':mutation['new_id'],
+        after_entry=entry_snapshot(load(target)[0],entry_key)
+        if entry_table=='classes':
+            if sha256(target.parent/'Skills.rvdata2')!=entry_skills_sha:raise RuntimeError('Skills file changed during class learning append')
+            rec['entry']={'before':before_entry,'after':after_entry,'class_id':mutation['class_id'],'skill_id':mutation['skill_id'],'level':mutation['level'],
+                          'other_classes_and_existing_learnings_unchanged':True,'skills_unchanged':True,'approved_class_learning_verified':True,'table':'classes'}
+        else:rec['entry']={'before':before_entry,'after':after_entry,'created_id':mutation['new_id'],
                       'existing_entries_unchanged':True,
                       ('approved_inert_key_item_verified' if entry_table=='items' else 'approved_template_clone_verified'):True,
                       'table':entry_table}
@@ -557,6 +576,13 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         from vxace_index_query import Index, unlinked
         for c in entries:
             table=c['locator']['table']
+            if table=='classes':
+                if any(o['target']=='Data/Skills.rvdata2' for o in changes):
+                    raise ValueError('Class learning append reads Skills read-only; it cannot be combined with changes to Skills')
+                from vxace_class_learning import indexed_snapshot as learning_indexed, validate as learning_validate, skills_for as learning_skills
+                learning_data=Index(index);learning_indexed(learning_data,project,c['locator']['id']);learning_data.unchanged()
+                learning_validate(load(unlinked(project/c['target']))[0],c['ruby_spec']['mutation'],learning_skills(project/c['target']))
+                continue
             indexed_snapshot(Index(index),project,c['mutation']['template_id'],table)
             native=load(unlinked(project/c['target']))[0]
             if table=='items':new_key_item(native,c['mutation'])

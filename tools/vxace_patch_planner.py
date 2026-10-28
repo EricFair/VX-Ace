@@ -95,11 +95,16 @@ def normalize_spec(spec: dict) -> dict:
                 raise ValueError('Map append proposal requires template_map_id and proposal')
         elif kind == 'database_entry':
             locator=item.get('locator');mutation=item.get('mutation')
-            if not isinstance(locator,dict) or set(locator)!={'table'} or locator['table'] not in ('items','enemies','skills','states','weapons','armors','troops') or not item.get('proposal'):
-                raise ValueError('Database entry proposal requires an exact supported table locator and proposal')
-            action=mutation.get('action') if isinstance(mutation,dict) else None
-            if (locator['table']=='items',action) not in ((True,'append_key_item'),(False,'append_database_entry')):
-                raise ValueError('Entry action does not match the table (items: append_key_item; others: append_database_entry)')
+            if isinstance(locator,dict) and locator.get('table')=='classes':
+                from vxace_class_learning import native_mutation
+                native_mutation(locator,mutation)
+                if not item.get('proposal'):raise ValueError('Class learning requires a proposal')
+            else:
+                if not isinstance(locator,dict) or set(locator)!={'table'} or locator['table'] not in ('items','enemies','skills','states','weapons','armors','troops') or not item.get('proposal'):
+                    raise ValueError('Database entry proposal requires an exact supported table locator and proposal')
+                action=mutation.get('action') if isinstance(mutation,dict) else None
+                if (locator['table']=='items',action) not in ((True,'append_key_item'),(False,'append_database_entry')):
+                    raise ValueError('Entry action does not match the table (items: append_key_item; others: append_database_entry)')
         elif kind in ('map_region','map_tile','map_event','map_name','map_label','map_encounter'):
             locator=item.get('locator')
             if not isinstance(locator,dict) or set(locator) != {'map_id'} or type(locator['map_id']) is not int or not 1 <= locator['map_id'] <= 999999:
@@ -184,6 +189,10 @@ def regression_checks(changes: list[dict]) -> list[str]:
         checks += ['Review every inherited feature, effect, drop, action and damage element/type of the template clone; the note is forced empty (troops have no note and copy only a blank battle page).',
                    'Review troops, shops, drops, dynamic IDs and notetag consumers; check battler_name against the asset audit.',
                    'Verify the new entry in the VX Ace editor, a battle test or smoke test, and engine save/full-process restart.']
+    if any(i.get('kind')=='database_entry' and i.get('mutation',{}).get('action')=='append_class_learning' for i in changes):
+        checks += ['Review the class existing learnings, the skill (cost, scope, damage) and the level; the new learning has an empty note and is appended last.',
+                   'Check actor initial levels, class-change scripts and custom skill-learning scripts; old saves learn the skill only on a later level-up (no retroactive learning).',
+                   'Verify the class in the VX Ace editor and level an actor of that class to or past the level in a new game and an older save.']
     if 'script_slot' in kinds:
         checks += ['Insert only one exact byte-verified native slot before unique canonical Main through the explicit Python copy workflow.',
                    'Verify every existing script ID/name/source/order is preserved; no reordering/deletion or other Scripts edits in the transaction.',

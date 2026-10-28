@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.14.0 — Class skill learnings
+
+- Add `append_class_learning` (locator `{"table": "classes", "id": N}`) and `vxace_class_learning.py`: append one native `RPG::Class::Learning` (`skill_id` of an existing static skill bound by `expected_skills_sha256`, `level` 1..99, empty note) to an existing class. The class and every existing learning must have the exact native schema; duplicates refuse; every other byte is verified unchanged and Skills is checked byte-identical. One per transaction; Python backend and postgates only; no reload-version advance.
+- Snapshot via `vxace_database_entries.py --table classes --class-id N`; the recipe runner gains an `append_learning` step that can reference a skill created earlier (`from_step`).
+- Existing actors (including in old saves) learn the skill only on a later level-up to or past that level; nothing is back-filled.
+- Native evidence: a two-step recipe on an editor-created project appended a skill and a class 1 learning at level 3; in a smoke run actor 1 lacked it at level 1 and learned it through the engine's own level-up at level 3.
+- Add `tests/structure/test_class_learning.py` (17 tests) and recipe tests.
+
 ## 1.13.0 — Recipes
 
 - Add `vxace_recipe.py` (`validate`, `run`): a strictly validated JSON recipe of `append_entry`, `append_key_item`, `append_encounter`, `insert_script`, `set_map_display_name` and `text_import` steps. Each step re-indexes the current source, takes the operation's read-only snapshot, builds the spec from it (recipes cannot carry hashes), and runs planner, impact and the Python copy patcher into its own `step-NN` folder; the next step uses that copy. `{"from_step": N}` resolves ids created by earlier enemy/troop steps.
