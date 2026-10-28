@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.9.0 — Template-clone database appends
+
+- Add `append_database_entry` for Enemies, Skills, States, Weapons and Armors: deep-clone an existing template entry, set the next static ID, force an empty note and apply only whitelisted, type/range-checked overrides (stats, rewards, costs, messages, prices, turn limits). Skill damage formulas must parse in the balance formula evaluator. One append per transaction through the existing snapshot, planner, impact and Python copy-patcher gates; key-item append is unchanged.
+- Extend `vxace_database_entries.py` with `--table`/`--template-id` snapshots listing hashes, next ID, inherited features/effects/actions and supported overrides.
+- Template schemas follow editor-saved data: enemies have no `description`/`icon_index` but keep legacy `hit`/`eva`; states have no `description` but keep `release_by_damage`. Found by running the snapshot on a real project after the fixture-only build.
+- Native evidence: enemy and skill appends chained on an editor-created project copy, then a v1.8 smoke run verified stats, the engine's own damage evaluation and a real battle against the new enemy. See [database append](references/database-append.md).
+- Add `workflows/release-checklist.md`, tying validation, the v1.7 analyses, smoke runs, debug-code removal, RTP/fonts and Compress Game Data into a pre-release routine.
+- Add `tests/structure/test_database_append.py` (12 tests).
+
 ## 1.8.0 — In-engine smoke tests
 
 - Add `vxace_smoke.py stage`: installs one harness slot (`tools/smoke/vxa_smoke_runtime.rb` plus an optional user suite) before canonical Main in a new disposable copy through the existing validator, reader, script-slot snapshot, planner, impact and Python copy-patcher chain, and records the staged hashes. The original project is rechecked unchanged.

@@ -9,6 +9,9 @@ def mutator_command(ruby, mutator, *args):
     return [sys.executable if mutator.suffix == '.py' else ruby, str(mutator), *map(str, args)]
 DB_FILES={'actors':'Actors.rvdata2','classes':'Classes.rvdata2','skills':'Skills.rvdata2','items':'Items.rvdata2','weapons':'Weapons.rvdata2','armors':'Armors.rvdata2','enemies':'Enemies.rvdata2','troops':'Troops.rvdata2','states':'States.rvdata2','animations':'Animations.rvdata2','tilesets':'Tilesets.rvdata2','common-events':'CommonEvents.rvdata2','common_events':'CommonEvents.rvdata2','system':'System.rvdata2','map-infos':'MapInfos.rvdata2','map_infos':'MapInfos.rvdata2'}
 
+ENTRY_TABLES={'items','enemies','skills','states','weapons','armors'}
+
+
 def sha256(path:Path)->str:
     h=hashlib.sha256()
     with path.open('rb') as f:
@@ -90,11 +93,12 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             if 'id' not in loc or not mut.get('field'): raise ValueError(f'database change #{n} requires locator.id and mutation.field')
             out.append({'kind':'database','target':'Data/'+DB_FILES[table],'ruby_spec':{'type':'database','mutation':{'id':loc['id'],'field':mut['field'],'value':mut.get('value')}},'description':c.get('description',''),'locator':loc,'mutation':mut})
         elif kind=='database_entry':
-            if not isinstance(loc,dict) or loc != {'table':'items'}:
-                raise ValueError('Entry creation supports only the exact items table locator')
-            if not isinstance(mut,dict) or mut.get('action')!='append_key_item':
-                raise ValueError('Only append_key_item entry creation is enabled')
-            out.append({'kind':'database_entry','target':'Data/Items.rvdata2',
+            if not isinstance(loc,dict) or set(loc)!={'table'} or loc['table'] not in ENTRY_TABLES:
+                raise ValueError('Entry creation supports only an exact items or append-table locator')
+            action=mut.get('action') if isinstance(mut,dict) else None
+            if (loc['table']=='items',action)not in ((True,'append_key_item'),(False,'append_database_entry')):
+                raise ValueError('Entry action does not match the table: items use append_key_item; enemies/skills/states/weapons/armors use append_database_entry')
+            out.append({'kind':'database_entry','target':'Data/'+DB_FILES[loc['table']],
                         'ruby_spec':{'type':'database_entry','mutation':mut},'description':c.get('description',''),
                         'locator':loc,'mutation':mut})
         elif kind=='map_entry':
@@ -250,7 +254,10 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     before_entry_root=None
     if change['kind']=='database_entry':
         from vxace_python_mutator import load
-        from vxace_database_entries import snapshot as entry_snapshot
+        from vxace_database_entries import snapshot as items_snapshot
+        from vxace_database_append import snapshot as table_snapshot
+        entry_table=change['locator']['table']
+        entry_snapshot=(lambda root,tid:items_snapshot(root,tid)) if entry_table=='items' else (lambda root,tid:table_snapshot(root,entry_table,tid))
         before_entry_root=load(target)[0]
         before_entry=entry_snapshot(before_entry_root,mutation['template_id'])
     before_event_root=None
@@ -299,8 +306,12 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         from vxace_map_regions import verify_transition
         verify_transition(before_region_root,load(tmp)[0],mutation)
     if change['kind']=='database_entry':
-        from vxace_database_entries import verify_transition as verify_entry
-        verify_entry(before_entry_root,load(tmp)[0],mutation)
+        if entry_table=='items':
+            from vxace_database_entries import verify_transition as verify_entry
+            verify_entry(before_entry_root,load(tmp)[0],mutation)
+        else:
+            from vxace_database_append import verify_transition as verify_table_entry
+            verify_table_entry(before_entry_root,load(tmp)[0],entry_table,mutation)
     if change['kind']=='map_event':
         from vxace_map_events import verify_transition as verify_event
         verify_event(before_event_root,load(tmp)[0],mutation,copy_root,change['ruby_spec'].get('context',{}).get('rtp'))
@@ -352,8 +363,10 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if change['kind']=='database_entry':
         after_entry=entry_snapshot(load(target)[0],mutation['template_id'])
         rec['entry']={'before':before_entry,'after':after_entry,'created_id':mutation['new_id'],
-                      'existing_entries_unchanged':True,'approved_inert_key_item_verified':True}
-        rec['diff']=''.join(difflib.unified_diff(json.dumps(before_entry,indent=2).splitlines(True),json.dumps(after_entry,indent=2).splitlines(True),fromfile='source-items',tofile='staged-items'))
+                      'existing_entries_unchanged':True,
+                      ('approved_inert_key_item_verified' if entry_table=='items' else 'approved_template_clone_verified'):True,
+                      'table':entry_table}
+        rec['diff']=''.join(difflib.unified_diff(json.dumps(before_entry,indent=2).splitlines(True),json.dumps(after_entry,indent=2).splitlines(True),fromfile='source-'+entry_table,tofile='staged-'+entry_table))
     if change['kind']=='script_slot':
         after_slot=slot_snapshot(load(target)[0],mutation['before_index']+1)
         rec['script_slot']={'locator':change['locator'],'before':before_slot,'after':after_slot,
@@ -497,16 +510,20 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
             slot_data.unchanged()
             new_slot(load(unlinked(project/c['target']))[0],c['ruby_spec']['mutation'])
     if entries:
-        if len(entries)!=1 or any(c['target']=='Data/Items.rvdata2' and c['kind']!='database_entry' for c in changes):
-            raise ValueError('Append one key item per transaction without other Items mutations')
+        if len(entries)!=1 or any(c['target']==entries[0]['target'] and c['kind']!='database_entry' for c in changes):
+            raise ValueError('Append one database entry per transaction without other mutations to the same table')
         if no_reindex or mutator.resolve() != (Path(__file__).resolve().parent/'vxace_python_mutator.py'):
             raise ValueError('Entry creation requires the explicit Python backend and mandatory post-copy re-indexing')
         from vxace_python_mutator import load
         from vxace_database_entries import new_key_item, indexed_snapshot
+        from vxace_database_append import new_entry
         from vxace_index_query import Index, unlinked
         for c in entries:
-            indexed_snapshot(Index(index),project,c['mutation']['template_id'])
-            new_key_item(load(unlinked(project/c['target']))[0],c['mutation'])
+            table=c['locator']['table']
+            indexed_snapshot(Index(index),project,c['mutation']['template_id'],table)
+            native=load(unlinked(project/c['target']))[0]
+            if table=='items':new_key_item(native,c['mutation'])
+            else:new_entry(native,table,c['mutation'])
     if regions:
         if len({c['target'] for c in regions}) != len(regions):
             raise ValueError('Use one bounded region operation per map per transaction')
