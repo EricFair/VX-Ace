@@ -1,6 +1,6 @@
 # Gradual upstream adoption — first batch
 
-Initial batch: local development on top of v0.10. Updated in v0.11: the pinned codec now also powers an explicitly selected, narrowly scoped production data backend after synthetic and real-project comparison. See `real-project-validation-v0.11.md` for the exact evidence and limits.
+Initial batch: local development on top of v0.10. Updated in v0.11: the pinned codec now also powers an explicitly selected, narrowly scoped production data backend after synthetic and real-project comparison. Real-project comparison found host-Ruby float formatting differences that the pinned codec avoids.
 
 ## Source and intent
 
@@ -46,11 +46,11 @@ Reports are `codec-audit.json` and `codec-audit.md` in a new directory outside t
 
 Exit `0` means the experimental codec audit passed, `3` means refused, and `2` means configuration/execution error. A pass deliberately reports `mutation_authorized=false` and `production_gate_satisfied=false`. It does not emit `copy_mutation_ready`. Our production `vxace_project_validator.py` and immediate Ruby-mutator gates remain mandatory and unchanged.
 
-Only `marshal_rb.py`, `rubytypes.py`, package metadata, and their pinned codec tests are adopted. The upstream MCP server and game writer are not imported. See `tools/_vendor/NOTICE.md` and hash manifest.
+Only `marshal_rb.py`, `rubytypes.py` and package metadata are adopted; their pinned codec tests stay in the development suite. The upstream MCP server and game writer are not imported. See `tools/_vendor/NOTICE.md` and hash manifest.
 
 ## Verification and promotion gates
 
-1. Run `python -m unittest discover -s tests/marshal_codec -p "test_*.py" -v` and the complete `python tools/run_tests.py` suite. The full runner includes the new suite, so existing GitHub Actions also exercises it.
+1. Run the pinned codec tests and the complete development suite (kept outside the published skill) before every release.
 2. Compare both backends on our Ruby-generated VX Ace fixture; confirm decoded identity/reference and native payload behavior, not only self-generated Python fixtures.
 3. Run both audits against actual user-owned projects, keeping originals unchanged and all reports external. Do not declare real fidelity based only on upstream's reported project.
 4. Investigate every disagreement with a minimal reproducible fixture. No gate downgrades.
