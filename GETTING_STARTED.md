@@ -12,13 +12,13 @@ This is an RPG Maker VX Ace specialist skill plus a local toolchain. It helps de
 **Claude Code** (skills are discovered from `~/.claude/skills`):
 
 ```powershell
-git clone --branch v1.18.0 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.claude/skills/rpg-maker-vx-ace-developer"
+git clone --branch v1.19.0 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.claude/skills/rpg-maker-vx-ace-developer"
 ```
 
 **Codex**:
 
 ```powershell
-git clone --branch v1.18.0 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.codex/skills/rpg-maker-vx-ace-developer"
+git clone --branch v1.19.0 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.codex/skills/rpg-maker-vx-ace-developer"
 ```
 
 Start a new chat so the skill is discovered, then name your project folder, for example *"Use the VX Ace skill on C:/Games/MyGame"*. To update later: `git fetch --tags` and `git checkout` the newer tag inside that folder. Keep `SKILL.md`, `tools`, `references`, `workflows`, `patterns` and `templates` together.

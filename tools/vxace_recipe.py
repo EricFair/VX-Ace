@@ -16,7 +16,7 @@ from pathlib import Path
 from vxace_copy_patcher import current_inventory
 from vxace_index_query import unlinked
 
-VERSION = '1.18.0'
+VERSION = '1.19.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -223,8 +223,18 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: name must be a string of 1..100 characters')
             if not isinstance(step['pages'], list) or not 1 <= len(step['pages']) <= 8:
                 raise RecipeError(f'step {number}: pages must be a list of 1..8 page objects')
-            if contains_ref_key({k: v for k, v in step.items() if k != 'template_event'}):
-                raise RecipeError(f'step {number}: from_step is only allowed for template_event')
+            from vxace_staged_commands import page_ops
+            shadow = copymod.deepcopy(step['pages'])
+            for op in page_ops(shadow):
+                if is_ref(op.get('battle')):
+                    check_ref(op['battle'], number, steps, 'troops', 'battle troop_id')
+                    op['battle'] = 0
+                for holder, key in ((op, 'item'), (op['if'] if isinstance(op.get('if'), dict) else {}, 'has_item')):
+                    if is_ref(holder.get(key)):
+                        check_goods_ref(holder[key], number, steps, 'item')
+                        holder[key] = 0
+            if contains_ref_key({**{k: v for k, v in step.items() if k not in ('template_event', 'pages')}, 'pages': shadow}):
+                raise RecipeError(f'step {number}: from_step is only allowed for template_event, battle troop ids and item ids in pages')
         elif kind == 'append_blank_event':
             if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
                 raise RecipeError(f'step {number}: map_id must be an integer 1..999')
@@ -369,6 +379,11 @@ def build_spec(title, number, step, snapshot, source=None):
                                'name': step['name'], 'x': step['x'], 'y': step['y'], 'pages': step['pages'],
                                'expected_map_sha256': snapshot['map_sha256'], 'expected_template_sha256': snapshot['template_sha256'],
                                'expected_system_sha256': snapshot['system_sha256']}}
+        from vxace_staged_commands import bind_fields
+        try:
+            change['mutation'].update(bind_fields(step['pages'], snapshot))
+        except ValueError as error:
+            raise RecipeError(str(error))
     elif kind == 'append_blank_event':
         change = {'kind': 'map_event', 'locator': {'map_id': step['map_id']},
                   'proposal': f'Recipe step {number}: append one blank event "{step.get("name", snapshot["default_name"])}" to map {step["map_id"]} using donor event {step["donor_event"]} for schema only.',
@@ -475,6 +490,7 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
     try:
         kind = step['type']
         resolved = resolve_refs(step, created)
+        from vxace_staged_commands import staged_refs
         resolved_record = dict(resolved)
         source_text = None
         csv_path = None
@@ -520,7 +536,8 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
                                                               '--template-event', resolved['template_event']], 'map-event-snapshot')
             elif kind == 'append_staged_event':
                 script, args, name = ('vxace_map_events.py', [index, '--project', source, '--map', resolved['map_id'],
-                                                              '--template-event', resolved['template_event'], '--staged'], 'map-event-snapshot')
+                                                              '--template-event', resolved['template_event'], '--staged',
+                                                              *[arg for m in sorted(staged_refs(resolved['pages'])['maps']) for arg in ('--transfer-map', m)]], 'map-event-snapshot')
             elif kind == 'append_blank_event':
                 script, args, name = ('vxace_map_events.py', [index, '--project', source, '--map', resolved['map_id'],
                                                               '--donor-event', resolved['donor_event']], 'map-event-snapshot')
