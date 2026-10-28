@@ -162,7 +162,7 @@ class AppendUnitTests(unittest.TestCase):
         alias=fixture('enemies');alias[2]=alias[1]
         for root in ([],[None],{},[make('enemies'),make('enemies',2)],[None,make('skills')],bad,alias):
             with self.subTest(root=str(root)[:60]),self.assertRaises(ValueError):append.database_array(root,'enemies')
-        for table in ('items','actors','troops'):
+        for table in ('items','actors','skill'):
             with self.assertRaises(ValueError):append.table_spec(table)
         full=[None]+[make('weapons',i) for i in range(1,1000)]
         self.assertFalse(append.snapshot(full,'weapons',1)['append_slot_supported'])

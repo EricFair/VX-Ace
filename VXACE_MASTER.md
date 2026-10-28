@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v1.10.0
+# VX Ace Masterfile — v1.11.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -9,6 +9,8 @@ v1.8 adds standalone [in-engine smoke tests](references/smoke-testing.md): `vxac
 v1.9 adds a separate guarded [template-clone database append](references/database-append.md) for enemies, skills, states, weapons and armors (one per Python copy transaction; no master setting invokes it) and a [release checklist](workflows/release-checklist.md).
 
 v1.10 adds read-only [text import](references/text-import.md): an edited text-export CSV becomes a spec of existing guarded edits, applied only through the normal plan/copy chain.
+
+v1.11 extends the database append to troops: a blank one-page template troop with 1..8 reviewed existing enemies, bound to the Enemies array hash. Encounter lists and Battle Processing are not wired automatically.
 
 v1.4.1 corrects static passage observations in the [ordinary upper-tile snapshot](references/upper-tile-painting.md). Recreate previous snapshots; the native uppermost non-star tile now takes priority over lower flags. Mutation capabilities and copy safety gates remain as documented.
 

@@ -1,4 +1,4 @@
-# Guarded native template-clone database append — v1.9
+# Guarded native template-clone database append — v1.9 (troops: v1.11)
 
 Use this narrow operation to add one new entry to an existing native Enemies, Skills, States, Weapons or Armors database by cloning a reviewed template entry and overriding a small whitelist of fields. It does not delete, reuse or reorder entries, create other database objects, wire the new entry into troops/shops/drops/classes, or edit saves. Items keep the separate [key-item append](key-item-append.md) (`append_key_item`), which is unchanged.
 
@@ -91,3 +91,57 @@ Unit and copy-chain tests use an authored Ruby fixture with native-shaped Enemy,
 ## Native evidence (v1.9)
 
 On an editor-created project the snapshot admitted template 1 of all five tables. Two chained transactions appended enemy 31 (Cave Bat, overridden params/exp/gold/hue) and then skill 127 (Fang Strike, `a.atk * 3 - b.def`) through the full planner/copy-patcher postgates. A [smoke run](smoke-testing.md) of the result confirmed the new stats, inherited actions, cleared note and unchanged template; the engine's own `Damage#eval` matched the expected value; and a real battle against the Cave Bat (auto-confirmed commands) dealt damage, defeated it in three turns and returned to the map. Editor display of the new entries was not inspected in this run.
+
+## Troops (v1.11)
+
+`troops` is a sixth table of the same `append_database_entry` action (locator `{"table": "troops"}`), with the same one-append-per-transaction, Python-backend, re-index and candidate-verification rules. It creates a new, battle-event-free troop from a reviewed blank template. Snapshot:
+
+```powershell
+python tools/vxace_database_entries.py PROJECT_INDEX --project PROJECT --table troops --template-id 1 --output NEW_EXTERNAL_SNAPSHOT
+```
+
+The snapshot additionally reports `enemies_sha256` (the Marshal SHA-256 of the `Data/Enemies.rvdata2` array read read-only from the same project), `valid_enemy_id_range` (`[1, len(enemies) - 1]`), `template_page_blank`, and the template member count. A template that is not blank refuses at snapshot time.
+
+```json
+{
+  "title": "Add a reviewed troop",
+  "changes": [{
+    "kind": "database_entry",
+    "locator": {"table": "troops"},
+    "proposal": "Append one two-enemy troop cloned from blank troop 1.",
+    "mutation": {
+      "action": "append_database_entry",
+      "template_id": 1,
+      "new_id": 41,
+      "expected_array_sha256": "REPLACE_WITH_EXACT_TROOPS_ARRAY_SHA256",
+      "expected_template_sha256": "REPLACE_WITH_EXACT_TEMPLATE_SHA256",
+      "expected_enemies_sha256": "REPLACE_WITH_EXACT_ENEMIES_SHA256",
+      "overrides": {
+        "name": "Cave Bat Pair",
+        "members": [
+          {"enemy_id": 31, "x": 200, "y": 300, "hidden": false},
+          {"enemy_id": 31, "x": 340, "y": 300, "hidden": false}
+        ]
+      }
+    }
+  }]
+}
+```
+
+Rules:
+
+- Native schema: `RPG::Troop` (`id`, `name`, `members`, `pages` only; there is no `note` field and none is added), `RPG::Troop::Member` (`enemy_id`, `x`, `y`, `hidden`), `RPG::Troop::Page` (`condition`, `span`, `list`), `RPG::Troop::Page::Condition` (`turn_ending`, `turn_valid`, `enemy_valid`, `actor_valid`, `switch_valid`, `turn_a`, `turn_b`, `enemy_index`, `enemy_hp`, `actor_id`, `actor_hp`, `switch_id`) and `RPG::EventCommand` (`code`, `indent`, `parameters`). Any other class, field set or type refuses.
+- The template must have exactly one page that is blank: the five condition flags (`turn_ending` and every `*_valid`) are all false and `list` is exactly one terminator command (code 0, indent 0, empty parameters). Anything else (a condition, extra or other commands, two pages, no pages) refuses, so battle-event logic is never copied. The new troop gets a deep clone of that blank page. The template's members are validated but not copied.
+- Overrides: `name` (required, 1..100 chars, no control codes) and `members` (required, 1..8 entries). Each member is exactly `{"enemy_id", "x", "y", "hidden"}` with integer `enemy_id` in `1..len(enemies) - 1` that references an existing (non-nil) enemy of the same snapshot's `Enemies.rvdata2`, integer `x` 0..544, integer `y` 0..416 and a real boolean `hidden`. Booleans are not integers; floats and strings refuse. Any other key (`note`, `pages`, `id`, ...) refuses.
+- `expected_enemies_sha256` is an extra precondition checked against the Enemies array read during the snapshot, the copy-patcher pre-check, the mutation and candidate verification. Editing, adding or removing enemies after the snapshot makes the spec stale. A non-dense Enemies array (nil gaps, wrong classes, wrong IDs) refuses the whole operation.
+
+Limits:
+
+- The troop is not wired anywhere: encounter lists (map encounters, region sets) and Battle Processing events are untouched, so it is reachable only after separate edits. The impact report lists the template (name, page and member counts), the referenced enemies, and states this.
+- Only the member list and name are set; battle events, enemy-specific conditions and the troop's battle background are not authored here. Use the existing battle-event tools for pages.
+- Coordinates are range checked only; overlap, off-screen layout and enemy sizes are not judged. Review in the editor's troop screen or a battle test.
+- The troop ID is static; scripts that use `$data_troops[n]` or runtime troop IDs may assume otherwise.
+
+## Native evidence (v1.11 troops)
+
+On the same project copy that already held appended enemy 31, a troop append cloned blank template troop 1 into troop 31 (Cave Bat Pair, two enemy-31 members) through the planner/copy-patcher postgates. A smoke run confirmed the members, the single blank page and an unchanged troop 1, then started Battle Processing for troop 31: the engine labelled the members Cave Bat A/B and the party defeated both in nine turns before returning to the map.

@@ -95,7 +95,7 @@ def normalize_spec(spec: dict) -> dict:
                 raise ValueError('Map append proposal requires template_map_id and proposal')
         elif kind == 'database_entry':
             locator=item.get('locator');mutation=item.get('mutation')
-            if not isinstance(locator,dict) or set(locator)!={'table'} or locator['table'] not in ('items','enemies','skills','states','weapons','armors') or not item.get('proposal'):
+            if not isinstance(locator,dict) or set(locator)!={'table'} or locator['table'] not in ('items','enemies','skills','states','weapons','armors','troops') or not item.get('proposal'):
                 raise ValueError('Database entry proposal requires an exact supported table locator and proposal')
             action=mutation.get('action') if isinstance(mutation,dict) else None
             if (locator['table']=='items',action) not in ((True,'append_key_item'),(False,'append_database_entry')):
@@ -181,7 +181,7 @@ def regression_checks(changes: list[dict]) -> list[str]:
                    'Verify the new ID/Key Item entry in VX Ace, native inventory categorization and engine save/restart-load.',
                    'Confirm every existing Items entry is unchanged; deletion/reuse/reordering remain disabled.']
     if any(i.get('kind')=='database_entry' and i.get('mutation',{}).get('action')=='append_database_entry' for i in changes):
-        checks += ['Review every inherited feature, effect, drop, action and damage element/type of the template clone; the note is forced empty.',
+        checks += ['Review every inherited feature, effect, drop, action and damage element/type of the template clone; the note is forced empty (troops have no note and copy only a blank battle page).',
                    'Review troops, shops, drops, dynamic IDs and notetag consumers; check battler_name against the asset audit.',
                    'Verify the new entry in the VX Ace editor, a battle test or smoke test, and engine save/full-process restart.']
     if 'script_slot' in kinds:

@@ -108,10 +108,10 @@ def new_key_item(root, mutation):
     return item
 
 
-def apply(root, mutation):
+def apply(root, mutation, source_path=None):
     if isinstance(mutation,dict) and mutation.get('action')=='append_database_entry':
         from vxace_database_append import apply as append_entry
-        return append_entry(root,mutation)
+        return append_entry(root,mutation,source_path)
     item=new_key_item(root,mutation)
     root.append(item)
 
@@ -149,7 +149,7 @@ def main(argv=None):
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('index');ap.add_argument('--project',required=True);ap.add_argument('--output',required=True)
     ap.add_argument('--template-item',type=int,help='Items template ID (key-item append; same as --table items --template-id)')
-    ap.add_argument('--table',default='items',help='items, enemies, skills, states, weapons or armors')
+    ap.add_argument('--table',default='items',help='items, enemies, skills, states, weapons, armors or troops')
     ap.add_argument('--template-id',type=int)
     args=ap.parse_args(argv)
     if (args.template_item is None)==(args.template_id is None):

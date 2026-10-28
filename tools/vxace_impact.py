@@ -228,6 +228,7 @@ APPEND_MARKERS = {
     'enemies': ('$data_enemies','enemy_id','Enemy'), 'skills': ('$data_skills','learn_skill','skill_id','use_item'),
     'states': ('$data_states','add_state','remove_state','state_id'), 'weapons': ('$data_weapons','gain_item','equip'),
     'armors': ('$data_armors','gain_item','equip'),
+    'troops': ('$data_troops','troop_id','BattleManager.setup','battle_start'),
 }
 
 
@@ -264,6 +265,24 @@ def append_entry_impact(index, change):
         inherited['damage (non-overridden parts)']=damage
     references={}
     troops=data.json('database/troops.json')
+    troop_info={}
+    if table=='troops':
+        enemy_rows=data.json('database/enemies.json')
+        members=overrides.get('members')
+        if not isinstance(enemy_rows,list) or not isinstance(members,list) or not 1<=len(members)<=8:
+            raise ValueError('Troop impact requires an indexed Enemies array and 1..8 members')
+        used=[]
+        for member in members:
+            eid=member.get('enemy_id') if isinstance(member,dict) else None
+            if type(eid) is not int or not 0<eid<len(enemy_rows) or not isinstance(enemy_rows[eid],dict):
+                raise ValueError('Troop member references an enemy missing from the indexed Enemies array')
+            used.append({'enemy_id':eid,'enemy':enemy_rows[eid].get('name'),'x':member.get('x'),'y':member.get('y'),'hidden':member.get('hidden')})
+        pages=selected.get('pages') if isinstance(selected.get('pages'),list) else []
+        troop_info={'template_troop':{'id':template_id,'name':selected.get('name'),'page_count':len(pages),
+                                      'member_count':len(selected.get('members') or []),
+                                      'members_copied':False,'battle_events_copied':False},
+                    'referenced_enemies':used,
+                    'enemies_sha256_required':mutation.get('expected_enemies_sha256')}
     if table=='enemies' and isinstance(troops,list):
         references['troops_using_template']=[t.get('id') for t in troops if isinstance(t,dict) and any(isinstance(m,dict) and m.get('enemy_id')==template_id for m in (t.get('members') or []))][:50]
     mentions=[]
@@ -274,11 +293,13 @@ def append_entry_impact(index, change):
     return {'kind':'database_entry','target':{'table':table,'new_id':identifier,'template_id':template_id,'template_name':selected.get('name')},
             'severity':'high','action':ACTION,'overridden_fields':sorted(overrides),
             'inherited_from_template':inherited,'template_note_present':bool(selected.get('note')),
-            'new_note_forced_empty':True,'template_references':references,'consumer_mentions':mentions,
+            'new_note_forced_empty':table!='troops','template_references':references,'consumer_mentions':mentions,
+            **({'troop':troop_info} if table=='troops' else {}),
             'limitations':['Every inherited field above is copied as-is; features/effects/drops/actions/damage type and element need reviewer approval.',
                           'The template note is not copied; notetag-driven behavior of the template will not exist on the new entry.',
                           'An appended static ID can collide with runtime-created IDs; literal mentions do not prove freedom from dynamic consumers.',
                           'New entries are not added to troops, shops, drop tables, class learnings or encounters automatically.',
+                          *(['A new troop is only reachable via Battle Processing events or encounter-list edits done separately; encounter lists and battle-processing events are not wired. Troops have no note field, and the template battle page is blank so no battle-event logic is copied.'] if table=='troops' else []),
                           'battler_name is only charset/length checked; run the asset audit for missing Graphics/Battlers files.',
                           'Exact native array/template hashes and schema are enforced separately by the snapshot/copy backend.']}
 
