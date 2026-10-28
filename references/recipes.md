@@ -24,6 +24,7 @@ Top level: `{"title": "optional text", "steps": [ ... ]}` (1..50 steps). Unknown
 | `append_dialogue_event` | `map_id`, `template_event` (an existing blank event, or `{"from_step": k}` for an `append_blank_event` step on the same map), `x`, `y`, `name`, `lines` (1..4 literal strings) | [map event creation](map-event-creation.md) (`append_dialogue_event`, no graphic); creates the next event id |
 | `append_staged_event` | `map_id`, `template_event` (an existing blank event, or `{"from_step": k}` for an `append_blank_event` step on the same map), `x`, `y`, `name`, `pages` (1..8 page objects, see [staged events](staged-events.md)) | [staged quest-stage event](staged-events.md) (`append_staged_event`); the snapshot adds `--staged`; creates the next event id |
 | `append_common_event` | `name`, `trigger` (`"none"` or `"parallel"`), `switch_id` (parallel only), `commands` (1..40 operations, see [common event append](common-event-append.md)) | [guarded common event append](common-event-append.md) (`append_common_event`); creates the next common event id (v1.21) |
+| `add_treasure_chest` | `map_id`, `x`, `y`, `name`, `contents` (`{"gold": n}` or `{"item"/"weapon"/"armor": id or {"from_step": k}, "amount": n}`), exactly one of `template_event` (existing blank event or `{"from_step": k}`) or `donor_event` with `blank_x`/`blank_y`; optional `graphic` | macro, see [treasure chests](treasure-chests.md): an optional `append_blank_event` plus one two-page `append_staged_event` (v1.22) |
 | `add_shop` | `map_id`, `event_id` (integer or `{"from_step": k}`), `goods` (1..32 of `{"type": "item"/"weapon"/"armor", "id": integer or {"from_step": k}, "price": null or 0..9999999}`), `purchase_only` (boolean) | [map shops](map-shops.md) |
 | `insert_script` | `name`, `source_file` (UTF-8 file, relative to the recipe) | [script slot insertion](script-slot-insertion.md), before canonical Main |
 | `set_map_display_name` | `map_id`, `name` | [map display names](map-display-names.md) |
@@ -92,6 +93,17 @@ An `append_common_event` step creates the next common event id, and later steps 
   {"type": "append_blank_event", "map_id": 1, "donor_event": 1, "x": 5, "y": 5},
   {"type": "append_staged_event", "map_id": 1, "template_event": {"from_step": 3}, "x": 8, "y": 8, "name": "Cheerer",
    "pages": [{"condition": {}, "commands": [{"common_event": {"from_step": 1}}]}]}]}
+```
+
+## Treasure chest macro (v1.22)
+
+`add_treasure_chest` expands inside the runner into ordinary guarded transactions (no new mutation kind): an `append_blank_event` at `blank_x`,`blank_y` when `donor_event` is given, then an `append_staged_event` with the closed and opened chest pages. The two transactions run in `WORK/step-NNa/` and `WORK/step-NNb/` (a chest with `template_event` runs only `step-NNa`); the report lists both records with `macro` and `part`, and `from_step` NN afterwards refers to the chest event id. The weapon/armor/item id may be `{"from_step": k}`; the chest text is read from the previous copy, so a freshly appended entry's name is used. The graphic sheet is bound with the optional `run --rtp ROOT` (project files win).
+
+```json
+{"title": "Moon Blade chest", "steps": [
+  {"type": "append_entry", "table": "weapons", "template_id": 1, "overrides": {"name": "Moon Blade"}},
+  {"type": "add_treasure_chest", "map_id": 1, "x": 6, "y": 6, "name": "Moon Chest", "donor_event": 1, "blank_x": 2, "blank_y": 2,
+   "contents": {"weapon": {"from_step": 1}, "amount": 1}}]}
 ```
 
 ## Limits

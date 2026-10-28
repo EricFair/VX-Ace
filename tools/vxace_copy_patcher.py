@@ -427,7 +427,9 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         elif mutation['action']=='append_staged_event':
             rec['map_event'].update(action='append_staged_event',template_id=mutation['template_id'],page_count=len(mutation['pages']),pages=mutation['pages'],
                                     expected_system_sha256=mutation['expected_system_sha256'],system_read_only_hash_bound=True,
-                                    reference_hashes={key:value for key,value in mutation.items() if key.startswith('expected_') and key not in ('expected_map_sha256','expected_template_sha256','expected_system_sha256')})
+                                    reference_hashes={key:value for key,value in mutation.items() if key.startswith('expected_') and key not in ('expected_map_sha256','expected_template_sha256','expected_system_sha256','expected_assets')})
+            from vxace_staged_commands import graphic_names
+            if graphic_names(mutation['pages']):rec['map_event']['page_assets']=mutation['expected_assets']
         else:rec['map_event']['text']=mutation['text']
         if 'graphic' in mutation:rec['map_event'].update(graphic=mutation['graphic'],asset=mutation['expected_asset'])
     if change['kind']=='common_event':
@@ -611,6 +613,7 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         if no_reindex or mutator.resolve()!=(Path(__file__).resolve().parent/'vxace_python_mutator.py'):
             raise ValueError('Event creation requires explicit Python backend and mandatory post-copy re-indexing')
         from vxace_map_events import indexed_snapshot as event_indexed_snapshot,new_event
+        from vxace_staged_commands import graphic_names
         from vxace_index_query import Index,unlinked
         from vxace_python_mutator import load
         for c in map_events:
@@ -619,7 +622,7 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
             event_indexed_snapshot(event_data,project,c['locator']['map_id'],c['mutation']['donor_event_id'] if blank else c['mutation']['template_id'],c['mutation'].get('graphic'),rtp,blank)
             event_data.unchanged()
             new_event(load(unlinked(project/c['target']))[0],c['mutation'],project,rtp)
-            if 'graphic' in c['mutation']:c['ruby_spec']['context']={'rtp':str(rtp) if rtp else None}
+            if 'graphic' in c['mutation'] or graphic_names(c['mutation'].get('pages')):c['ruby_spec']['context']={'rtp':str(rtp) if rtp else None}
     if upper_tiles:
         if len({c['target'] for c in upper_tiles})!=len(upper_tiles) or any(sum(other['target']==c['target'] for other in changes)!=1 for c in upper_tiles):
             raise ValueError('Use one upper tile operation per map without other mutations to that map')
@@ -776,9 +779,13 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
             from vxace_python_mutator import load
             for c in upper_tiles:asset_context(load(copy_root/c['target'])[0],c['mutation'],copy_root,rtp)
         if map_events:
-            from vxace_character_graphics import binding
+            from vxace_character_graphics import binding,staged_assets
+            from vxace_staged_commands import graphic_names
             for c in map_events:
                 if 'graphic' in c['mutation'] and binding(copy_root,rtp,c['mutation']['graphic'])!=c['mutation']['expected_asset']:
+                    raise RuntimeError('Character asset changed during final verification')
+                names=graphic_names(c['mutation'].get('pages'))
+                if names and staged_assets(copy_root,rtp,names)!=c['mutation']['expected_assets']:
                     raise RuntimeError('Character asset changed during final verification')
         if reward_changes:
             from vxace_event_rewards import item_context

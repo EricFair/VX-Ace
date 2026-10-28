@@ -17,7 +17,7 @@ from vxace_copy_patcher import current_inventory
 from vxace_database_append import LIST_TABLES, ref_field, required_refs
 from vxace_index_query import unlinked
 
-VERSION = '1.21.0'
+VERSION = '1.22.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -31,6 +31,8 @@ STEP_KEYS = {
     'append_staged_event': ({'type', 'map_id', 'template_event', 'x', 'y', 'name', 'pages'}, {'type', 'map_id', 'template_event', 'x', 'y', 'name', 'pages'}),
     'append_common_event': ({'type', 'name', 'trigger', 'commands'}, {'type', 'name', 'trigger', 'commands', 'switch_id'}),
     'append_blank_event': ({'type', 'map_id', 'donor_event', 'x', 'y'}, {'type', 'map_id', 'donor_event', 'x', 'y', 'name'}),
+    'add_treasure_chest': ({'type', 'map_id', 'x', 'y', 'name', 'contents'},
+                           {'type', 'map_id', 'x', 'y', 'name', 'contents', 'graphic', 'template_event', 'donor_event', 'blank_x', 'blank_y'}),
     'add_shop': ({'type', 'map_id', 'event_id', 'goods', 'purchase_only'}, {'type', 'map_id', 'event_id', 'goods', 'purchase_only'}),
     'insert_script': ({'type', 'name', 'source_file'}, {'type', 'name', 'source_file'}),
     'set_map_display_name': ({'type', 'map_id', 'name'}, {'type', 'map_id', 'name'}),
@@ -149,10 +151,73 @@ def shadow_command_refs(ops, number, steps):
         if is_ref(op.get('common_event')):
             check_ref(op['common_event'], number, steps, 'common_events', 'common_event id')
             op['common_event'] = 0
-        for holder, key in ((op, 'item'), (op['if'] if isinstance(op.get('if'), dict) else {}, 'has_item')):
+        for holder, key, goods in ((op, 'item', 'item'), (op['if'] if isinstance(op.get('if'), dict) else {}, 'has_item', 'item'),
+                                   (op, 'weapon', 'weapon'), (op, 'armor', 'armor')):
             if is_ref(holder.get(key)):
-                check_goods_ref(holder[key], number, steps, 'item')
+                check_goods_ref(holder[key], number, steps, goods)
                 holder[key] = 0
+
+
+CHEST_KINDS = ('item', 'weapon', 'armor')
+CHEST_GRAPHIC = {'character_name': '!Chest', 'character_index': 0, 'direction': 2, 'pattern': 0}
+CHEST_OPTIONS = {'direction_fix': True, 'walk_anime': False, 'priority': 'same'}
+CHEST_TABLES = {'item': 'items', 'weapon': 'weapons', 'armor': 'armors'}
+
+
+def validate_chest(step, number, steps):
+    """Structural rules of the add_treasure_chest macro (the guarded tools re-check everything it expands to)."""
+    if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
+        raise RecipeError(f'step {number}: map_id must be an integer 1..999')
+    for key in ('x', 'y'):
+        if not is_int(step[key]) or not 0 <= step[key] <= 9999:
+            raise RecipeError(f'step {number}: {key} must be a non-negative integer')
+    if not isinstance(step['name'], str) or not 1 <= len(step['name']) <= 100:
+        raise RecipeError(f'step {number}: name must be a string of 1..100 characters')
+    if ('template_event' in step) == ('donor_event' in step):
+        raise RecipeError(f'step {number}: give exactly one of template_event (an existing blank event, or {{"from_step": N}}) and donor_event (a schema donor for a new blank event)')
+    if 'donor_event' in step and (not is_int(step['donor_event']) or not 1 <= step['donor_event'] <= 999):
+        raise RecipeError(f'step {number}: donor_event must be an integer 1..999')
+    if ('donor_event' in step) != ('blank_x' in step) or ('blank_x' in step) != ('blank_y' in step):
+        raise RecipeError(f'step {number}: donor_event needs blank_x and blank_y (the free cell for the blank template event that stays on the map); they are not allowed otherwise')
+    for key in ('blank_x', 'blank_y'):
+        if key in step and (not is_int(step[key]) or not 0 <= step[key] <= 9999):
+            raise RecipeError(f'step {number}: {key} must be a non-negative integer')
+    if 'template_event' in step:
+        if is_ref(step['template_event']):
+            check_template_ref(step['template_event'], number, steps, step['map_id'])
+        elif not is_int(step['template_event']) or not 1 <= step['template_event'] <= 999:
+            raise RecipeError(f'step {number}: template_event must be an integer 1..999 or {{"from_step": N}}')
+    contents = step['contents']
+    if not isinstance(contents, dict):
+        raise RecipeError(f'step {number}: contents must be {{"gold": n}} or {{"item"|"weapon"|"armor": id, "amount": n}}')
+    if set(contents) == {'gold'}:
+        if not is_int(contents['gold']) or not 1 <= contents['gold'] <= 99999999:
+            raise RecipeError(f'step {number}: contents gold must be an integer 1..99999999')
+    else:
+        kinds = [kind for kind in CHEST_KINDS if kind in contents]
+        if len(kinds) != 1 or set(contents) != {kinds[0], 'amount'}:
+            raise RecipeError(f'step {number}: contents must be {{"gold": n}} or exactly one of item/weapon/armor with amount')
+        kind = kinds[0]
+        if is_ref(contents[kind]):
+            check_goods_ref(contents[kind], number, steps, kind)
+        elif not is_int(contents[kind]) or not 1 <= contents[kind] <= 999:
+            raise RecipeError(f'step {number}: contents {kind} id must be an integer 1..999 or {{"from_step": N}}')
+        if not is_int(contents['amount']) or not 1 <= contents['amount'] <= 99:
+            raise RecipeError(f'step {number}: contents amount must be an integer 1..99')
+    if 'graphic' in step:
+        from vxace_character_graphics import graphic_schema
+        try:
+            graphic_schema(step['graphic'])
+        except ValueError as error:
+            raise RecipeError(f'step {number}: graphic: {error}')
+    shadow = copymod.deepcopy(step)
+    if is_ref(shadow.get('template_event')):
+        shadow['template_event'] = 0
+    for kind in CHEST_KINDS:
+        if is_ref(shadow['contents'].get(kind)):
+            shadow['contents'][kind] = 0
+    if contains_ref_key(shadow):
+        raise RecipeError(f'step {number}: from_step is only allowed for template_event and the contents id')
 
 
 def validate_recipe(recipe):
@@ -264,7 +329,7 @@ def validate_recipe(recipe):
             shadow = copymod.deepcopy(step['pages'])
             shadow_command_refs(page_ops(shadow), number, steps)
             if contains_ref_key({**{k: v for k, v in step.items() if k not in ('template_event', 'pages')}, 'pages': shadow}):
-                raise RecipeError(f'step {number}: from_step is only allowed for template_event, battle troop ids, item ids and common event ids in pages')
+                raise RecipeError(f'step {number}: from_step is only allowed for template_event, battle troop ids, item/weapon/armor ids and common event ids in pages')
         elif kind == 'append_common_event':
             if not isinstance(step['name'], str) or not 1 <= len(step['name']) <= 100:
                 raise RecipeError(f'step {number}: name must be a string of 1..100 characters')
@@ -280,7 +345,7 @@ def validate_recipe(recipe):
             shadow = copymod.deepcopy(step['commands'])
             shadow_command_refs(iter_ops(shadow), number, steps)
             if contains_ref_key({**{k: v for k, v in step.items() if k != 'commands'}, 'commands': shadow}):
-                raise RecipeError(f'step {number}: from_step is only allowed for battle troop ids, item ids and common event ids in commands')
+                raise RecipeError(f'step {number}: from_step is only allowed for battle troop ids, item/weapon/armor ids and common event ids in commands')
         elif kind == 'append_blank_event':
             if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
                 raise RecipeError(f'step {number}: map_id must be an integer 1..999')
@@ -291,6 +356,8 @@ def validate_recipe(recipe):
                     raise RecipeError(f'step {number}: {key} must be a non-negative integer')
             if 'name' in step and (not isinstance(step['name'], str) or not 1 <= len(step['name']) <= 100):
                 raise RecipeError(f'step {number}: name must be a string of 1..100 characters')
+        elif kind == 'add_treasure_chest':
+            validate_chest(step, number, steps)
         elif kind == 'add_shop':
             if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
                 raise RecipeError(f'step {number}: map_id must be an integer 1..999')
@@ -339,7 +406,7 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: csv must be a non-empty string')
             if 'allow_shorter' in step and type(step['allow_shorter']) is not bool:
                 raise RecipeError(f'step {number}: allow_shorter must be a boolean')
-        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event', 'append_common_event') and contains_ref_key(step):
+        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest') and contains_ref_key(step):
             raise RecipeError(f'step {number}: from_step is not allowed in a {kind} step')
         if kind == 'append_encounter' and contains_ref_key({k: v for k, v in step.items() if k != 'troop_id'}):
             raise RecipeError(f'step {number}: from_step is only allowed for troop_id')
@@ -428,11 +495,17 @@ def build_spec(title, number, step, snapshot, source=None):
                                'name': step['name'], 'x': step['x'], 'y': step['y'], 'pages': step['pages'],
                                'expected_map_sha256': snapshot['map_sha256'], 'expected_template_sha256': snapshot['template_sha256'],
                                'expected_system_sha256': snapshot['system_sha256']}}
-        from vxace_staged_commands import bind_fields
+        from vxace_staged_commands import bind_fields, graphic_names
         try:
             change['mutation'].update(bind_fields(step['pages'], snapshot))
         except ValueError as error:
             raise RecipeError(str(error))
+        names = graphic_names(step['pages'])
+        if names:
+            assets = snapshot.get('assets')
+            if not isinstance(assets, dict) or set(assets) != names:
+                raise RecipeError('snapshot lacks the character sheet bindings of the page graphics')
+            change['mutation']['expected_assets'] = {name: assets[name] for name in sorted(names)}
     elif kind == 'append_common_event':
         if not snapshot.get('append_slot_supported'):
             raise RecipeError('CommonEvents has no supported append slot')
@@ -529,13 +602,14 @@ def main_index(index):
     return mains[0]
 
 
-def execute_step(number, step, title, source, work, ruby, created, recipe_dir, records):
-    """Run one step as a normal transaction. Returns its report record; raises StepFailure after filling the record."""
-    directory = work / f'step-{number:02d}'
+def execute_step(number, step, title, source, work, ruby, created, recipe_dir, records, tag='', rtp=None):
+    """Run one step as a normal transaction. Returns its report record; raises StepFailure after filling the record.
+    `tag` ('a', 'b') names the sub-steps of a macro step; `rtp` is the optional explicit RTP root for page graphics."""
+    directory = work / f'step-{number:02d}{tag}'
     directory.mkdir()
     logs = directory / 'logs'
     index, copy, audit = directory / 'index', directory / 'copy', directory / 'audit'
-    record = {'step': number, 'type': step['type'], 'status': 'running', 'source': str(source), 'directory': str(directory),
+    record = {'step': number, 'type': step['type'], 'status': 'running', **({'macro': 'add_treasure_chest', 'part': tag} if tag else {}), 'source': str(source), 'directory': str(directory),
               'resolved_parameters': None, 'created_id': None, 'spec': None, 'snapshot': None, 'plan': None, 'impact': None,
               'audit': None, 'copy': None, 'exit_codes': {}, 'error': None}
     records.append(record)
@@ -555,7 +629,7 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
     try:
         kind = step['type']
         resolved = resolve_refs(step, created)
-        from vxace_staged_commands import staged_refs
+        from vxace_staged_commands import staged_refs, graphic_names
         resolved_record = dict(resolved)
         source_text = None
         csv_path = None
@@ -600,9 +674,12 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
                 script, args, name = ('vxace_map_events.py', [index, '--project', source, '--map', resolved['map_id'],
                                                               '--template-event', resolved['template_event']], 'map-event-snapshot')
             elif kind == 'append_staged_event':
+                sheets = sorted(graphic_names(resolved['pages']))
                 script, args, name = ('vxace_map_events.py', [index, '--project', source, '--map', resolved['map_id'],
                                                               '--template-event', resolved['template_event'], '--staged',
-                                                              *[arg for m in sorted(staged_refs(resolved['pages'])['maps']) for arg in ('--transfer-map', m)]], 'map-event-snapshot')
+                                                              *[arg for m in sorted(staged_refs(resolved['pages'])['maps']) for arg in ('--transfer-map', m)],
+                                                              *[arg for sheet in sheets for arg in ('--asset', sheet)],
+                                                              *(['--rtp', rtp] if sheets and rtp else [])], 'map-event-snapshot')
             elif kind == 'append_common_event':
                 script, args, name = ('vxace_common_event_append.py', [index, '--project', source,
                                                                        *[arg for m in sorted(staged_refs([{'condition': {}, 'commands': resolved['commands']}])['maps']) for arg in ('--transfer-map', m)]],
@@ -637,7 +714,8 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
         tool('impact', 'vxace_impact.py', [index, '--spec', spec, '--json', directory / 'impact.json', '--markdown', directory / 'impact.md'])
         record['impact'] = str(directory / 'impact.json')
         tool('patcher', 'vxace_copy_patcher.py', [index, '--project', source, '--spec', spec, '--copy', copy, '--audit', audit,
-                                                  '--backend', 'python', *(['--ruby', ruby] if ruby else [])])
+                                                  '--backend', 'python', *(['--ruby', ruby] if ruby else []),
+                                                  *(['--rtp', rtp] if rtp and kind == 'append_staged_event' and graphic_names(resolved['pages']) else [])])
         record['audit'] = str(audit / 'audit.json')
         record['copy'] = str(copy)
         if not copy.is_dir():
@@ -661,6 +739,76 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
         raise StepFailure(record['error'])
 
 
+def chest_message(contents, project):
+    """(gain command, literal message) for a chest. Names and the currency unit are read from the step's source project, never guessed."""
+    from vxace_staged_commands import check_text, load_array, load_native
+    if 'gold' in contents:
+        unit = 'G'
+        try:
+            value = load_native(project, 'System.rvdata2').get('currency_unit')
+            candidate = value.data.decode('utf-8') if hasattr(value, 'data') else None
+            if candidate:
+                check_text(candidate, 'currency unit', 20)
+                unit = candidate
+        except (ValueError, UnicodeDecodeError, AttributeError):
+            pass
+        return {'gold': contents['gold']}, f'Obtained {contents["gold"]} {unit}!'
+    kind = next(kind for kind in CHEST_KINDS if kind in contents)
+    table = CHEST_TABLES[kind]
+    try:
+        root = load_array(project, table)
+    except ValueError as error:
+        raise RecipeError(f'treasure chest cannot read the {table}: {error}')
+    number = contents[kind]
+    if not 1 <= number < len(root) or root[number] is None:
+        raise RecipeError(f'treasure chest {kind} id {number} does not exist in the {table}')
+    name = root[number].get('name')
+    try:
+        label = check_text(name.data.decode('utf-8'), f'{kind} name', 100)
+    except (ValueError, UnicodeDecodeError, AttributeError):
+        raise RecipeError(f'{kind} {number} has a name that cannot be shown as plain literal text (empty, control codes or a backslash)')
+    text = f'Obtained {label}!' if contents['amount'] == 1 else f'Obtained {label} x{contents["amount"]}!'
+    return {kind: number, 'amount': contents['amount']}, text
+
+
+def expand_chest(step, project):
+    """Expand a resolved add_treasure_chest step into its two concrete steps: (blank-event step or None, staged-event step).
+    The staged step's template_event is filled in by the caller when a blank event had to be appended first."""
+    command, message = chest_message(step['contents'], project)
+    graphic = dict(step.get('graphic') or CHEST_GRAPHIC)
+    pages = [{'condition': {}, 'graphic': graphic, 'options': dict(CHEST_OPTIONS),
+              'commands': [command, {'text': [message]}, {'set_self_switch': 'A', 'value': True}]},
+             {'condition': {'self_switch': 'A'}, 'graphic': {**graphic, 'direction': 8}, 'options': dict(CHEST_OPTIONS), 'commands': []}]
+    blank = None
+    if 'donor_event' in step:
+        blank = {'type': 'append_blank_event', 'map_id': step['map_id'], 'donor_event': step['donor_event'], 'x': step['blank_x'], 'y': step['blank_y']}
+    staged = {'type': 'append_staged_event', 'map_id': step['map_id'], 'template_event': step.get('template_event'), 'x': step['x'], 'y': step['y'],
+              'name': step['name'], 'pages': pages}
+    return blank, staged
+
+
+def failed_record(number, step_type, message, records):
+    record = {'step': number, 'type': step_type, 'status': 'failed', 'source': None, 'directory': None, 'resolved_parameters': None, 'created_id': None,
+              'spec': None, 'snapshot': None, 'plan': None, 'impact': None, 'audit': None, 'copy': None, 'exit_codes': {}, 'error': message}
+    records.append(record)
+    raise StepFailure(message)
+
+
+def execute_chest(number, step, title, source, work, ruby, created, recipe_dir, records, rtp):
+    """Run an add_treasure_chest step as its normal transactions: an optional append_blank_event, then one append_staged_event.
+    Returns the staged step's record (its created id is the chest event id and its copy the new current project)."""
+    try:
+        blank, staged = expand_chest(resolve_refs(step, created), source)
+    except (RecipeError, ValueError) as error:
+        failed_record(number, 'add_treasure_chest', str(error), records)
+    current = source
+    if blank is not None:
+        record = execute_step(number, blank, title, current, work, ruby, created, recipe_dir, records, 'a', rtp)
+        staged['template_event'] = record['created_id']
+        current = Path(record['copy'])
+    return execute_step(number, staged, title, current, work, ruby, created, recipe_dir, records, 'b' if blank is not None else 'a', rtp)
+
+
 def markdown_report(report):
     lines = ['# VX Ace recipe report', '', f'Recipe: {report.get("title") or "(untitled)"}', f'Status: **{report["status"]}**',
              f'Original unchanged: **{report["original_unchanged"]}**', 'Mutation performed on original: **False**',
@@ -669,7 +817,7 @@ def markdown_report(report):
         lines += [f'Error: {report["error"]}', '']
     lines += ['## Steps', '']
     for s in report['steps']:
-        lines.append(f'### Step {s["step"]}: {s["type"]} ({s["status"]})')
+        lines.append(f'### Step {s["step"]}{s.get("part", "")}: {s["type"]} ({s["status"]})' + (f' [{s["macro"]}]' if s.get('macro') else ''))
         lines.append(f'- Resolved parameters: `{json.dumps(s["resolved_parameters"], ensure_ascii=False)[:400]}`')
         lines.append(f'- Created id: {s["created_id"]}')
         lines.append(f'- Spec: {s["spec"]}')
@@ -687,12 +835,16 @@ def markdown_report(report):
     return '\n'.join(lines) + '\n'
 
 
-def run_recipe(recipe_path, project, work, ruby=None, smoke=None):
+def run_recipe(recipe_path, project, work, ruby=None, smoke=None, rtp=None):
     """Execute the recipe. Returns the report dict; its status is 'pass', 'step_failed', 'validation_refused', 'smoke_failed' or 'error'."""
     recipe_path = Path(recipe_path).resolve()
     recipe = load_recipe(recipe_path)
     steps = recipe['steps']
     project, work = unlinked(project), unlinked(work).resolve()
+    if rtp is not None:
+        rtp = unlinked(rtp).resolve()
+        if not rtp.is_dir() or rtp == work or work in rtp.parents or rtp in work.parents:
+            raise RecipeError('--rtp must be an existing directory outside the work directory')
     if project.is_file() and project.suffix.lower() == '.rvproj2':
         project = project.parent
     project = project.resolve()
@@ -724,7 +876,10 @@ def run_recipe(recipe_path, project, work, ruby=None, smoke=None):
             report['status'] = 'pass'
             for number, step in enumerate(steps, 1):
                 try:
-                    record = execute_step(number, step, recipe.get('title'), current, work, ruby, created, recipe_path.parent, records)
+                    if step['type'] == 'add_treasure_chest':
+                        record = execute_chest(number, step, recipe.get('title'), current, work, ruby, created, recipe_path.parent, records, rtp)
+                    else:
+                        record = execute_step(number, step, recipe.get('title'), current, work, ruby, created, recipe_path.parent, records, rtp=rtp)
                 except StepFailure as failure:
                     report['status'] = 'step_failed'
                     report['error'] = f'step {number} ({step["type"]}): {failure}'
@@ -795,6 +950,7 @@ def main(argv=None):
     item.add_argument('--project', required=True)
     item.add_argument('--work', required=True)
     item.add_argument('--ruby', default=shutil.which('ruby'))
+    item.add_argument('--rtp', help='explicit read-only RTP root, used only to bind page character graphics that are not in the project')
     item.add_argument('--smoke-suite')
     item.add_argument('--smoke-mode', choices=['test', 'normal'])
     item.add_argument('--smoke-frames', type=int, default=600)
@@ -812,7 +968,7 @@ def main(argv=None):
         if args.smoke_mode:
             smoke = {'suite': args.smoke_suite, 'mode': args.smoke_mode, 'frames': args.smoke_frames,
                      'auto_confirm': args.smoke_auto_confirm, 'launcher': args.smoke_launcher}
-        report = run_recipe(args.recipe, args.project, args.work, args.ruby, smoke)
+        report = run_recipe(args.recipe, args.project, args.work, args.ruby, smoke, args.rtp)
     except Exception as error:
         print('Recipe refused: ' + str(error), file=sys.stderr)
         return 2

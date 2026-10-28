@@ -14,12 +14,16 @@ VALUE_LIMIT = 99999999
 VARIABLE_OPS = {'set': 0, 'add': 1, 'sub': 2}
 CONDITION_OPS = {'==': 0, '>=': 1, '<=': 2, '>': 3, '<': 4, '!=': 5}
 KINDS = ('text', 'set_switch', 'set_variable', 'set_self_switch', 'choices', 'if', 'battle', 'party',
-         'common_event', 'gold', 'item', 'transfer', 'wait')
+         'common_event', 'gold', 'item', 'weapon', 'armor', 'transfer', 'wait')
 # kind -> (database file, native class, mutation hash field)
 REF_FILES = {'troops': ('Troops', 'RPG::Troop', 'expected_troops_sha256'),
              'actors': ('Actors', 'RPG::Actor', 'expected_actors_sha256'),
              'common_events': ('CommonEvents', 'RPG::CommonEvent', 'expected_common_events_sha256'),
-             'items': ('Items', 'RPG::Item', 'expected_items_sha256')}
+             'items': ('Items', 'RPG::Item', 'expected_items_sha256'),
+             'weapons': ('Weapons', 'RPG::Weapon', 'expected_weapons_sha256'),
+             'armors': ('Armors', 'RPG::Armor', 'expected_armors_sha256')}
+# goods commands: key -> (REF_FILES kind, native command code, label)
+GOODS = {'item': ('items', 126), 'weapon': ('weapons', 127), 'armor': ('armors', 128)}
 MAPINFOS_FIELD = 'expected_mapinfos_sha256'
 MAPS_FIELD = 'expected_destination_maps_sha256'
 
@@ -91,7 +95,7 @@ def op_shape(op, indent=0):
         raise ValueError('Staged command must be an object')
     kinds = [kind for kind in KINDS if kind in op]
     if len(kinds) != 1:
-        raise ValueError('Unsupported staged command; use text, set_switch, set_variable, set_self_switch, choices, if, battle, party, common_event, gold, item, transfer or wait with exact keys')
+        raise ValueError('Unsupported staged command; use text, set_switch, set_variable, set_self_switch, choices, if, battle, party, common_event, gold, item, weapon, armor, transfer or wait with exact keys')
     kind = kinds[0]
     if kind == 'text':
         exact_keys(op, {'text'});lines = op['text']
@@ -152,11 +156,11 @@ def op_shape(op, indent=0):
         exact_keys(op, {'gold'});amount = plain_int(op['gold'], 'gold amount', -VALUE_LIMIT, VALUE_LIMIT)
         if amount == 0:
             raise ValueError('gold amount must not be zero')
-    elif kind == 'item':
-        exact_keys(op, {'item', 'amount'});plain_int(op['item'], 'item id', 1, 2**31 - 1)
-        amount = plain_int(op['amount'], 'item amount', -99, 99)
+    elif kind in GOODS:
+        exact_keys(op, {kind, 'amount'});plain_int(op[kind], kind + ' id', 1, 2**31 - 1)
+        amount = plain_int(op['amount'], kind + ' amount', -99, 99)
         if amount == 0:
-            raise ValueError('item amount must not be zero')
+            raise ValueError(kind + ' amount must not be zero')
     elif kind == 'transfer':
         exact_keys(op, {'transfer'});move = op['transfer']
         if not isinstance(move, dict) or set(move) != {'map_id', 'x', 'y', 'direction', 'fade'}:
@@ -210,6 +214,8 @@ def staged_refs(pages):
         elif 'party' in op:add('actors', op.get('actor'))
         elif 'common_event' in op:add('common_events', op['common_event'])
         elif 'item' in op:add('items', op['item'])
+        elif 'weapon' in op:add('weapons', op['weapon'])
+        elif 'armor' in op:add('armors', op['armor'])
         elif isinstance(op.get('if'), dict) and 'has_item' in op['if']:add('items', op['if']['has_item'])
         elif isinstance(op.get('transfer'), dict):add('maps', op['transfer'].get('map_id'))
     return refs
@@ -221,6 +227,36 @@ def ref_fields(pages):
     if refs['maps']:
         fields |= {MAPINFOS_FIELD, MAPS_FIELD}
     return fields
+
+
+def graphic_names(pages):
+    """Distinct character sheet names used by the pages' optional graphics (tolerant of malformed input)."""
+    names = set()
+    for page in pages if isinstance(pages, list) else []:
+        graphic = page.get('graphic') if isinstance(page, dict) else None
+        if isinstance(graphic, dict) and isinstance(graphic.get('character_name'), str):
+            names.add(graphic['character_name'])
+    return names
+
+
+def chest_summary(pages):
+    """Treasure-chest pages: a page whose top-level commands give gold/items/weapons/armors and then turn self switch L ON,
+    followed by a later page conditioned on that self switch. Returns [{page, self_switch, gives, opened_page}]."""
+    chests = []
+    for number, page in enumerate(pages if isinstance(pages, list) else [], 1):
+        ops = page.get('commands') if isinstance(page, dict) else None
+        if not isinstance(ops, list):
+            continue
+        gives = [op for op in ops if isinstance(op, dict) and any(key in op for key in ('gold', 'item', 'weapon', 'armor'))
+                 and (op.get('gold', op.get('amount', 0)) or 0) > 0]
+        letters = [op['set_self_switch'] for op in ops if isinstance(op, dict) and op.get('set_self_switch') and op.get('value') is True]
+        if not gives or not letters:
+            continue
+        opened = [later for later, other in enumerate(pages, 1) if later > number and isinstance(other, dict)
+                  and isinstance(other.get('condition'), dict) and other['condition'].get('self_switch') == letters[0]]
+        if opened:
+            chests.append({'page': number, 'self_switch': letters[0], 'gives': gives, 'opened_page': opened[0]})
+    return chests
 
 
 def staged_ids(pages, switch_count, variable_count):
@@ -286,6 +322,9 @@ def plain_rows(commands, indent=0):
         elif 'common_event' in op:rows.append((117, indent, [op['common_event']]))
         elif 'gold' in op:rows.append((125, indent, [0 if op['gold'] > 0 else 1, 0, abs(op['gold'])]))
         elif 'item' in op:rows.append((126, indent, [op['item'], 0 if op['amount'] > 0 else 1, 0, abs(op['amount'])]))
+        # Weapons / armors: [id, gain 0 / lose 1, constant operand 0, amount, include_equipment]; the editor stores include_equipment false.
+        elif 'weapon' in op:rows.append((127, indent, [op['weapon'], 0 if op['amount'] > 0 else 1, 0, abs(op['amount']), False]))
+        elif 'armor' in op:rows.append((128, indent, [op['armor'], 0 if op['amount'] > 0 else 1, 0, abs(op['amount']), False]))
         elif 'transfer' in op:
             move = op['transfer'];rows.append((201, indent, [0, move['map_id'], move['x'], move['y'], move['direction'], move['fade']]))
         else:rows.append((230, indent, [op['wait']]))
@@ -433,7 +472,8 @@ def bind_fields(pages, snapshot):
 def index_check(read, pages):
     """Impact-time existence check of the referenced ids against the fresh index (`read(relative)` returns indexed JSON)."""
     refs = staged_refs(pages)
-    files = {'troops': 'database/troops.json', 'actors': 'database/actors.json', 'common_events': 'database/common-events.json', 'items': 'database/items.json'}
+    files = {'troops': 'database/troops.json', 'actors': 'database/actors.json', 'common_events': 'database/common-events.json', 'items': 'database/items.json',
+             'weapons': 'database/weapons.json', 'armors': 'database/armors.json'}
     for kind, relative in files.items():
         if not refs[kind]:
             continue

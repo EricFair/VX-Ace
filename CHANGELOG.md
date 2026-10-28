@@ -2,6 +2,10 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.22.0 — Treasure chests
+
+- The shared command language gains Change Weapons/Armors (127/128, bound by their own hashes), and staged pages can set a character graphic and page options. The new `add_treasure_chest` recipe macro builds a closed/opened two-page chest holding gold, an item, a weapon or an armor (also one appended earlier in the recipe). Verified in the real engine with the RTP `!Chest`: chests gave their contents once, switched to the opened frame, and stayed open. See [treasure chests](references/treasure-chests.md).
+
 ## 1.21.0 — Common events
 
 - `append_common_event` adds one call-only or switch-gated parallel common event using the staged-event command language (autorun and self switches refused; parallel needs a wait). Referenced databases are bound by their own hashes; recipes can call it from staged events and from item/skill effect 44. Verified in the real engine: an inn charged 50 gold or took its else branch, a parallel timer ticked only while its switch was ON, and an item's effect 44 ran a common event. See [common events](references/common-event-append.md).

@@ -549,7 +549,7 @@ def map_event_impact(index,change):
     staged_report=None
     if staged:
         from vxace_map_events import staged_ids
-        from vxace_staged_commands import iter_ops,index_check
+        from vxace_staged_commands import iter_ops,index_check,chest_summary
         system=data.json('database/system.json')
         if not isinstance(system,dict) or not isinstance(system.get('switches'),list) or not isinstance(system.get('variables'),list) or len(system['switches'])<2 or len(system['variables'])<2:
             raise ValueError('Indexed native System switches/variables required')
@@ -559,7 +559,8 @@ def map_event_impact(index,change):
         warnings=[];rows=[]
         for number,page in enumerate(pages,1):
             condition=page['condition']
-            rows.append({'page':number,'condition':condition,'commands':len(page['commands']),'trigger':'action'})
+            rows.append({'page':number,'condition':condition,'commands':len(page['commands']),'trigger':'action',
+                         **({'graphic':page['graphic']} if page.get('graphic') else {}),**({'options':page['options']} if page.get('options') else {})})
             if not condition and number<len(pages):
                 warnings.append(f'Page {number} has no conditions but is not the last page: the engine checks pages highest-number first, so it only runs when no later page condition holds.')
             for key in ('switch1','switch2'):
@@ -574,7 +575,26 @@ def map_event_impact(index,change):
                 if 'battle' in op:warnings.append(f'Page {number} starts a battle (troop {op["battle"]}): check escape/lose branches and that the player cannot soft-lock.')
                 if 'transfer' in op:warnings.append(f'Page {number} transfers the player to map {op["transfer"]["map_id"]}: check the destination cell is passable.')
                 if 'gold' in op and op['gold']<0:warnings.append(f'Page {number} removes gold; the engine clamps at zero without a branch, so guard it with a gold_at_least condition.')
-        staged_report={'page_count':len(pages),'pages':rows,'priority_note':'The engine runs the highest-numbered page whose conditions are all met; verify the page order against the quest state machine.',
+                for goods in ('weapon','armor'):
+                    if goods in op and op['amount']<0:
+                        warnings.append(f'Page {number} removes {goods} {op[goods]}; the engine clamps at zero, so the party may not own it (equipped copies are not removed).')
+        def goods_name(kind,number):
+            table={'item':'items','weapon':'weapons','armor':'armors'}[kind]
+            try:rows_=data.json('database/'+table+'.json')
+            except Exception:return None
+            row=rows_[number] if isinstance(rows_,list) and 0<=number<len(rows_) else None
+            return row.get('name') if isinstance(row,dict) and row.get('name') else None
+        chests=[]
+        for chest in chest_summary(pages):
+            gives=[]
+            for op in chest['gives']:
+                if 'gold' in op:gives.append(f'{op["gold"]} gold')
+                else:
+                    kind=next(key for key in ('item','weapon','armor') if key in op);label=goods_name(kind,op[kind])
+                    gives.append(f'{op["amount"]} x {kind} {op[kind]}'+(f' "{label}"' if label else ' (unnamed)'))
+            chests.append({**chest,'description':f'Treasure chest: page {chest["page"]} gives '+', '.join(gives)+f' and turns self switch {chest["self_switch"]} ON; page {chest["opened_page"]} (self switch {chest["self_switch"]}) is the opened chest.'})
+        graphics=[{'page':number,'graphic':page['graphic'],'options':page.get('options')} for number,page in enumerate(pages,1) if page.get('graphic') or page.get('options')]
+        staged_report={'page_count':len(pages),'pages':rows,'chests':chests,'graphic_changes':graphics,'priority_note':'The engine runs the highest-numbered page whose conditions are all met; verify the page order against the quest state machine.',
                        'warnings':warnings}
     data.unchanged()
     return {'kind':'map_event','severity':'high','target':{'map_id':mid,'new_id':identifier,'name':name,'x':x,'y':y,('donor_event_id' if blank else 'template_id'):template_id},
@@ -627,7 +647,7 @@ def common_event_impact(index,change):
         if kind=='map':
             infos=table('database/map-infos.json');row=infos.get(str(number)) if isinstance(infos,dict) else None
             return row.get('name') if isinstance(row,dict) and row.get('name') else None
-        source=table('database/'+{'troop':'troops','actor':'actors','item':'items','common event':'common-events'}[kind]+'.json')
+        source=table('database/'+{'troop':'troops','actor':'actors','item':'items','weapon':'weapons','armor':'armors','common event':'common-events'}[kind]+'.json')
         row=source[number] if isinstance(source,list) and 0<=number<len(source) else None
         return row.get('name') if isinstance(row,dict) and row.get('name') else None
     analysis=analyse(mutation,lookup);warnings=list(analysis['warnings'])

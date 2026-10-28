@@ -243,8 +243,9 @@ def describe(commands, lookup, depth=0):
             lines.append(pad + 'Call ' + named('common event', op['common_event']))
         elif 'gold' in op:
             lines.append(pad + (f'Give {op["gold"]} gold' if op['gold'] > 0 else f'Take {-op["gold"]} gold'))
-        elif 'item' in op:
-            lines.append(pad + (f'Give {op["amount"]} x ' if op['amount'] > 0 else f'Take {-op["amount"]} x ') + named('item', op['item']))
+        elif any(kind in op for kind in ('item', 'weapon', 'armor')):
+            kind = next(kind for kind in ('item', 'weapon', 'armor') if kind in op)
+            lines.append(pad + (f'Give {op["amount"]} x ' if op['amount'] > 0 else f'Take {-op["amount"]} x ') + named(kind, op[kind]))
         elif 'transfer' in op:
             move = op['transfer']
             facing = {0: 'keeping the facing', 2: 'facing down', 4: 'facing left', 6: 'facing right', 8: 'facing up'}[move['direction']]
@@ -292,6 +293,9 @@ def analyse(mutation, lookup):
             warnings.append(f'Transfers the player to map {op["transfer"]["map_id"]}: check the destination cell is passable.')
         if 'gold' in op and op['gold'] < 0:
             warnings.append('Removes gold; the engine clamps at zero without a branch, so guard it with a gold_at_least condition.')
+        for kind in ('weapon', 'armor'):
+            if kind in op and op['amount'] < 0:
+                warnings.append(f'Removes {kind} {op[kind]}; the engine clamps at zero, so the party may not own it. Equipped copies are not removed.')
     calls = []
     for op in ops:
         if 'common_event' in op and op['common_event'] not in [call['id'] for call in calls]:

@@ -166,6 +166,12 @@ def apply(root, spec, *, source_path=None):
             source_file=unlinked(source_path)
             if source_file.parent.name!='Data' or not re.fullmatch(r'Map\d{3,6}\.rvdata2',source_file.name):raise ValueError('Staged event native path is unsupported')
             project=source_file.parent.parent
+            from vxace_staged_commands import graphic_names
+            if graphic_names(mutation['pages']):
+                context=spec.get('context')
+                if not isinstance(context,dict) or set(context)!={'rtp'} or (context['rtp'] is not None and not isinstance(context['rtp'],str)):
+                    raise ValueError('Staged page graphics need the explicit asset context')
+                rtp=context['rtp']
         append_dialogue_event(root,mutation,project,rtp)
     elif kind == 'common_event':
         from vxace_index_query import unlinked

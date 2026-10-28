@@ -34,6 +34,9 @@ The engine runs, on action-button interaction, the **highest-numbered page whose
 
 - `condition` (required, may be `{}`): any subset of `switch1` (switch id), `switch2` (switch id), `variable` (`{"id": N, "at_least": int}`, value is greater than or equal to `at_least`, bounds -99999999..99999999) and `self_switch` (`"A"`..`"D"`). Item and actor conditions are not supported.
 - `trigger` (optional): only `"action"`. Autorun and parallel process are deliberately excluded (no termination proof).
+- `graphic` (optional, v1.22): `{"character_name": str, "character_index": 0..7, "direction": 2/4/6/8, "pattern": 0..2}`, validated exactly like the [character graphic of a dialogue event](character-event-graphics.md) (`!`/`$` prefix rules, the sheet must exist in the project's `Graphics/Characters` or in an explicit RTP root, PNG, whole frame grid). `{}` or no key keeps the template's blank graphic. Because the sheet is a file the event depends on, the mutation also carries `expected_assets` (`{"<character_name>": binding}`, one per distinct sheet, taken from the `--staged --asset NAME [--rtp ROOT]` snapshot), present exactly when a page has a graphic; the copy patcher takes `--rtp ROOT` and rechecks the bindings at the end, and a stale or missing sheet rolls the copy back.
+- `options` (optional, v1.22): a non-empty subset of `walk_anime`, `step_anime`, `direction_fix`, `through` (booleans) and `priority` (`"below"`/`"same"`/`"above"` = priority_type 0/1/2). Every other page field (move route, speed, frequency, trigger, remaining flags) comes from the blank template page. The page graphic block is the editor's `RPG::Event::Page::Graphic` (`tile_id, character_name, character_index, direction, pattern`); `tile_id` stays 0.
+- An opened-state page (a conditional page with `"commands": []`) is allowed; it contains only the list terminator. An unconditional page still needs at least one command.
 - `commands` (required): 1..40 operations, in order (each nested body also holds at most 40):
 
 | Operation | Native commands |
@@ -48,6 +51,8 @@ The engine runs, on action-button interaction, the **highest-numbered page whose
 | `{"party": "add"/"remove", "actor": id, "initialize": bool}` | `129 [actor, 0 add / 1 remove, 0/1 initialize]`; `remove` cannot initialize |
 | `{"common_event": id}` | `117 [id]` (a plain call) |
 | `{"gold": +/-int}` | `125 [0 increase / 1 decrease, 0, abs]`, nonzero, up to 99999999 |
+| `{"weapon": id, "amount": +/-int}` (v1.22) | `127 [id, 0 gain / 1 lose, 0, abs, false]`, nonzero, up to 99; the last parameter is include-equipment, always false (equipped copies are never taken) |
+| `{"armor": id, "amount": +/-int}` (v1.22) | `128 [id, 0 gain / 1 lose, 0, abs, false]`, same rules |
 | `{"item": id, "amount": +/-int}` | `126 [id, 0 gain / 1 lose, 0, abs]`, nonzero, up to 99 |
 | `{"transfer": {"map_id", "x", "y", "direction": 0/2/4/6/8, "fade": 0/1/2}}` | `201 [0, map_id, x, y, direction, fade]` (direct designation; 0 keeps the facing; fade 0 black, 1 white, 2 none) |
 | `{"wait": 1..999}` | `230 [frames]` |
@@ -74,9 +79,13 @@ Troops, Actors, CommonEvents, Items and transfer destination maps are only read,
 | `party` | `expected_actors_sha256` | actor id exists in `Data/Actors.rvdata2` |
 | `common_event` | `expected_common_events_sha256` | id exists in `Data/CommonEvents.rvdata2` |
 | `item`, `has_item` | `expected_items_sha256` | id exists in `Data/Items.rvdata2` |
+| `weapon` | `expected_weapons_sha256` | id exists in `Data/Weapons.rvdata2` |
+| `armor` | `expected_armors_sha256` | id exists in `Data/Armors.rvdata2` |
 | `transfer` | `expected_mapinfos_sha256`, `expected_destination_maps_sha256` (`{"<map_id>": sha}`) | map is in MapInfos, its `MapNNN.rvdata2` exists and `x`/`y` are inside its size |
 
-Each hash is the SHA-256 of the Marshal dump of the file's root (array or hash). The `--staged` snapshot reports them as `troops_sha256`, `actors_sha256`, `common_events_sha256`, `items_sha256`, `mapinfos_sha256` (null when the file is absent) plus counts, and `--transfer-map N` (repeatable) adds `destination_maps` with each map's `sha256`, `width` and `height`. The impact report additionally checks the ids against the fresh index and warns for battles, transfers and gold removal.
+Each hash is the SHA-256 of the Marshal dump of the file's root (array or hash). The `--staged` snapshot reports them as `troops_sha256`, `actors_sha256`, `common_events_sha256`, `items_sha256`, `weapons_sha256`, `armors_sha256`, `mapinfos_sha256` (null when the file is absent) plus counts, and `--transfer-map N` (repeatable) adds `destination_maps` with each map's `sha256`, `width` and `height`. The impact report additionally checks the ids against the fresh index and warns for battles, transfers, gold removal and weapon/armor removal (the engine clamps at zero; equipped copies stay). It also describes treasure chests (`staged.chests`: a page that gives gold/goods and turns a self switch ON, with the later page conditioned on it) and lists page graphics and options (`staged.graphic_changes`).
+
+Weapon and armor commands follow `Game_Interpreter#command_127` / `command_128`: `operate_value(params[1], params[2], params[3])` and `params[4]` as include-equipment. See [treasure chests](treasure-chests.md).
 
 ### System ids
 
@@ -130,11 +139,11 @@ The impact report lists every page's condition and command count (`staged.pages`
 {"type": "append_staged_event", "map_id": 1, "template_event": {"from_step": 1}, "x": 8, "y": 8, "name": "Quest Elder", "pages": [ ... ]}
 ```
 
-`template_event` is an integer or `{"from_step": k}` pointing at an `append_blank_event` step on the same map; `pages` is the list above. Inside `pages`, a `battle` troop id may be `{"from_step": k}` (an `append_entry` step on table `troops`) and an `item` / `has_item` id may be `{"from_step": k}` (an `append_key_item` step). The referenced database hashes come only from the step's snapshot (the runner passes `--transfer-map` for every transfer destination); a recipe cannot supply them. The step creates the next event id (cross-checked against the audit). See [recipes](recipes.md).
+`template_event` is an integer or `{"from_step": k}` pointing at an `append_blank_event` step on the same map; `pages` is the list above. Inside `pages`, a `battle` troop id may be `{"from_step": k}` (an `append_entry` step on table `troops`) and an `item` / `has_item` id may be `{"from_step": k}` (an `append_key_item` step, or an `append_entry` step on table `items`), a `weapon` id one pointing at an `append_entry` step on table `weapons` and an `armor` id one on table `armors`. The referenced database hashes come only from the step's snapshot (the runner passes `--transfer-map` for every transfer destination); a recipe cannot supply them. The step creates the next event id (cross-checked against the audit). See [recipes](recipes.md).
 
 ## Limits
 
-- No loops, labels, jumps, move routes, shops, scripts, autorun, parallel process, item/actor page conditions, graphics or faces. No cancel branch (`403`) for choices, no variable operands, and no variable (indirect) transfer destinations.
+- No loops, labels, jumps, move routes, shops, scripts, autorun, parallel process, item/actor page conditions or faces; page graphics are limited to character sheets (no tile graphics). No cancel branch (`403`) for choices, no variable operands, and no variable (indirect) transfer destinations.
 - `battle` uses a fixed troop (no random encounter); a battle without `can_lose` and a `lose` branch ends in Game Over on defeat, as in the editor.
 - The page text is plain literal text; variable and switch semantics are not simulated. Check runtime behavior in the game.
 - Self-switch state of the new event id may pre-exist in old saves; an appended static id can collide with runtime-created events.

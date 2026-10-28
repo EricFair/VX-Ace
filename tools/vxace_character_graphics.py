@@ -51,11 +51,22 @@ def binding(project,rtp,graphic):
     return selected
 
 
-def set_graphic(page,graphic,asset,project,rtp=None):
+def write_graphic(page,graphic):
+    """Write a validated graphic onto the page's detached blank native graphic (tile_id stays 0)."""
     from vxace_python_mutator import convert
-    actual=binding(project,rtp,graphic)
-    if asset!=actual:raise ValueError('Character asset binding is stale or inconsistent')
+    graphic_schema(graphic)
     native=page.get('graphic')
-    # The new record is already a detached, validated blank native template.
     native.set('character_name',convert(graphic['character_name']))
     for key in ('character_index','direction','pattern'):native.set(key,graphic[key])
+
+
+def set_graphic(page,graphic,asset,project,rtp=None):
+    actual=binding(project,rtp,graphic)
+    if asset!=actual:raise ValueError('Character asset binding is stale or inconsistent')
+    # The new record is already a detached, validated blank native template.
+    write_graphic(page,graphic)
+
+
+def staged_assets(project,rtp,names):
+    """Exact asset bindings for the character sheets of staged pages: {name: binding}. Index 0 is valid for every sheet layout."""
+    return {name:binding(project,rtp,{'character_name':name,'character_index':0,'direction':2,'pattern':0}) for name in sorted(names)}

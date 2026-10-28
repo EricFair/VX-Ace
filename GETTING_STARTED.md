@@ -42,7 +42,7 @@ A failed byte-identical check blocks all staging for that project until it is in
 
 Describe what you want; the agent picks native features first and stages the change on a **copy**, never on your project:
 
-- single additions — enemies, skills, states, weapons, armors, usable items, troops, class learnings, encounters, shops, dialogue NPCs, transfers, rewards ([database append](references/database-append.md), [map shops](references/map-shops.md), [encounters](references/map-encounters.md));
+- single additions — enemies, skills, states, weapons, armors, usable items, troops, class learnings, encounters, shops, dialogue NPCs, quest NPCs, common events, treasure chests, transfers, rewards ([database append](references/database-append.md), [map shops](references/map-shops.md), [encounters](references/map-encounters.md));
 - several at once — a [recipe](references/recipes.md), for example `tools/recipes/example_cave.json` (enemy → skill → troop → encounter) or `example_smith.json` (weapon → NPC → shop);
 - text — [export](references/text-export.md) to CSV, edit in Excel, [import](references/text-import.md).
 

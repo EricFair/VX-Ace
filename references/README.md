@@ -55,6 +55,7 @@ Use the smallest relevant reference first.
 - `map-shops.md` — Shop Processing on a blank or single-dialogue event.
 - `staged-events.md` — quest-stage events with conditional pages and switch/variable/self-switch commands.
 - `common-event-append.md` — call-only or parallel common events using the staged-event command language (v1.21).
+- `treasure-chests.md` — `add_treasure_chest` recipe macro: a two-page chest event (v1.22).
 - `blank-map-append.md` — blank map append.
 - `direct-map-transfer.md` — direct transfer to a blank map.
 - `map-display-names.md` — player-visible map name.
