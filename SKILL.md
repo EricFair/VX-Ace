@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.16.1
+Version: 1.17.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -25,7 +25,7 @@ Resolve every tool/reference path relative to this skill directory, not the user
 5. Treat third-party scripts as dependencies with license/order/method/save implications.
 6. Do not redistribute proprietary default scripts or user project data.
 7. Never plan/stage from a stale project index.
-8. Never write directly to the user's working VX Ace project. Mutation is copy-only.
+8. Never write directly to the user's working VX Ace project. Mutation is copy-only; the single exception is `vxace_adopt.py apply/undo`, run only after the user reviewed the staged copy and its adopt plan and explicitly confirmed it, with the editor closed.
 9. Never mutate a targeted `.rvdata2` unless its immediate no-op round trip is byte-identical.
 10. On a real project, run the project validator before first mutation-capable use with the current mutator version; a failed file means project-wide mutation readiness is refused.
 11. Never downgrade validator/round-trip failures to warnings merely to permit mutation.
@@ -93,6 +93,8 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Make a troop appear as a random encounter | [references/map-encounters.md](references/map-encounters.md) |
 | Add an enemy, skill, state, weapon, armor, troop or class skill learning | [references/database-append.md](references/database-append.md) |
 | Ship a build | [workflows/release-checklist.md](workflows/release-checklist.md) |
+| Bring a reviewed copy into the real project, or undo it | `tools/vxace_adopt.py` ([references/adopt.md](references/adopt.md)) |
+| Day-to-day working loop | [workflows/daily-game-dev.md](workflows/daily-game-dev.md) |
 | First playable slice | [workflows/playable-slice-verification.md](workflows/playable-slice-verification.md), [examples/oakfall](examples/oakfall/README.md) |
 | MCP read-only adapter | [references/mcp-read-only.md](references/mcp-read-only.md) |
 
@@ -106,6 +108,7 @@ Use source truth in this order: extraction status -> Codex routing -> exact `ana
 4. `vxace_patch_planner.py PROJECT_INDEX --project PROJECT --spec patch.json --output PLAN_DIR` — stale index refuses; anchors must be exact and unique.
 5. `vxace_copy_patcher.py PROJECT_INDEX --project PROJECT --spec patch.json --copy COPY --audit AUDIT` — new paths outside source, immediate per-target byte gate, unknown fields/unresolved commands/ambiguous anchors refuse, failed apply deletes the partial copy and keeps the audit.
 6. Re-index the copy, `vxace_semantic_diff.py BEFORE AFTER`, review, then test in actual VX Ace (new game, save, load, old save, restart). `vxace_smoke.py` automates boot/map/save-start/crash checks in a separate disposable copy; it supplements, never replaces, human playtesting.
+7. Adopt only on the user's request: `vxace_adopt.py plan` (read-only), show the exact file list, then `apply --confirm PLAN_ID` after the user confirms. It refuses drifted sources, undeclared differences, smoke-harness copies and a running editor/game, backs up replaced files and supports `undo`. Never adopt a smoke-test copy. See [references/adopt.md](references/adopt.md).
 
 The project validator does not replace the copy patcher's per-target gates.
 

@@ -1,45 +1,58 @@
-# Getting started with v1.4
+# Getting started
 
-This is a VX Ace specialist skill and local toolchain. It helps design mechanics, understand a project and stage supported edits on new copies. It requires a legally installed RPG Maker VX Ace for native editor/playtesting. It does not redistribute engine resources or promise automatic creation of every part of a game.
+This is an RPG Maker VX Ace specialist skill plus a local toolchain. It helps design mechanics, analyse a project, stage guarded additions on disposable copies, test them in the real engine and adopt reviewed results into your project. You need a legally installed RPG Maker VX Ace; the skill ships no engine scripts or assets.
 
-## Requirements and installation
+## Requirements
 
-Use Python 3.10+ and Ruby 3.2 on PATH. Ruby is for extraction and separate host diagnostics; the game still targets VX Ace's RGSS3/Ruby 1.9.2 runtime. The Python codec is vendored with provenance; the normal tools require no pip installation. The optional read-only MCP adapter is not required.
+- Windows with RPG Maker VX Ace (the smoke tests launch the project's real `Game.exe`).
+- Python 3.10+ and Ruby 3.2 on PATH. Ruby is only used for extraction and host diagnostics; the game itself still runs RGSS3/Ruby 1.9.2. No pip installs are needed.
 
-Clone the release into a new skill directory in PowerShell:
+## Install
 
-```powershell
-git clone --branch v1.16.1 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.codex/skills/rpg-maker-vx-ace-developer"
-Set-Location "$env:USERPROFILE/.codex/skills/rpg-maker-vx-ace-developer"
-python --version
-ruby --version
-python tools/vxace_master.py --help
-```
-
-For an existing installation, update it to the release only after preserving any local changes. Start a new Codex chat if needed to discover the installed skill. Ask Codex to use `$rpg-maker-vx-ace-developer` and give the actual project path. The repository root contains `SKILL.md`; keep its `tools`, `references`, workflows and configuration together.
-
-## First pass: read only
-
-Close the game's editor/playtest for a stable snapshot. Replace the paths below with the actual project and **new** report directories outside it. Never place reports in the source, synced references or RTP directory.
+**Claude Code** (skills are discovered from `~/.claude/skills`):
 
 ```powershell
-python tools/vxace_project_validator.py "C:/Games/MyGame" --backend python --output "C:/VXReports/MyGame-first-validation"
-python tools/vxace_master.py "C:/Games/MyGame" --output "C:/VXReports/MyGame-first-master"
+git clone --branch v1.17.0 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.claude/skills/rpg-maker-vx-ace-developer"
 ```
 
-If Ruby is not on PATH, both commands accept `--ruby "C:/Ruby32-x64/bin/ruby.exe"`; use the actual installed path. The master accepts `--rtp "C:/Actual/Unpacked/RTP"` for explicit read-only resource lookup. Without explicit RTP, unresolved resources remain uncertain.
-
-Tell Codex: **Do not modify my original project. Run read-only validation first, report every file's byte-identical result, readiness, syntax diagnostics and unsupported data. Do not patch anything on this first pass.** Host syntax results do not establish native compatibility. A failed byte gate blocks mutation for that snapshot/backend. Keep reports private because they may contain proprietary game/script content.
-
-## First supported change
-
-After read-only review, request one concrete feature. Codex must inspect a fresh index, produce an exact guarded specification and impact review, then use the copy workflow. For an already reviewed private spec:
+**Codex**:
 
 ```powershell
-python tools/vxace_patch_planner.py "C:/VXReports/MyGame-first-master/index" --project "C:/Games/MyGame" --spec "C:/VXReports/reviewed-patch.json" --output "C:/VXReports/MyGame-plan"
-python tools/vxace_copy_patcher.py "C:/VXReports/MyGame-first-master/index" --project "C:/Games/MyGame" --spec "C:/VXReports/reviewed-patch.json" --copy "C:/VXTests/MyGame-feature" --audit "C:/VXReports/MyGame-feature-audit" --backend python
+git clone --branch v1.17.0 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.codex/skills/rpg-maker-vx-ace-developer"
 ```
 
-All output paths must be new. The Python backend enables the documented guarded subset; it does not enable arbitrary structural edits. Keep the original closed and untouched. Open **the staged copy's** `Game.rvproj2` in VX Ace, inspect the change and test New Game, relevant older saves, repeat/failure paths, saving and a full process restart. Review the audit, re-index, semantic diff and post-validation. Failed staging removes the invalid copy and retains a failure audit; discarding a tested copy leaves the original intact.
+Start a new chat so the skill is discovered, then name your project folder, for example *"Use the VX Ace skill on C:/Games/MyGame"*. To update later: `git fetch --tags` and `git checkout` the newer tag inside that folder. Keep `SKILL.md`, `tools`, `references`, `workflows`, `patterns` and `templates` together.
 
-See [the master capability matrix](VXACE_MASTER.md) and [the playable fantasy quest example](examples/oakfall/README.md). New NPC dialogue, simple guarded rewards, existing command/page edits and small script extensions are useful starting tasks. v1.2 also supports [one guarded blank-map append](references/blank-map-append.md) from an inert native template. v1.4 supports [one direct transfer from a verified blank event](references/direct-map-transfer.md) to a different inert empty map. Broader map creation/resizing/deletion, ground/autotile painting and broad database/event construction remain later-version work.
+## First session: read only
+
+Save and close the editor first. Ask for a read-only first pass:
+
+> Do not modify my project. Validate it, index it and summarise its systems, scripts, balance and any problems. Do not stage anything yet.
+
+Behind the scenes this runs, with new report folders outside the project:
+
+```powershell
+python tools/vxace_project_validator.py "C:/Games/MyGame" --backend python --output "C:/VXReports/MyGame-validation"
+python tools/vxace_master.py "C:/Games/MyGame" --output "C:/VXReports/MyGame-master"
+```
+
+A failed byte-identical check blocks all staging for that project until it is investigated. Keep reports private: they can contain your scripts and data.
+
+## Making changes
+
+Describe what you want; the agent picks native features first and stages the change on a **copy**, never on your project:
+
+- single additions — enemies, skills, states, weapons, armors, troops, class learnings, encounters, shops, dialogue NPCs, transfers, rewards ([database append](references/database-append.md), [map shops](references/map-shops.md), [encounters](references/map-encounters.md));
+- several at once — a [recipe](references/recipes.md), for example `tools/recipes/example_cave.json` (enemy → skill → troop → encounter) or `example_smith.json` (weapon → NPC → shop);
+- text — [export](references/text-export.md) to CSV, edit in Excel, [import](references/text-import.md).
+
+Each staged copy is smoke-tested in the real engine ([smoke testing](references/smoke-testing.md)); you can also open it in the editor and play it. When you are satisfied, the agent prepares an [adopt plan](references/adopt.md); after you confirm, the reviewed files are copied into your project with a backup and an undo record.
+
+The full loop is described in [daily game development](workflows/daily-game-dev.md). Drawing maps and fine-tuning in the editor stay manual on purpose.
+
+## Where to look next
+
+- [SKILL.md](SKILL.md) — the agent's rules and task routing.
+- [VXACE_MASTER.md](VXACE_MASTER.md) — capability matrix and settings.
+- [Release checklist](workflows/release-checklist.md) — before shipping a build.
+- [Oakfall example](examples/oakfall/README.md) — a small playable original quest slice.

@@ -40,6 +40,7 @@ Use the smallest relevant reference first.
 
 - `patch-planning.md` — freshness-protected proposal plans.
 - `recipes.md` — chained single-change transactions on successive disposable copies.
+- `adopt.md` — confirmed, backed-up adoption of a reviewed copy into the working project, with undo.
 - `copy-mutation.md` — disposable-copy mutation foundation.
 - `event-structure.md` — guarded command/page insertion and deletion.
 - `map-region-editing.md` — region cells on an existing map.

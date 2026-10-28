@@ -2,6 +2,11 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.17.0 — Adopt and daily workflow
+
+- `vxace_adopt.py plan/apply/undo/status` brings a reviewed staged copy (single audit or recipe) into the working project: drift, undeclared-difference and smoke-harness refusals, editor/game-running refusal, per-file backup, atomic writes with rollback, verified undo. Verified on a stand-in project: recipe → plan → apply → real-engine smoke run → byte-identical undo. See [adopt](references/adopt.md).
+- New [daily game development](workflows/daily-game-dev.md) guide and a rewritten [getting started](GETTING_STARTED.md) with Claude Code and Codex installs; SKILL.md boundary 8 now names adopt as its only exception.
+
 ## 1.16.1 — Clean skill repository
 
 - Repository now contains only the skill: development tests, CI and historical validation records are kept out of the published tree. No tool or behaviour changes.
