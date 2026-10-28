@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.11.0
+Version: 1.12.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -88,6 +88,7 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Schema drift vs a baseline | [references/schema-comparison.md](references/schema-comparison.md) |
 | Impact before a patch, diff after | [workflows/impact-review.md](workflows/impact-review.md) |
 | Plan and stage a change | [workflows/project-aware-patching.md](workflows/project-aware-patching.md), [workflows/verified-copy-mutation.md](workflows/verified-copy-mutation.md) |
+| Make a troop appear as a random encounter | [references/map-encounters.md](references/map-encounters.md) |
 | Add an enemy, skill, state, weapon, armor or troop | [references/database-append.md](references/database-append.md) |
 | Ship a build | [workflows/release-checklist.md](workflows/release-checklist.md) |
 | First playable slice | [workflows/playable-slice-verification.md](workflows/playable-slice-verification.md), [examples/oakfall](examples/oakfall/README.md) |
@@ -113,6 +114,7 @@ Only these structural writes exist; everything else is proposal/manual-only. Eac
 - existing database fields, existing command parameters, uniquely anchored RGSS3 source replacement ([copy-mutation.md](references/copy-mutation.md));
 - guarded event command/page insertion/deletion ([event-structure.md](references/event-structure.md)) — no repeating triggers, new script/branch construction or final-page deletion;
 - existing-map region cells ([map-region-editing.md](references/map-region-editing.md));
+- one random-encounter entry on an existing map ([map-encounters.md](references/map-encounters.md));
 - append-only inert key items ([key-item-append.md](references/key-item-append.md));
 - one template-clone append of an enemy, skill, state, weapon, armor or troop (blank battle page, 1..8 existing enemies) with whitelisted overrides ([database-append.md](references/database-append.md));
 - one script slot before canonical Main ([script-slot-insertion.md](references/script-slot-insertion.md), [script-byte-fidelity.md](references/script-byte-fidelity.md));

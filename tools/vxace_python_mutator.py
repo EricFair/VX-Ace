@@ -187,6 +187,17 @@ def apply(root, spec, *, source_path=None):
         actual,_=load(source_file)
         if fingerprint(actual)!=fingerprint(root):raise ValueError('Actual native map disagrees with display-name candidate context')
         rename_display(root,mutation)
+    elif kind == 'map_encounter':
+        from vxace_index_query import unlinked
+        from vxace_map_encounters import apply as encounter_apply,troops_for
+        from vxace_map_names import fingerprint
+        if source_path is None:raise ValueError('Encounter appends require an actual canonical native map path')
+        source_file=unlinked(source_path)
+        if source_file.parent.name!='Data' or not re.fullmatch(r'Map[0-9]{3}\.rvdata2',source_file.name) or source_file.name=='Map000.rvdata2':
+            raise ValueError('Encounter appends require a canonical native map path')
+        actual,_=load(source_file)
+        if fingerprint(actual)!=fingerprint(root):raise ValueError('Actual native map disagrees with encounter candidate context')
+        encounter_apply(root,mutation,troops_for(source_file))
     elif kind == 'map_region':
         from vxace_map_regions import apply as region_apply
         region_apply(root, mutation)

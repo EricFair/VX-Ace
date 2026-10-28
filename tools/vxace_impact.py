@@ -530,6 +530,55 @@ def map_name_impact(index,change):
                           'Verify the native name window, older-save map reload, movement and full-process save/restart.']}
 
 
+def map_encounter_impact(index,change):
+    from vxace_map_encounters import FIELDS,ACTION,integer,region_set,sha
+    from vxace_index_query import Index
+    from vxace_search import search
+    loc=change.get('locator');mutation=change.get('mutation')
+    if not isinstance(loc,dict) or set(loc)!={'map_id'} or not isinstance(mutation,dict) or set(mutation)!=FIELDS or mutation.get('action')!=ACTION:
+        raise ValueError('Exact native encounter proposal required')
+    mid=integer(loc['map_id'],'map ID',1,999);data=Index(index);root=data.json(f'maps/map-{mid:03d}.json')
+    if not isinstance(root,dict) or root.get('__class__')!='RPG::Map':raise ValueError('Indexed native map required')
+    for field in ('expected_map_sha256','expected_troops_sha256'):sha(mutation[field],field)
+    entries=root.get('encounter_list')
+    if not isinstance(entries,list) or len(entries)>1000 or mutation['expected_encounter_count']!=len(entries):
+        raise ValueError('Indexed encounter list disagrees with the expected count')
+    rows=[]
+    for number,entry in enumerate(entries):
+        if not isinstance(entry,dict) or entry.get('__class__')!='RPG::Map::Encounter' or set(entry)!={'__class__','troop_id','weight','region_set'}:
+            raise ValueError('Opaque native encounter entry')
+        rows.append({'index':number,'troop_id':entry['troop_id'],'weight':entry['weight'],'region_set':entry['region_set']})
+    troop_id=integer(mutation['troop_id'],'troop ID',1,999);regions=region_set(mutation['region_ids'],'region_ids')
+    troops=data.json('database/troops.json');enemies=data.json('database/enemies.json')
+    troop=next((t for t in troops if isinstance(t,dict) and t.get('id')==troop_id),None) if isinstance(troops,list) else None
+    if troop is None:raise ValueError('Indexed troop not found: '+str(troop_id))
+    names={e.get('id'):e.get('name') for e in enemies if isinstance(e,dict)} if isinstance(enemies,list) else {}
+    members=[{'enemy_id':m.get('enemy_id'),'name':names.get(m.get('enemy_id')),'hidden':m.get('hidden')} for m in troop.get('members') or [] if isinstance(m,dict)]
+    table=root.get('data') if isinstance(root.get('data'),dict) else {}
+    values=table.get('data') if isinstance(table.get('data'),list) else []
+    layer=(root.get('width') or 0)*(root.get('height') or 0)
+    painted={}
+    for value in values[3*layer:]:
+        if type(value) is int and value>>8:painted[value>>8]=painted.get(value>>8,0)+1
+    region_rows=[{'region':r,'painted_cells':painted.get(r,0)} for r in regions]
+    mentions=[]
+    for query in ('encounter_list','make_encounter_list','encounter_step','BattleManager','Game_Player'):
+        found=search(data,query=query,scopes=('scripts','events'),limit=10)
+        mentions.append({'literal':query,'matches':found['matches'],'evidence':found['hits'],'truncated':found['truncated']})
+    data.unchanged()
+    return {'kind':'map_encounter','severity':'high','target':{'map_id':mid,'troop_id':troop_id,'weight':mutation['weight'],'region_set':regions,'encounter_step':mutation['encounter_step']},
+            'existing_encounters':rows,'troop':{'id':troop_id,'name':troop.get('name'),'members':members,'page_count':len(troop.get('pages') or [])},
+            'region_usage':{'scope':'selected regions only' if regions else 'whole map','regions':region_rows,
+                            'unpainted_regions':[r['region'] for r in region_rows if not r['painted_cells']]},
+            'consumer_mentions':mentions,
+            'limitations':['Native map/troops fingerprints and exact-prefix preservation are enforced separately by the Python copy chain.',
+                           'A random battle also needs the player to walk on the map with encounters enabled; events or scripts may disable them (Game_System#encounter_disabled / custom hooks).',
+                           'A region-restricted encounter never fires on a map without cells painted with those region IDs; region_set 0/empty means the whole map.',
+                           'The troop is unchanged, including its battle events and member escape/hidden behavior; review its pages and enemies.',
+                           'Literal script mentions cannot resolve dynamic or custom encounter logic.',
+                           'Native old-save map reload (System.version_id advance) and restart-based persistence testing remain required.']}
+
+
 def map_label_impact(index,change):
     from vxace_map_labels import FIELDS,integer,name
     from vxace_index_query import Index
@@ -582,6 +631,7 @@ def build(index: Path, spec_path: Path):
         elif kind=='map_entry': impacts.append(map_entry_impact(index,change))
         elif kind=='map_name': impacts.append(map_name_impact(index,change))
         elif kind=='map_label': impacts.append(map_label_impact(index,change))
+        elif kind=='map_encounter': impacts.append(map_encounter_impact(index,change))
         else: raise ValueError(f"unsupported change kind: {kind}")
     high=sum(1 for x in impacts if x.get("severity")=="high")
     return {"impact_version":VERSION,"title":str(spec.get("title") or "VX Ace impact analysis"),"impact_count":len(impacts),

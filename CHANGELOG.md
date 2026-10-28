@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.12.0 — Map encounter append
+
+- Add the `map_encounter` / `append_encounter` operation and the read-only `vxace_map_encounters.py` snapshot: append one `RPG::Map::Encounter` (existing static troop bound by `expected_troops_sha256`, weight 1..100, 0..32 sorted unique region ids, optional `encounter_step` 1..999) to an existing map. Existing entries must have the exact native schema; duplicates refuse; every other map byte is verified unchanged. One per transaction, not combinable with other changes to that map or Troops; Python backend and postgates only; advances `System.version_id` once.
+- Impact lists the troop and its enemies, existing encounters and painted region counts, and notes that events/scripts can disable encounters.
+- Native evidence: on an editor-created project copy the engine picked the appended troop, walking started a random battle against it, and a pre-change save reloaded the map with the new encounter.
+- Add `tests/structure/test_map_encounters.py` (16 tests).
+
 ## 1.11.0 — Troop append
 
 - Extend `append_database_entry` to `troops`: the template troop must have exactly one blank battle page (no valid condition, terminator-only list), which is deep-cloned; template members and battle events are never copied. Overrides are `name` and 1..8 `members` (`enemy_id` of an existing static enemy, `x` 0..544, `y` 0..416, `hidden`). The Enemies array is read-only and bound by `expected_enemies_sha256` in the snapshot, the copy-patcher pre-check, the mutation and candidate verification.
