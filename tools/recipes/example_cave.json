@@ -1,0 +1,5 @@
+{"title": "Cave bats", "steps": [
+ {"type": "append_entry", "table": "enemies", "template_id": 1, "overrides": {"name": "Cave Bat", "params": [180,0,14,8,10,10,22,10], "exp": 12, "gold": 8}},
+ {"type": "append_entry", "table": "skills", "template_id": 1, "overrides": {"name": "Fang Strike", "mp_cost": 4, "damage_formula": "a.atk * 3 - b.def"}},
+ {"type": "append_entry", "table": "troops", "template_id": 1, "overrides": {"name": "Cave Bat Pair", "members": [{"enemy_id": {"from_step": 1}, "x": 200, "y": 300, "hidden": false}, {"enemy_id": {"from_step": 1}, "x": 340, "y": 300, "hidden": false}]}},
+ {"type": "append_encounter", "map_id": 1, "troop_id": {"from_step": 3}, "weight": 10, "region_ids": [], "encounter_step": 5}]}

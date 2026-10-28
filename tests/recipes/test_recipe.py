@@ -1,0 +1,279 @@
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import unittest
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'tools'))
+sys.path.insert(0, str(ROOT / 'tests/structure'))
+sys.path.insert(0, str(ROOT / 'tests/smoke'))
+import vxace_recipe as recipe
+import vxace_python_mutator as backend
+from vxace_copy_patcher import current_inventory
+
+EXAMPLE = ROOT / 'tools/recipes/example_cave.json'
+
+
+def example():
+    return json.loads(EXAMPLE.read_text(encoding='utf-8'))
+
+
+class ValidationTests(unittest.TestCase):
+    def bad(self, mutate, text):
+        data = example()
+        mutate(data)
+        with self.assertRaises(recipe.RecipeError) as ctx:
+            recipe.validate_recipe(data)
+        self.assertIn(text, str(ctx.exception))
+
+    def test_example_is_valid(self):
+        self.assertEqual(len(recipe.validate_recipe(example())), 4)
+        self.assertEqual(recipe.load_recipe(EXAMPLE)['title'], 'Cave bats')
+
+    def test_unknown_type_and_keys(self):
+        self.bad(lambda d: d['steps'][0].update(type='delete_entry'), 'unknown or missing type')
+        self.bad(lambda d: d['steps'][0].update(extra=1), 'unknown keys')
+        self.bad(lambda d: d.update(extra=1), 'only "title" and "steps"')
+        self.bad(lambda d: d['steps'][0].pop('overrides'), 'missing keys')
+        self.bad(lambda d: d.update(steps=[]), 'steps must be')
+
+    def test_bad_table_and_types(self):
+        self.bad(lambda d: d['steps'][0].update(table='items'), 'table must be')
+        self.bad(lambda d: d['steps'][0].update(template_id=True), 'template_id')
+        self.bad(lambda d: d['steps'][3].update(weight='10'), 'weight')
+        self.bad(lambda d: d['steps'][3].update(region_ids=[1.5]), 'region_ids')
+
+    def test_from_step_must_be_backward_and_typed(self):
+        self.bad(lambda d: d['steps'][2]['overrides']['members'][0].update(enemy_id={'from_step': 3}), 'earlier step')
+        self.bad(lambda d: d['steps'][2]['overrides']['members'][0].update(enemy_id={'from_step': 9}), 'earlier step')
+        self.bad(lambda d: d['steps'][2]['overrides']['members'][0].update(enemy_id={'from_step': 2}), 'table enemies')
+        self.bad(lambda d: d['steps'][3].update(troop_id={'from_step': 1}), 'table troops')
+        self.bad(lambda d: d['steps'][3].update(troop_id={'from_step': 3, 'x': 1}), 'exactly')
+        self.bad(lambda d: d['steps'][0]['overrides'].update(exp={'from_step': 1}), 'only allowed')
+        self.bad(lambda d: d['steps'][3].update(weight={'from_step': 1}), 'weight')
+
+    def test_resolve_from_step(self):
+        value = {'a': [{'enemy_id': {'from_step': 1}}, {'from_step': 3}], 'b': 2}
+        self.assertEqual(recipe.resolve_refs(value, {1: 31, 3: 7}), {'a': [{'enemy_id': 31}, 7], 'b': 2})
+        with self.assertRaises(recipe.RecipeError):
+            recipe.resolve_refs({'from_step': 2}, {1: 31})
+        self.assertEqual(value['a'][0]['enemy_id'], {'from_step': 1})
+
+    def test_created_id_from_snapshot_only(self):
+        self.assertEqual(recipe.created_id({'type': 'append_entry'}, {'next_id': 31}), 31)
+        self.assertEqual(recipe.created_id({'type': 'append_key_item'}, {'next_item_id': 17}), 17)
+        self.assertIsNone(recipe.created_id({'type': 'append_encounter'}, {}))
+
+
+class SpecBuildingTests(unittest.TestCase):
+    ENTRY = {'array_sha256': 'a' * 64, 'template_sha256': 'b' * 64, 'enemies_sha256': 'c' * 64, 'next_id': 31, 'append_slot_supported': True}
+
+    def test_entry_spec_takes_hashes_and_id_from_snapshot(self):
+        step = {'type': 'append_entry', 'table': 'enemies', 'template_id': 1, 'overrides': {'name': 'Bat'}}
+        spec = recipe.build_spec('T', 1, step, self.ENTRY)
+        mutation = spec['changes'][0]['mutation']
+        self.assertEqual((mutation['new_id'], mutation['expected_array_sha256'], mutation['expected_template_sha256']), (31, 'a' * 64, 'b' * 64))
+        self.assertNotIn('expected_enemies_sha256', mutation)
+        self.assertEqual(spec['changes'][0]['locator'], {'table': 'enemies'})
+        step.update(table='troops')
+        self.assertEqual(recipe.build_spec('T', 1, step, self.ENTRY)['changes'][0]['mutation']['expected_enemies_sha256'], 'c' * 64)
+
+    def test_recipe_cannot_inject_hashes(self):
+        data = example()
+        data['steps'][0]['expected_array_sha256'] = '0' * 64
+        with self.assertRaises(recipe.RecipeError):
+            recipe.validate_recipe(data)
+
+    def test_full_array_refuses(self):
+        step = {'type': 'append_entry', 'table': 'enemies', 'template_id': 1, 'overrides': {'name': 'Bat'}}
+        with self.assertRaises(recipe.RecipeError):
+            recipe.build_spec('T', 1, step, {**self.ENTRY, 'append_slot_supported': False})
+
+    def test_key_item_encounter_name_and_script_specs(self):
+        item = recipe.build_spec('T', 1, {'type': 'append_key_item', 'template_item': 2, 'name': 'Key', 'description': 'd'},
+                                 {'array_sha256': 'a' * 64, 'template_sha256': 'b' * 64, 'next_item_id': 17, 'append_slot_supported': True})
+        self.assertEqual((item['changes'][0]['mutation']['new_id'], item['changes'][0]['mutation']['template_id']), (17, 2))
+        enc = recipe.build_spec('T', 2, {'type': 'append_encounter', 'map_id': 1, 'troop_id': 3, 'weight': 10},
+                                {'map_sha256': 'm' * 64, 'encounter_count': 4, 'troops_sha256': 't' * 64})
+        mutation = enc['changes'][0]['mutation']
+        self.assertEqual((mutation['expected_encounter_count'], mutation['expected_map_sha256'], mutation['region_ids'], mutation['encounter_step']),
+                         (4, 'm' * 64, [], None))
+        name = recipe.build_spec('T', 3, {'type': 'set_map_display_name', 'map_id': 1, 'name': 'Cave'},
+                                 {'map_id': 1, 'map_sha256': 'm' * 64, 'display_name': 'Old'})
+        self.assertEqual(name['changes'][0]['mutation']['expected_display_name'], 'Old')
+        script = recipe.build_spec('T', 4, {'type': 'insert_script', 'name': 'Ext', 'source_file': 'x.rb'},
+                                   {'before_index': 5, 'unused_id_candidate': 99, 'archive_sha256': 'a' * 64, 'anchor_sha256': 'b' * 64}, 'puts 1')
+        self.assertEqual((script['changes'][0]['locator'], script['changes'][0]['mutation']['new_id']), ({'before_index': 5}, 99))
+
+
+@unittest.skipUnless(shutil.which('ruby'), 'Ruby required for the authored native fixture project')
+class EndToEndTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        import test_database_append as table_tests
+        import test_troop_append as troop_tests
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name)
+        self.game = self.base / 'game'
+        subprocess.run(['ruby', str(ROOT / 'tests/structure/make_map_template.rb'), str(self.game)], check=True, capture_output=True)
+        fixture = (ROOT / 'tests/project_reader/make_fixture.rb').read_text()
+        prelude = 'module RPG' + fixture.split('module RPG', 1)[1].split('actor =', 1)[0]
+        for name, source in (('tables.rb', table_tests.AppendCopyTests.RUBY), ('troops.rb', troop_tests.TroopCopyTests.RUBY)):
+            script = self.base / name
+            script.write_text(prelude + '\n' + source, encoding='utf-8')
+            subprocess.run(['ruby', str(script), str(self.game)], check=True, capture_output=True)
+        # A canonical Main entry so script-slot steps and the smoke harness have their anchor.
+        main = self.base / 'main.rb'
+        main.write_text("require 'zlib'\np=ARGV[0]+'/Data/Scripts.rvdata2'\ns=Marshal.load(File.binread(p))\n"
+                        "s << [104,'Main',Zlib::Deflate.deflate(\"rgss_main { SceneManager.run }\\r\\n\").force_encoding('UTF-8')]\n"
+                        "File.binwrite(p,Marshal.dump(s))\n", encoding='utf-8')
+        subprocess.run(['ruby', str(main), str(self.game)], check=True, capture_output=True)
+        self.work = self.base / 'recipe-work'
+
+    def cli(self, recipe_path, *extra, work=None):
+        return subprocess.run([sys.executable, str(ROOT / 'tools/vxace_recipe.py'), 'run', str(recipe_path), '--project', str(self.game),
+                               '--work', str(work or self.work), *extra], capture_output=True, text=True)
+
+    def report(self, work=None):
+        return json.loads(((work or self.work) / 'recipe-report.json').read_text(encoding='utf-8'))
+
+    def test_four_step_example_chains_copies(self):
+        before = current_inventory(self.game)
+        result = self.cli(EXAMPLE)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertEqual(current_inventory(self.game), before)
+        report = self.report()
+        self.assertEqual(report['status'], 'pass')
+        self.assertTrue(report['original_unchanged'])
+        self.assertFalse(report['mutation_performed_on_original'])
+        self.assertEqual([s['status'] for s in report['steps']], ['ok'] * 4)
+        self.assertEqual([s['created_id'] for s in report['steps']], [3, 3, 3, None])
+        members = report['steps'][2]['resolved_parameters']['overrides']['members']
+        self.assertEqual([m['enemy_id'] for m in members], [3, 3])
+        self.assertEqual(report['steps'][3]['resolved_parameters']['troop_id'], 3)
+        final = Path(report['final_copy'])
+        self.assertEqual(final, self.work.resolve() / 'step-04/copy')
+        self.assertFalse((self.work / 'final').exists())
+        # step k builds on step k-1's copy
+        self.assertEqual([s['source'] for s in report['steps']],
+                         [str(self.game.resolve())] + [str(self.work.resolve() / f'step-0{k}/copy') for k in (1, 2, 3)])
+        foes, _ = backend.load(final / 'Data/Enemies.rvdata2')
+        skills, _ = backend.load(final / 'Data/Skills.rvdata2')
+        troops, _ = backend.load(final / 'Data/Troops.rvdata2')
+        self.assertEqual(foes[-1].get('name').data, b'Cave Bat')
+        self.assertEqual(skills[-1].get('name').data, b'Fang Strike')
+        self.assertEqual(troops[-1].get('name').data, b'Cave Bat Pair')
+        self.assertEqual([m.get('enemy_id') for m in troops[-1].get('members')], [len(foes) - 1] * 2)
+        game_map, _ = backend.load(final / 'Data/Map001.rvdata2')
+        encounters = game_map.get('encounter_list')
+        self.assertEqual((encounters[-1].get('troop_id'), encounters[-1].get('weight'), game_map.get('encounter_step')),
+                         (len(troops) - 1, 10, 5))
+        for step in report['steps']:
+            for key in ('spec', 'plan', 'impact', 'audit', 'copy'):
+                self.assertTrue(Path(step[key]).exists(), (step['step'], key))
+            self.assertEqual(set(step['exit_codes'].values()), {0})
+        self.assertTrue((self.work / 'recipe-report.md').is_file())
+
+    def test_failing_step_stops_chain_and_keeps_earlier_outputs(self):
+        data = example()
+        data['steps'][1]['overrides']['note'] = '<x>'
+        bad = self.base / 'bad.json'
+        bad.write_text(json.dumps(data), encoding='utf-8')
+        before = current_inventory(self.game)
+        result = self.cli(bad)
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(current_inventory(self.game), before)
+        report = self.report()
+        self.assertEqual(report['status'], 'step_failed')
+        self.assertEqual([s['status'] for s in report['steps']], ['ok', 'failed'])
+        self.assertEqual(report['final_copy'], str(self.work.resolve() / 'step-01/copy'))
+        self.assertTrue((self.work / 'step-01/copy/Data/Enemies.rvdata2').is_file())
+        self.assertFalse((self.work / 'step-03').exists())
+        self.assertFalse((self.work / 'step-02/copy').exists())
+        self.assertIn('step 2', report['error'])
+
+    def test_invalid_recipe_and_existing_work_refuse_before_writing(self):
+        data = example()
+        data['steps'][3]['troop_id'] = {'from_step': 4}
+        bad = self.base / 'bad.json'
+        bad.write_text(json.dumps(data), encoding='utf-8')
+        self.assertEqual(self.cli(bad).returncode, 2)
+        self.assertFalse(self.work.exists())
+        self.work.mkdir()
+        self.assertEqual(self.cli(EXAMPLE).returncode, 2)
+        self.assertEqual(self.cli(EXAMPLE, work=self.game / 'inside').returncode, 2)
+        self.assertFalse((self.game / 'inside').exists())
+
+    def test_display_name_and_encounter_steps(self):
+        data = {'title': 'Misc', 'steps': [
+            {'type': 'set_map_display_name', 'map_id': 1, 'name': 'Bat Cave'},
+            {'type': 'append_encounter', 'map_id': 1, 'troop_id': 2, 'weight': 20},
+            {'type': 'insert_script', 'name': 'Recipe Ext', 'source_file': 'ext.rb'}]}
+        (self.base / 'ext.rb').write_bytes(b'# recipe extension\n')
+        path = self.base / 'misc.json'
+        path.write_text(json.dumps(data), encoding='utf-8')
+        result = self.cli(path)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        report = self.report()
+        game_map, _ = backend.load(Path(report['final_copy']) / 'Data/Map001.rvdata2')
+        self.assertEqual(game_map.get('display_name').data, b'Bat Cave')
+        self.assertEqual(game_map.get('encounter_list')[-1].get('troop_id'), 2)
+        scripts, _ = backend.load(Path(report['final_copy']) / 'Data/Scripts.rvdata2')
+        self.assertEqual([e[1].data for e in scripts][-2:], [b'Recipe Ext', b'Main'])
+        self.assertEqual(report['steps'][2]['resolved_parameters']['source_bytes'], len(b'# recipe extension\n'))
+
+    def test_text_import_step_applies_main_spec(self):
+        import csv
+        index = self.base / 'export-index'
+        subprocess.run([sys.executable, str(ROOT / 'tools/vxace_project_reader.py'), str(self.game), '--output', str(index)],
+                       check=True, capture_output=True)
+        exported = self.base / 'text.csv'
+        subprocess.run([sys.executable, str(ROOT / 'tools/vxace_text_export.py'), str(index), '--project', str(self.game), '--csv', str(exported)],
+                       check=True, capture_output=True)
+        with exported.open(encoding='utf-8-sig', newline='') as stream:
+            rows = list(csv.DictReader(stream))
+        fields = list(rows[0])
+        row = next(r for r in rows if r['key'] == 'db:actors/1/name')
+        row['translation'] = 'Alicia the Bold'
+        edited = self.base / 'edited.csv'
+        with edited.open('w', encoding='utf-8', newline='') as stream:
+            writer = csv.DictWriter(stream, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(rows)
+        path = self.base / 'import.json'
+        path.write_text(json.dumps({'steps': [{'type': 'text_import', 'csv': 'edited.csv', 'allow_shorter': True}]}), encoding='utf-8')
+        result = self.cli(path)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        report = self.report()
+        self.assertEqual(report['steps'][0]['status'], 'ok')
+        self.assertIsNone(report['steps'][0]['created_id'])
+        self.assertTrue(Path(report['steps'][0]['spec']).is_file())
+        actors, _ = backend.load(Path(report['final_copy']) / 'Data/Actors.rvdata2')
+        self.assertEqual(actors[1].get('name').data, b'Alicia the Bold')
+
+    def test_smoke_option_with_fake_launcher(self):
+        import test_smoke as smoke_tests
+        launcher = self.base / 'fake_game.py'
+        launcher.write_text(smoke_tests.FAKE_GAME, encoding='utf-8')
+        data = {'title': 'One', 'steps': [example()['steps'][0]]}
+        path = self.base / 'one.json'
+        path.write_text(json.dumps(data), encoding='utf-8')
+        result = self.cli(path, '--smoke-mode', 'test', '--smoke-frames', '30', '--smoke-auto-confirm', '2',
+                          '--smoke-launcher', json.dumps([sys.executable, str(launcher)]))
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        report = self.report()
+        self.assertEqual(report['smoke']['status'], 'pass')
+        self.assertTrue((self.work / 'smoke-result.json').is_file())
+        self.assertEqual(report['smoke']['result']['frames'], 30)
+        self.assertTrue((self.work / 'smoke/copy/Data/Enemies.rvdata2').is_file())
+
+    def test_smoke_suite_requires_mode(self):
+        self.assertEqual(self.cli(EXAMPLE, '--smoke-suite', str(EXAMPLE)).returncode, 2)
+        self.assertFalse(self.work.exists())
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -118,6 +118,15 @@ python tools/vxace_text_export.py PROJECT_INDEX --project PROJECT --json NEW.jso
 
 Balance evaluates damage formulas without executing Ruby and reports stat/EXP curves, matchups, troop rewards and shop prices ([balance](../references/balance-analysis.md)). The notetag registry cross-references note/comment tags with script regexes ([notetags](../references/notetag-registry.md)). Text export writes dialogue and database text for proofreading or translation and lints messages ([text export](../references/text-export.md)). All three are heuristic, write only new files outside the project and index, and never authorize mutation.
 
+## Recipes — v1.13
+
+```powershell
+python tools/vxace_recipe.py validate tools/recipes/example_cave.json
+python tools/vxace_recipe.py run tools/recipes/example_cave.json --project PROJECT --work NEW_WORK_DIR --smoke-mode test
+```
+
+Runs each step as its own reader/snapshot/planner/impact/copy-patcher transaction, chaining copies and resolving `{"from_step": N}` ids. Hashes always come from fresh snapshots. See [recipes](../references/recipes.md).
+
 ## Text import — v1.10
 
 ```powershell
