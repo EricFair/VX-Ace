@@ -14,13 +14,14 @@ import subprocess
 import sys
 from pathlib import Path
 from vxace_copy_patcher import current_inventory
+from vxace_database_append import LIST_TABLES, ref_field, required_refs
 from vxace_index_query import unlinked
 
-VERSION = '1.19.0'
+VERSION = '1.20.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
-TABLES = ('enemies', 'skills', 'states', 'weapons', 'armors', 'troops')
+TABLES = ('enemies', 'items', 'skills', 'states', 'weapons', 'armors', 'troops')
 STEP_KEYS = {
     'append_entry': ({'type', 'table', 'template_id', 'overrides'}, {'type', 'table', 'template_id', 'overrides'}),
     'append_key_item': ({'type', 'template_item', 'name', 'description'}, {'type', 'template_item', 'name', 'description'}),
@@ -67,6 +68,9 @@ def check_ref(value, number, steps, want_table, where):
 
 
 GOODS_TABLE = {'weapon': ('append_entry', 'weapons'), 'armor': ('append_entry', 'armors'), 'item': ('append_key_item', None)}
+# Database ids inside an effects / features override may be {"from_step": k}: code -> table the referenced step must have appended to.
+EFFECT_REF_TABLE = {21: 'states', 22: 'states', 43: 'skills'}
+FEATURE_REF_TABLE = {13: 'states', 14: 'states', 32: 'states', 43: 'skills'}
 
 
 def check_goods_ref(value, number, steps, goods_type):
@@ -78,9 +82,12 @@ def check_goods_ref(value, number, steps, goods_type):
         raise RecipeError(f'step {number}: goods id from_step {k} must refer to an earlier step')
     kind, table = GOODS_TABLE[goods_type]
     earlier = steps[k - 1]
+    if goods_type == 'item' and earlier.get('type') == 'append_entry' and earlier.get('table') == 'items':
+        return
     if earlier.get('type') != kind or (table is not None and earlier.get('table') != table):
         raise RecipeError(f'step {number}: goods id from_step {k} must be an {kind} step'
-                          + (f' on table {table}' if table else '') + f' for a {goods_type}')
+                          + (f' on table {table}' if table else '') + f' for a {goods_type}'
+                          + (' (or an append_entry step on table items)' if goods_type == 'item' else ''))
 
 
 def check_event_ref(value, number, steps, map_id):
@@ -162,8 +169,18 @@ def validate_recipe(recipe):
                     if isinstance(member, dict) and is_ref(member.get('enemy_id')):
                         check_ref(member['enemy_id'], number, steps, 'enemies', 'members enemy_id')
                         member['enemy_id'] = 0
+            for key, rules in (('effects', EFFECT_REF_TABLE), ('features', FEATURE_REF_TABLE)):
+                rows = shadow.get(key)
+                if step['table'] in LIST_TABLES[key] and isinstance(rows, list):
+                    for row in rows:
+                        if isinstance(row, dict) and is_ref(row.get('data_id')):
+                            want = rules.get(row.get('code')) if is_int(row.get('code')) else None
+                            if want is None:
+                                raise RecipeError(f'step {number}: {key} data_id from_step is only allowed for codes {sorted(rules)}')
+                            check_ref(row['data_id'], number, steps, want, f'{key} data_id (code {row["code"]})')
+                            row['data_id'] = 0
             if contains_ref_key(shadow):
-                raise RecipeError(f'step {number}: from_step is only allowed for troop members enemy_id')
+                raise RecipeError(f'step {number}: from_step is only allowed for troop members enemy_id and effects/features data_id')
         elif kind == 'append_key_item':
             if not is_int(step['template_item']) or step['template_item'] < 1:
                 raise RecipeError(f'step {number}: template_item must be a positive integer')
@@ -337,8 +354,11 @@ def build_spec(title, number, step, snapshot, source=None):
             raise RecipeError('table has no supported append slot')
         mutation = {'action': 'append_database_entry', 'template_id': step['template_id'], 'new_id': snapshot['next_id'],
                     'expected_array_sha256': snapshot['array_sha256'], 'expected_template_sha256': snapshot['template_sha256']}
-        if step['table'] == 'troops':
-            mutation['expected_enemies_sha256'] = snapshot['enemies_sha256']
+        # Referenced-database hashes come only from the snapshot and only for the databases the overrides reference.
+        for name in sorted(required_refs(step['table'], step['overrides'])):
+            if snapshot.get(name + '_sha256') is None:
+                raise RecipeError(f'snapshot has no {name} hash')
+            mutation[ref_field(name)] = snapshot[name + '_sha256']
         mutation['overrides'] = step['overrides']
         change = {'kind': 'database_entry', 'locator': {'table': step['table']},
                   'proposal': f'Recipe step {number}: append one {step["table"]} entry cloned from template {step["template_id"]}.',

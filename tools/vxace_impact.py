@@ -228,6 +228,7 @@ APPEND_MARKERS = {
     'enemies': ('$data_enemies','enemy_id','Enemy'), 'skills': ('$data_skills','learn_skill','skill_id','use_item'),
     'states': ('$data_states','add_state','remove_state','state_id'), 'weapons': ('$data_weapons','gain_item','equip'),
     'armors': ('$data_armors','gain_item','equip'),
+    'items': ('$data_items','gain_item','item_number','use_item'),
     'troops': ('$data_troops','troop_id','BattleManager.setup','battle_start'),
 }
 
@@ -236,7 +237,7 @@ def append_entry_impact(index, change):
     """Impact for append_database_entry; lists what the clone inherits and where the template is referenced."""
     from vxace_index_query import Index
     from vxace_search import search
-    from vxace_database_append import integer, table_spec, OVERRIDES, ACTION
+    from vxace_database_append import integer, table_spec, OVERRIDES, ACTION, required_refs, effect_rows, feature_rows, describe_effects, describe_features, ref_field
     table=change['locator'].get('table')
     cls,fields=table_spec(table)
     mutation=change.get('mutation')
@@ -264,6 +265,30 @@ def append_entry_impact(index, change):
             if key in overrides: damage.pop(name,None)
         inherited['damage (non-overridden parts)']=damage
     references={}
+    # effects / features replacement: re-run the native validators against the freshly indexed referenced databases and describe the result
+    listed={}
+    if 'effects' in overrides or 'features' in overrides:
+        index_files={'states':'states','skills':'skills','common_events':'common-events','system':'system'}
+        roots={}
+        for name in sorted(required_refs(table,overrides)):
+            try:roots[name]=rows if name==table else data.json('database/'+index_files[name]+'.json')
+            except Exception:raise ValueError('Indexed database/'+index_files[name]+'.json is required to check the ids referenced by the '+table+' overrides')
+        missing=sorted(ref_field(name) for name in roots if ref_field(name) not in mutation)
+        if missing:raise ValueError('Mutation lacks the referenced-database hashes: '+', '.join(missing))
+        def name_of(kind,number):
+            source={'state':roots.get('states'),'skill':roots.get('skills'),'common event':roots.get('common_events')}.get(kind)
+            if kind=='element':
+                source=(roots.get('system') or {}).get('elements') if isinstance(roots.get('system'),dict) else None
+                return source[number] if isinstance(source,list) and 0<=number<len(source) else None
+            row=source[number] if isinstance(source,list) and 0<=number<len(source) else None
+            return row.get('name') if isinstance(row,dict) else None
+        if 'effects' in overrides:
+            text,warns=describe_effects(effect_rows(overrides['effects'],roots),name_of)
+            listed['new_effects']=text;listed['effect_warnings']=warns
+        if 'features' in overrides:
+            text,warns=describe_features(feature_rows(overrides['features'],roots),name_of)
+            listed['new_features']=text;listed['feature_warnings']=warns
+        listed['referenced_hashes_required']={ref_field(name):mutation.get(ref_field(name)) for name in sorted(roots)}
     troops=data.json('database/troops.json')
     troop_info={}
     if table=='troops':
@@ -295,10 +320,13 @@ def append_entry_impact(index, change):
             'inherited_from_template':inherited,'template_note_present':bool(selected.get('note')),
             'new_note_forced_empty':table!='troops','template_references':references,'consumer_mentions':mentions,
             **({'troop':troop_info} if table=='troops' else {}),
+            **listed,
+            **({'warnings':[*listed.get('effect_warnings',[]),*listed.get('feature_warnings',[])]} if listed.get('effect_warnings') or listed.get('feature_warnings') else {}),
             'limitations':['Every inherited field above is copied as-is; features/effects/drops/actions/damage type and element need reviewer approval.',
                           'The template note is not copied; notetag-driven behavior of the template will not exist on the new entry.',
                           'An appended static ID can collide with runtime-created IDs; literal mentions do not prove freedom from dynamic consumers.',
                           'New entries are not added to troops, shops, drop tables, class learnings or encounters automatically.',
+                          *(['The effects/features override replaces the whole list; the template list shown under inherited_from_template is not kept. Ids are checked against the indexed databases here and against the hash-bound native files by the copy backend.'] if listed else []),
                           *(['A new troop is only reachable via Battle Processing events or encounter-list edits done separately; encounter lists and battle-processing events are not wired. Troops have no note field, and the template battle page is blank so no battle-event logic is copied.'] if table=='troops' else []),
                           'battler_name is only charset/length checked; run the asset audit for missing Graphics/Battlers files.',
                           'Exact native array/template hashes and schema are enforced separately by the snapshot/copy backend.']}
