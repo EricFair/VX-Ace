@@ -9,7 +9,7 @@ Use Python 3.10+ and Ruby 3.2 on PATH. CI uses Python 3.11 and Ruby 3.2. Ruby is
 Clone the release into a new skill directory in PowerShell:
 
 ```powershell
-git clone --branch v1.9.0 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.codex/skills/rpg-maker-vx-ace-developer"
+git clone --branch v1.10.0 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.codex/skills/rpg-maker-vx-ace-developer"
 Set-Location "$env:USERPROFILE/.codex/skills/rpg-maker-vx-ace-developer"
 python --version
 ruby --version

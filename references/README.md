@@ -31,6 +31,7 @@ Use the smallest relevant reference first.
 - `balance-analysis.md` — damage formulas, stat/EXP curves, matchups, troop rewards, economy.
 - `notetag-registry.md` — notetags in data/comments cross-referenced with script parsers.
 - `text-export.md` — dialogue/database text export and message lint.
+- `text-import.md` — edited text CSV to a guarded patch spec.
 - `impact-analysis.md` — patch impact and semantic before/after diff.
 - `smoke-testing.md` — in-engine smoke runs of a staged disposable copy.
 - `mcp-read-only.md` — optional read-only MCP adapter.
