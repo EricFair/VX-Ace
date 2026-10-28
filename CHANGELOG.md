@@ -2,6 +2,10 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.20.0 — Usable items, effects and features
+
+- Database append gains usable items (template clone; key items stay with `append_key_item`) and bounded full-list overrides of skill/item **effects** and weapon/armor/state **features**, with editor-matching Integer/Float encodings. Every referenced States/Skills/CommonEvents/System file is bound by its own hash; recipes can point effects and features at a state or skill appended earlier. Verified in the real engine: a Hi-Potion healed 50% and cured a new state, an Ether restored 30 MP, and a Poison Dagger carried its attack state, attack element, hit bonus and element rate. See [database append](references/database-append.md).
+
 ## 1.19.0 — Branching event commands
 
 - Staged event pages gain Show Choices with branches, Conditional Branch (switch, variable, self switch, gold, item) with else, Battle Processing with win/escape/lose branches, Change Party Member, Call Common Event, Change Gold/Items, Transfer Player and Wait; nesting up to 4 levels. Each referenced database and destination map is bound by its own hash; recipes can feed a new troop or key item into a battle or item check. Verified in the real engine: a choice recruit, a locked/open door and a boss battle lost into its lose branch. See [staged events](references/staged-events.md).

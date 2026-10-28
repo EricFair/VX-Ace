@@ -16,7 +16,7 @@ Top level: `{"title": "optional text", "steps": [ ... ]}` (1..50 steps). Unknown
 
 | `type` | Keys | Existing operation |
 | --- | --- | --- |
-| `append_entry` | `table` (`enemies`, `skills`, `states`, `weapons`, `armors`, `troops`), `template_id`, `overrides` | [database append](database-append.md) (`append_database_entry`, troops included) |
+| `append_entry` | `table` (`enemies`, `items`, `skills`, `states`, `weapons`, `armors`, `troops`), `template_id`, `overrides` | [database append](database-append.md) (`append_database_entry`, troops and items included) |
 | `append_key_item` | `template_item`, `name`, `description` | [key-item append](key-item-append.md) |
 | `append_learning` | `class_id`, `skill_id` (integer or `{"from_step": k}`), `level` | [class skill learnings](database-append.md#class-skill-learnings-v114) (`append_class_learning`) |
 | `append_encounter` | `map_id`, `troop_id`, `weight`; optional `region_ids` (default `[]`), `encounter_step` (default `null`) | [map encounters](map-encounters.md) |
@@ -32,7 +32,21 @@ Recipes never contain hashes, next ids or counts. Those come from each step's sn
 
 ## from_step
 
-`{"from_step": k}` resolves to the id created by step *k*. It is allowed in exactly these places: a troop's `members[].enemy_id` (step *k* must be an `append_entry` on `enemies`), `append_dialogue_event.template_event` (an `append_blank_event` step on the same `map_id`), `append_encounter.troop_id` (an `append_entry` on `troops`), `append_learning.skill_id` (an `append_entry` on `skills`), `add_shop.event_id` (an `append_dialogue_event` step on the same `map_id`) and `add_shop.goods[].id` (an `append_entry` on `weapons` for a weapon, on `armors` for an armor, or an `append_key_item` step for an item). *k* must be an earlier step; forward, self or unknown references are refused during validation. The id is the snapshot's next id for that step and is cross-checked against the copy patcher's audit (`created_id`, or the new event id for `append_dialogue_event` and `append_blank_event`).
+`{"from_step": k}` resolves to the id created by step *k*. It is allowed in exactly these places: a troop's `members[].enemy_id` (step *k* must be an `append_entry` on `enemies`), `append_dialogue_event.template_event` (an `append_blank_event` step on the same `map_id`), `append_encounter.troop_id` (an `append_entry` on `troops`), `append_learning.skill_id` (an `append_entry` on `skills`), `add_shop.event_id` (an `append_dialogue_event` step on the same `map_id`) and `add_shop.goods[].id` (an `append_entry` on `weapons` for a weapon, on `armors` for an armor, or an `append_key_item` step or an `append_entry` on `items` for an item), the item ids of an `append_staged_event` page (`item` commands and `has_item` conditions: an `append_key_item` step or an `append_entry` on `items`), and the `data_id` of an `effects`/`features` override row (v1.20). *k* must be an earlier step; forward, self or unknown references are refused during validation. The id is the snapshot's next id for that step and is cross-checked against the copy patcher's audit (`created_id`, or the new event id for `append_dialogue_event` and `append_blank_event`).
+
+In an `effects` row (skills and items) `data_id` may be `{"from_step": k}` for code 21 or 22 (step *k* an `append_entry` on `states`) and code 43 (an `append_entry` on `skills`). In a `features` row (weapons, armors, states) it may be `{"from_step": k}` for codes 13, 14 and 32 (an `append_entry` on `states`) and code 43 (an `append_entry` on `skills`). Element ids (codes 11 and 31 of features) and common event ids (effect 44) have no recipe step that creates them, so a reference there is refused; give a literal id. The referenced-database hashes (`expected_states_sha256`, `expected_skills_sha256`, `expected_common_events_sha256`, `expected_system_sha256`) are taken from the step's snapshot, and only for the databases the resolved rows reference; a recipe never contains them.
+
+Example: a venom state, a poison dagger that inflicts it and an antivenom potion that cures it.
+
+```json
+{"title": "Venom set", "steps": [
+  {"type": "append_entry", "table": "states", "template_id": 2, "overrides": {"name": "Venom"}},
+  {"type": "append_entry", "table": "weapons", "template_id": 1, "overrides": {"name": "Poison Dagger", "price": 300,
+    "features": [{"code": 32, "data_id": {"from_step": 1}, "value": 0.5}]}},
+  {"type": "append_entry", "table": "items", "template_id": 1, "overrides": {"name": "Antivenom", "description": "Cures Venom and restores 25% HP.",
+    "price": 80, "effects": [{"code": 11, "data_id": 0, "value1": 0.25, "value2": 0}, {"code": 22, "data_id": {"from_step": 1}, "value1": 1.0, "value2": 0}]}}
+]}
+```
 
 Example: a new sword on sale in a new shopkeeper.
 
@@ -52,7 +66,7 @@ Example: a new sword on sale in a new shopkeeper.
 For step `NN`, in `WORK/step-NN/`:
 
 1. `vxace_project_reader.py <source>` into `index/` (source is the original project for step 1, otherwise the previous `copy/`).
-2. The operation's snapshot CLI into `snapshot/`: `vxace_database_entries.py` (`--table/--template-id`, `--template-item`, or `--table classes --class-id` for `append_learning`), `vxace_map_encounters.py`, `vxace_map_names.py`, `vxace_map_events.py` (`--template-event` for `append_dialogue_event`, `--donor-event` for `append_blank_event`), `vxace_map_shops.py` (for `add_shop`) or `vxace_script_slots.py` (Main located from `index/scripts/order.json`). `text_import` runs `vxace_text_import.py` instead, which writes the spec itself.
+2. The operation's snapshot CLI into `snapshot/`: `vxace_database_entries.py` (`--table/--template-id` including `--table items`, `--template-item` for `append_key_item`, or `--table classes --class-id` for `append_learning`), `vxace_map_encounters.py`, `vxace_map_names.py`, `vxace_map_events.py` (`--template-event` for `append_dialogue_event`, `--donor-event` for `append_blank_event`), `vxace_map_shops.py` (for `add_shop`) or `vxace_script_slots.py` (Main located from `index/scripts/order.json`). `text_import` runs `vxace_text_import.py` instead, which writes the spec itself.
 3. The exact spec is built from the snapshot plus the recipe's parameters into `spec.json`.
 4. `vxace_patch_planner.py` into `plan/`, `vxace_impact.py` into `impact.json`/`impact.md`, then `vxace_copy_patcher.py --backend python` into `copy/` and `audit/`.
 

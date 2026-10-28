@@ -12,13 +12,13 @@ This is an RPG Maker VX Ace specialist skill plus a local toolchain. It helps de
 **Claude Code** (skills are discovered from `~/.claude/skills`):
 
 ```powershell
-git clone --branch v1.19.0 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.claude/skills/rpg-maker-vx-ace-developer"
+git clone --branch v1.20.0 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.claude/skills/rpg-maker-vx-ace-developer"
 ```
 
 **Codex**:
 
 ```powershell
-git clone --branch v1.19.0 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.codex/skills/rpg-maker-vx-ace-developer"
+git clone --branch v1.20.0 https://github.com/EricFair/VX-Ace.git "$env:USERPROFILE/.codex/skills/rpg-maker-vx-ace-developer"
 ```
 
 Start a new chat so the skill is discovered, then name your project folder, for example *"Use the VX Ace skill on C:/Games/MyGame"*. To update later: `git fetch --tags` and `git checkout` the newer tag inside that folder. Keep `SKILL.md`, `tools`, `references`, `workflows`, `patterns` and `templates` together.
@@ -42,7 +42,7 @@ A failed byte-identical check blocks all staging for that project until it is in
 
 Describe what you want; the agent picks native features first and stages the change on a **copy**, never on your project:
 
-- single additions — enemies, skills, states, weapons, armors, troops, class learnings, encounters, shops, dialogue NPCs, transfers, rewards ([database append](references/database-append.md), [map shops](references/map-shops.md), [encounters](references/map-encounters.md));
+- single additions — enemies, skills, states, weapons, armors, usable items, troops, class learnings, encounters, shops, dialogue NPCs, transfers, rewards ([database append](references/database-append.md), [map shops](references/map-shops.md), [encounters](references/map-encounters.md));
 - several at once — a [recipe](references/recipes.md), for example `tools/recipes/example_cave.json` (enemy → skill → troop → encounter) or `example_smith.json` (weapon → NPC → shop);
 - text — [export](references/text-export.md) to CSV, edit in Excel, [import](references/text-import.md).
 

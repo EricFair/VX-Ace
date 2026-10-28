@@ -103,8 +103,8 @@ def normalize_spec(spec: dict) -> dict:
                 if not isinstance(locator,dict) or set(locator)!={'table'} or locator['table'] not in ('items','enemies','skills','states','weapons','armors','troops') or not item.get('proposal'):
                     raise ValueError('Database entry proposal requires an exact supported table locator and proposal')
                 action=mutation.get('action') if isinstance(mutation,dict) else None
-                if (locator['table']=='items',action) not in ((True,'append_key_item'),(False,'append_database_entry')):
-                    raise ValueError('Entry action does not match the table (items: append_key_item; others: append_database_entry)')
+                if action!='append_database_entry' and (locator['table'],action)!=('items','append_key_item'):
+                    raise ValueError('Entry action does not match the table (items: append_key_item or append_database_entry; others: append_database_entry)')
         elif kind == 'map_shop':
             locator=item.get('locator')
             if not isinstance(locator,dict) or set(locator)!={'map_id','event_id'} or any(type(locator[k]) is not int or not 1<=locator[k]<=999 for k in locator):
@@ -191,6 +191,10 @@ def regression_checks(changes: list[dict]) -> list[str]:
         checks += ['Review dynamic item IDs, inventory extensions and template/note consumers before appending a key item.',
                    'Verify the new ID/Key Item entry in VX Ace, native inventory categorization and engine save/restart-load.',
                    'Confirm every existing Items entry is unchanged; deletion/reuse/reordering remain disabled.']
+    if any(i.get('kind')=='database_entry' and i.get('mutation',{}).get('action')=='append_database_entry' and any(k in i.get('mutation',{}).get('overrides',{}) for k in ('effects','features')) for i in changes if isinstance(i.get('mutation'),dict) and isinstance(i['mutation'].get('overrides'),dict)):
+        checks += ['Review every replaced effects/features list entry in the impact report, especially common-event calls (effect 44), learn-skill (effect 43), escape (effect 41) and add-skill features (43).',
+                   'Check the referenced states, skills, common events and elements in the VX Ace editor; their files are hash-bound and must stay unchanged in the same transaction.',
+                   'Use the new item/skill/equipment or state in a battle test (or smoke test) and confirm the effects/traits show in the editor database tab.']
     if any(i.get('kind')=='database_entry' and i.get('mutation',{}).get('action')=='append_database_entry' for i in changes):
         checks += ['Review every inherited feature, effect, drop, action and damage element/type of the template clone; the note is forced empty (troops have no note and copy only a blank battle page).',
                    'Review troops, shops, drops, dynamic IDs and notetag consumers; check battler_name against the asset audit.',
