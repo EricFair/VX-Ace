@@ -109,6 +109,9 @@ def new_key_item(root, mutation):
 
 
 def apply(root, mutation):
+    if isinstance(mutation,dict) and mutation.get('action')=='append_database_entry':
+        from vxace_database_append import apply as append_entry
+        return append_entry(root,mutation)
     item=new_key_item(root,mutation)
     root.append(item)
 
@@ -121,7 +124,10 @@ def verify_transition(before,after,mutation):
         raise ValueError('Key-item candidate differs from the approved inert native record')
 
 
-def indexed_snapshot(data,project,template_id):
+def indexed_snapshot(data,project,template_id,table='items'):
+    if table!='items':
+        from vxace_database_append import indexed_snapshot as table_snapshot
+        return table_snapshot(data,project,table,template_id)
     from vxace_python_mutator import load
     root,_=load(unlinked(Path(project)/'Data/Items.rvdata2'))
     result=snapshot(root,template_id)
@@ -142,14 +148,21 @@ def indexed_snapshot(data,project,template_id):
 def main(argv=None):
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('index');ap.add_argument('--project',required=True);ap.add_argument('--output',required=True)
-    ap.add_argument('--template-item',type=int,required=True)
+    ap.add_argument('--template-item',type=int,help='Items template ID (key-item append; same as --table items --template-id)')
+    ap.add_argument('--table',default='items',help='items, enemies, skills, states, weapons or armors')
+    ap.add_argument('--template-id',type=int)
     args=ap.parse_args(argv)
+    if (args.template_item is None)==(args.template_id is None):
+        ap.error('give exactly one of --template-item or --template-id')
+    if args.template_item is not None and args.table!='items':
+        ap.error('--template-item is only for the items table; use --template-id')
+    template_id=args.template_item if args.template_item is not None else args.template_id
     try:
         project=unlinked(args.project)
         if project.is_file() and project.suffix.lower()=='.rvproj2':project=project.parent
-        result=execute(args.index,project,args.output,lambda data:indexed_snapshot(data,project,args.template_item),'item-entry-snapshot')
+        result=execute(args.index,project,args.output,lambda data:indexed_snapshot(data,project,template_id,args.table),'item-entry-snapshot')
         (Path(args.output)/'item-entry-snapshot.md').write_text('# VX Ace key-item append preconditions\n\nRead-only; no mutation authorized.\n\n```json\n'+json.dumps(result,indent=2)+'\n```\n',encoding='utf-8')
-        print(json.dumps({'status':'ok','template_id':args.template_item,'next_item_id':result['next_item_id']}))
+        print(json.dumps({'status':'ok','table':args.table,'template_id':template_id,'next_id':result.get('next_id',result.get('next_item_id'))}))
         return 0
     except Exception as exc:
         print('Item entry snapshot refused: '+str(exc),file=sys.stderr)

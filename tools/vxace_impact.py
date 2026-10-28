@@ -224,7 +224,68 @@ def region_impact(index, change):
                           'Native old-save map reload and restart-based persistence testing remain required.']}
 
 
+APPEND_MARKERS = {
+    'enemies': ('$data_enemies','enemy_id','Enemy'), 'skills': ('$data_skills','learn_skill','skill_id','use_item'),
+    'states': ('$data_states','add_state','remove_state','state_id'), 'weapons': ('$data_weapons','gain_item','equip'),
+    'armors': ('$data_armors','gain_item','equip'),
+}
+
+
+def append_entry_impact(index, change):
+    """Impact for append_database_entry; lists what the clone inherits and where the template is referenced."""
+    from vxace_index_query import Index
+    from vxace_search import search
+    from vxace_database_append import integer, table_spec, OVERRIDES, ACTION
+    table=change['locator'].get('table')
+    cls,fields=table_spec(table)
+    mutation=change.get('mutation')
+    if not isinstance(mutation,dict) or mutation.get('action')!=ACTION:
+        raise ValueError('Expected append_database_entry impact')
+    data=Index(index);rows=data.json('database/'+table+'.json')
+    if not isinstance(rows,list) or not 2<=len(rows)<=999 or rows[0] is not None:
+        raise ValueError('A supported native '+table+' array with append capacity is required')
+    for number,row in enumerate(rows[1:],1):
+        if not isinstance(row,dict) or row.get('__class__')!=cls or type(row.get('id')) is not int or row['id']!=number:
+            raise ValueError('Indexed '+table+' IDs must match native array slots')
+    identifier=integer(mutation.get('new_id'),'new ID',1,999)
+    template_id=integer(mutation.get('template_id'),'template ID',1,len(rows)-1)
+    if identifier!=len(rows):raise ValueError('Append ID must be the next array slot')
+    selected=rows[template_id]
+    if set(selected)!=(fields|{'__class__'}):
+        raise ValueError('Selected indexed template has unknown native fields')
+    overrides=mutation.get('overrides')
+    if not isinstance(overrides,dict) or any(k not in OVERRIDES[table] for k in overrides):
+        raise ValueError('Overrides contain keys outside the supported whitelist')
+    inherited={k:selected.get(k) for k in sorted(fields-{'id','note'}) if k not in overrides and not (k=='damage' and any(o.startswith('damage_') for o in overrides))}
+    if 'damage' in selected and any(o.startswith('damage_') for o in overrides):
+        damage=dict(selected['damage']) if isinstance(selected['damage'],dict) else {}
+        for key,name in (('damage_formula','formula'),('damage_variance','variance'),('damage_critical','critical')):
+            if key in overrides: damage.pop(name,None)
+        inherited['damage (non-overridden parts)']=damage
+    references={}
+    troops=data.json('database/troops.json')
+    if table=='enemies' and isinstance(troops,list):
+        references['troops_using_template']=[t.get('id') for t in troops if isinstance(t,dict) and any(isinstance(m,dict) and m.get('enemy_id')==template_id for m in (t.get('members') or []))][:50]
+    mentions=[]
+    for marker in APPEND_MARKERS[table]:
+        result=search(data,query=marker,scopes=('scripts','events'),limit=20)
+        mentions.append({'literal':marker,'matches':result['matches'],'evidence':result['hits'],'evidence_truncated':result['truncated']})
+    data.unchanged()
+    return {'kind':'database_entry','target':{'table':table,'new_id':identifier,'template_id':template_id,'template_name':selected.get('name')},
+            'severity':'high','action':ACTION,'overridden_fields':sorted(overrides),
+            'inherited_from_template':inherited,'template_note_present':bool(selected.get('note')),
+            'new_note_forced_empty':True,'template_references':references,'consumer_mentions':mentions,
+            'limitations':['Every inherited field above is copied as-is; features/effects/drops/actions/damage type and element need reviewer approval.',
+                          'The template note is not copied; notetag-driven behavior of the template will not exist on the new entry.',
+                          'An appended static ID can collide with runtime-created IDs; literal mentions do not prove freedom from dynamic consumers.',
+                          'New entries are not added to troops, shops, drop tables, class learnings or encounters automatically.',
+                          'battler_name is only charset/length checked; run the asset audit for missing Graphics/Battlers files.',
+                          'Exact native array/template hashes and schema are enforced separately by the snapshot/copy backend.']}
+
+
 def entry_impact(index, change):
+    if isinstance(change.get('mutation'),dict) and change['mutation'].get('action')=='append_database_entry':
+        return append_entry_impact(index,change)
     from vxace_index_query import Index
     from vxace_search import search
     from vxace_database_entries import integer, ITEM_FIELDS

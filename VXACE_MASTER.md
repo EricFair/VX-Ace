@@ -1,10 +1,12 @@
-# VX Ace Masterfile — v1.8.0
+# VX Ace Masterfile — v1.9.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
 v1.7 adds three standalone read-only analyses that run on a fresh index outside the master workflow: [balance](references/balance-analysis.md), [notetag registry](references/notetag-registry.md) and [text export/lint](references/text-export.md) (commands in [tools/README.md](tools/README.md)). They enable no write operation.
 
 v1.8 adds standalone [in-engine smoke tests](references/smoke-testing.md): `vxace_smoke.py stage` installs an env-nonce-gated harness slot in a new disposable copy through the existing guarded chain, and `run` launches that copy's `Game.exe` and validates its results. The master workflow never launches the game.
+
+v1.9 adds a separate guarded [template-clone database append](references/database-append.md) for enemies, skills, states, weapons and armors (one per Python copy transaction; no master setting invokes it) and a [release checklist](workflows/release-checklist.md).
 
 v1.4.1 corrects static passage observations in the [ordinary upper-tile snapshot](references/upper-tile-painting.md). Recreate previous snapshots; the native uppermost non-star tile now takes priority over lower flags. Mutation capabilities and copy safety gates remain as documented.
 

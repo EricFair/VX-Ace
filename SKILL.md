@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.8.0
+Version: 1.9.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -87,6 +87,8 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Schema drift vs a baseline | [references/schema-comparison.md](references/schema-comparison.md) |
 | Impact before a patch, diff after | [workflows/impact-review.md](workflows/impact-review.md) |
 | Plan and stage a change | [workflows/project-aware-patching.md](workflows/project-aware-patching.md), [workflows/verified-copy-mutation.md](workflows/verified-copy-mutation.md) |
+| Add an enemy, skill, state, weapon or armor | [references/database-append.md](references/database-append.md) |
+| Ship a build | [workflows/release-checklist.md](workflows/release-checklist.md) |
 | First playable slice | [workflows/playable-slice-verification.md](workflows/playable-slice-verification.md), [examples/oakfall](examples/oakfall/README.md) |
 | MCP read-only adapter | [references/mcp-read-only.md](references/mcp-read-only.md) |
 
@@ -111,6 +113,7 @@ Only these structural writes exist; everything else is proposal/manual-only. Eac
 - guarded event command/page insertion/deletion ([event-structure.md](references/event-structure.md)) — no repeating triggers, new script/branch construction or final-page deletion;
 - existing-map region cells ([map-region-editing.md](references/map-region-editing.md));
 - append-only inert key items ([key-item-append.md](references/key-item-append.md));
+- one template-clone append of an enemy, skill, state, weapon or armor with whitelisted overrides ([database-append.md](references/database-append.md));
 - one script slot before canonical Main ([script-slot-insertion.md](references/script-slot-insertion.md), [script-byte-fidelity.md](references/script-byte-fidelity.md));
 - ordinary upper-layer B-E tile painting ([upper-tile-painting.md](references/upper-tile-painting.md));
 - one stationary literal-dialogue event per map ([map-event-creation.md](references/map-event-creation.md)) with optional character graphic ([character-event-graphics.md](references/character-event-graphics.md));
