@@ -1,4 +1,4 @@
-# Guarded native template-clone database append — v1.9 (troops: v1.11, items/effects/features: v1.20)
+# Guarded native template-clone database append — v1.9 (troops: v1.11, items/effects/features: v1.20, actors: v1.23)
 
 Use this narrow operation to add one new entry to an existing native Enemies, Items, Skills, States, Weapons or Armors database by cloning a reviewed template entry and overriding a small whitelist of fields. It does not delete, reuse or reorder entries, create other database objects, wire the new entry into troops/shops/drops/classes, or edit saves. Key items keep the separate [key-item append](key-item-append.md) (`append_key_item`), which is unchanged; usable items (potions, ethers, stat boosters) are cloned from a normal item template with `append_database_entry` on `items` (see [Items, effects and features](#items-effects-and-features-v120)).
 
@@ -10,7 +10,7 @@ Build a fresh external Project Reader index, then capture native array/template 
 python tools/vxace_database_entries.py PROJECT_INDEX --project PROJECT --table enemies --template-id 1 --output NEW_EXTERNAL_SNAPSHOT
 ```
 
-`--table` is one of `enemies`, `items`, `skills`, `states`, `weapons`, `armors`, `troops` (default `items`). `--table items --template-id N` is the template-clone snapshot described below; `--template-item N` remains the spelling for the unchanged key-item append snapshot only. The read-only snapshot requires byte-identical native decoding, matching indexed/native identities and a supported template schema. It returns the array and isolated template Marshal SHA-256 values, the next ID, the template's field values, a summary of everything the clone would inherit (features, effects, drop items, actions, damage, removal settings) and the overrides supported for that table. A full supported array (999 entries) reports `append_slot_supported: false`. A snapshot is not mutation permission.
+`--table` is one of `actors`, `enemies`, `items`, `skills`, `states`, `weapons`, `armors`, `troops` (default `items`). `--table items --template-id N` is the template-clone snapshot described below; `--template-item N` remains the spelling for the unchanged key-item append snapshot only. The read-only snapshot requires byte-identical native decoding, matching indexed/native identities and a supported template schema. It returns the array and isolated template Marshal SHA-256 values, the next ID, the template's field values, a summary of everything the clone would inherit (features, effects, drop items, actions, damage, removal settings) and the overrides supported for that table. A full supported array (999 entries) reports `append_slot_supported: false`. A snapshot is not mutation permission.
 
 Use the captured hashes and the exact next ID in a reviewed spec (one change per transaction):
 
@@ -242,6 +242,53 @@ A four-step recipe on an editor-created project appended a Venom state (clone of
 - **Poison Dagger:** once equipped, it reported Venom in `atk_states` at rate 0.5 and element 1 in `atk_elements`. HIT was exactly +0.05 above the unarmed value. Element 3 rate was multiplied by 0.8.
 
 The template Hand Ax showed the editor's own encoding: attack element saved as Integer `0`, ex-param as Float. An existing save loaded with the new entries. Code 43 (add skill) has no editor-saved sample in that project, so its Integer `0` value is inferred.
+
+## Actors (v1.23)
+
+`--table actors` clones an `RPG::Actor` (`Data/Actors.rvdata2`) at the next id. Editor-saved actors (Project3) have the ivars `name, face_index, character_index, initial_level, face_name, class_id, character_name, id, features, note, equips, nickname, description, max_level`, and actors created in the editor also carry a trailing `icon_index`; both shapes are admitted and the clone keeps its template's shape. `equips` must be five native integers. The note is forced empty and `icon_index` is not overridable.
+
+Whitelisted `overrides` (`name` is required):
+
+| Override | Rule |
+|---|---|
+| `name` / `nickname` | literal, 1..100 / 0..100 characters |
+| `description` | literal, up to 1000 characters (newline allowed) |
+| `class_id` | an existing class; needs `expected_classes_sha256` |
+| `initial_level`, `max_level` | integers 1..99 with `initial_level <= max_level` (inherited values count) |
+| `character_name` + `character_index`, `face_name` + `face_index` | each pair together; the sheet is bound by `expected_assets` (below) |
+| `equips` | five slots: weapon, shield, head, body, accessory; each `0` or an existing item (see below) |
+| `features` | the v1.20 features override, allowed for actors too |
+
+Equips follow `Game_Actor#init_equips`: slot `i` is equip type `i`, so slot 0 takes a weapon and slots 1..4 take an armor whose `etype_id` equals the slot (weapons need `expected_weapons_sha256`, armors `expected_armors_sha256`). Because `Game_Actor#refresh` silently releases an item the class cannot equip, every item must also be allowed by the class and actor features (weapon type feature 51, armor type feature 52) and its equip type must not be sealed (feature 54); any equipped item therefore also needs `expected_classes_sha256`. A class or actor with dual wield (feature 55 value 1) keeps a weapon in slot 1; that case is unsupported, so `equips[1]` must be `0` there (Project3's Rick is the one such actor). Equips are placed directly in the actor slots; the party inventory is not changed.
+
+Hashes: only the needed `expected_*` hashes may appear (classes for `class_id` or any equip, weapons for slot 0, armors for slots 1..4, system/states/skills for the features codes that reference them, as in v1.20).
+
+### Graphics
+
+`character_name` and `face_name` are bare basenames. Character sheets use the v1.22 rules (eight-character grid, `!`/`$` single characters, index 0..7). Face sheets must be a 4x2 grid of 96x96 faces (exactly 384x192, index 0..7); a `$`-prefixed face is treated as a single face (index 0, at least 96x96). The default engine (`Window_Base#draw_face`) has no `$` rule, so that is a conservative restriction. The snapshot binds the sheets:
+
+```powershell
+python tools/vxace_database_entries.py INDEX --project PROJECT --table actors --template-id 1 --character-sheet Actor4 --face-sheet Actor4 [--rtp RTP] --output SNAP
+```
+
+and the spec carries `"expected_assets": {"characters": {"Actor4": {...}}, "faces": {"Actor4": {...}}}` (only the groups in use; the values are the full bindings from the snapshot). Sheets are looked up in the project first, then in the explicit `--rtp` (also pass `--rtp` to the copy patcher and the recipe runner). The binding records origin, path, SHA-256 and layout and is re-checked on the copy.
+
+### Example
+
+A new party member cloned from actor 1, with a class, level and starting weapon:
+
+```json
+{"action": "append_database_entry", "template_id": 1, "new_id": 11,
+ "expected_array_sha256": "...", "expected_template_sha256": "...",
+ "expected_classes_sha256": "...", "expected_weapons_sha256": "...",
+ "expected_assets": {"characters": {"Actor4": {"...": "..."}}, "faces": {"Actor4": {"...": "..."}}},
+ "overrides": {"name": "Lena", "nickname": "Spark", "class_id": 1, "initial_level": 3, "max_level": 50,
+               "character_name": "Actor4", "character_index": 3, "face_name": "Actor4", "face_index": 3, "equips": [61, 0, 0, 0, 0]}}
+```
+
+In a recipe, equips accept `{"from_step": k}` pointing at a weapons (slot 0) or armors (slots 1..4) append, and the new actor is usable in a staged or common event `party` command and in `set_system_fields.party_members` through `{"from_step": k}`.
+
+Impact: class, levels, equips by name, graphics and warnings (the actor is in no party until `set_system_fields` or a Change Party Member command adds it; an unsuitable inherited equip is released). The copy backend does not advance `System.version_id`. See [system-fields.md](system-fields.md) to make the actor the starting party.
 
 ## Troops (v1.11)
 

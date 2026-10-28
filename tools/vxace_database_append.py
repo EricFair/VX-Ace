@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Guarded append-only native template clones for Enemies, Items, Skills, States, Weapons, Armors and blank-page Troops."""
+"""Guarded append-only native template clones for Actors, Enemies, Items, Skills, States, Weapons, Armors and blank-page Troops."""
 from __future__ import annotations
 import hashlib
 import math
 import re
 
-VERSION = '1.20.0'
+VERSION = '1.23.0'
 ACTION = 'append_database_entry'
 MUTATION_FIELDS = {'action','template_id','new_id','expected_array_sha256','expected_template_sha256','overrides'}
 BASE = {'id','name','icon_index','description','features','note'}
@@ -25,15 +25,21 @@ TABLES = {
     'armors': ('RPG::Armor', BASE | {'price','etype_id','params','atype_id'}),
     # Editor-saved RPG::Troop has no note/features; only a blank-page template is admitted and members are rebuilt.
     'troops': ('RPG::Troop', {'id','name','members','pages'}),
+    # Editor-saved RPG::Actor (Project3): ivars name, face_index, character_index, initial_level, face_name, class_id, character_name, id, features,
+    # note, equips, nickname, description, max_level; actors created in the editor also carry a trailing icon_index (an optional field here).
+    'actors': ('RPG::Actor', {'id','name','nickname','class_id','initial_level','max_level','character_name','character_index','face_name','face_index',
+                              'equips','features','note','description'}),
 }
+OPTIONAL_FIELDS = {'actors': {'icon_index'}}
+EQUIP_SLOTS = 5
 TROOP_MEMBER_FIELDS = ('enemy_id','x','y','hidden')
 CONDITION_BOOLS = ('turn_ending','turn_valid','enemy_valid','actor_valid','switch_valid')
 CONDITION_INTS = ('turn_a','turn_b','enemy_index','enemy_hp','actor_id','actor_hp','switch_id')
 MEMBER_RANGES = {'x':(0,544),'y':(0,416)}
 MAX_MEMBERS = 8
-TEXT = {'name','description','note','battler_name','message1','message2','message3','message4'}
+TEXT = {'name','description','note','battler_name','message1','message2','message3','message4','nickname','character_name','face_name'}
 BOOLS = {'consumable','remove_at_battle_end','remove_by_restriction','remove_by_damage','release_by_damage','remove_by_walking'}
-LISTS = {'features','effects','drop_items','actions','params','members','pages'}
+LISTS = {'features','effects','drop_items','actions','params','members','pages','equips'}
 NESTED = {'damage'}
 FEATURE_FIELDS = {'code','data_id','value'}
 EFFECT_FIELDS = {'code','data_id','value1','value2'}
@@ -49,6 +55,7 @@ OVERRIDES = {
     'weapons': ('name','description','icon_index','price','params','features'),
     'armors': ('name','description','icon_index','price','params','features'),
     'troops': ('name','members'),
+    'actors': ('name','nickname','description','class_id','initial_level','max_level','character_name','character_index','face_name','face_index','equips','features'),
 }
 INT_RANGES = {'icon_index':(0,4095),'exp':(0,9999999),'gold':(0,9999999),'battler_hue':(0,360),
               'mp_cost':(0,9999),'tp_cost':(0,100),'damage_variance':(0,100),'priority':(0,100),
@@ -70,15 +77,17 @@ def digest(value):
 
 
 # Referenced databases (read-only, same snapshot/copy). Each one a mutation needs is bound by its own expected_<name>_sha256.
-REF_FILES = {'enemies': 'Enemies', 'states': 'States', 'skills': 'Skills', 'common_events': 'CommonEvents', 'system': 'System'}
+REF_FILES = {'enemies': 'Enemies', 'states': 'States', 'skills': 'Skills', 'common_events': 'CommonEvents', 'system': 'System',
+             'classes': 'Classes', 'weapons': 'Weapons', 'armors': 'Armors'}
 # Which referenced database each effect / feature code needs (codes absent here carry no database id).
 EFFECT_REFS = {21: 'states', 22: 'states', 43: 'skills', 44: 'common_events'}
 FEATURE_REFS = {11: 'system', 31: 'system', 13: 'states', 14: 'states', 32: 'states', 43: 'skills'}
-LIST_TABLES = {'effects': ('items', 'skills'), 'features': ('armors', 'states', 'weapons')}
+LIST_TABLES = {'effects': ('items', 'skills'), 'features': ('actors', 'armors', 'states', 'weapons')}
 # Referenced databases a snapshot reports (hashes/counts) per table; the table's own array is always reported.
 SNAPSHOT_REFS = {'enemies': (), 'troops': ('enemies',), 'items': ('states', 'skills', 'common_events'),
                  'skills': ('states', 'skills', 'common_events'), 'weapons': ('system', 'states', 'skills'),
-                 'armors': ('system', 'states', 'skills'), 'states': ('system', 'states', 'skills')}
+                 'armors': ('system', 'states', 'skills'), 'states': ('system', 'states', 'skills'),
+                 'actors': ('classes', 'weapons', 'armors', 'system', 'states', 'skills')}
 MAX_ROWS = 16
 EFFECT_CODES = (11, 12, 13, 21, 22, 31, 32, 33, 34, 41, 42, 43, 44)
 FEATURE_CODES = (11, 13, 14, 21, 22, 23, 31, 32, 43)
@@ -94,6 +103,16 @@ def ref_field(name):
 def required_refs(table, overrides):
     """Names of the referenced databases the overrides need; tolerant of malformed input (validation refuses it later)."""
     names = {'enemies'} if table == 'troops' else set()
+    if table == 'actors' and isinstance(overrides, dict):
+        equips = overrides.get('equips')
+        listed = [value for value in equips if type(value) is int] if isinstance(equips, list) else []
+        # classes: the class_id itself, or any equipped item (equippability is decided by the class); weapons: slot 0; armors: slots 1..4
+        if 'class_id' in overrides or any(listed):
+            names.add('classes')
+        if isinstance(equips, list) and equips and type(equips[0]) is int and equips[0] != 0:
+            names.add('weapons')
+        if isinstance(equips, list) and any(type(value) is int and value != 0 for value in equips[1:]):
+            names.add('armors')
     if isinstance(overrides, dict):
         for key, rules in (('effects', EFFECT_REFS), ('features', FEATURE_REFS)):
             rows = overrides.get(key)
@@ -102,8 +121,17 @@ def required_refs(table, overrides):
     return names
 
 
+def actor_graphics(overrides):
+    """(character sheet names, face sheet names) an actor override uses; tolerant of malformed input."""
+    if not isinstance(overrides, dict):
+        return set(), set()
+    return ({overrides['character_name']} if isinstance(overrides.get('character_name'), str) else set(),
+            {overrides['face_name']} if isinstance(overrides.get('face_name'), str) else set())
+
+
 def mutation_fields(table, overrides=None):
-    return MUTATION_FIELDS | {ref_field(name) for name in required_refs(table, overrides)}
+    assets = {'expected_assets'} if table == 'actors' and isinstance(overrides, dict) and ('character_name' in overrides or 'face_name' in overrides) else set()
+    return MUTATION_FIELDS | assets | {ref_field(name) for name in required_refs(table, overrides)}
 
 
 def refs_dict(refs):
@@ -116,8 +144,15 @@ def refs_dict(refs):
 def checked_reference(name, root):
     """Validated referenced database root: dense arrays for enemies/states/skills, a slot-id array for common events, RPG::System."""
     from vxace_python_mutator import RubyObject
-    if name in ('enemies', 'states', 'skills'):
+    if name in ('enemies', 'states', 'skills', 'weapons', 'armors'):
         return database_array(root, name)
+    if name == 'classes':
+        if not isinstance(root, list) or not 2 <= len(root) <= 1000 or root[0] is not None:
+            raise ValueError('Native Classes must be an array with nil slot zero')
+        for slot, entry in enumerate(root[1:], 1):
+            if not isinstance(entry, RubyObject) or entry.cls != 'RPG::Class' or type(entry.get('id')) is not int or entry.get('id') != slot                or not isinstance(entry.get('features'), list):
+                raise ValueError('Native Classes entry ' + str(slot) + ' is not an RPG::Class with its slot id and a features list')
+        return root
     if name == 'common_events':
         if not isinstance(root, list) or not 2 <= len(root) <= 5001 or root[0] is not None:
             raise ValueError('Native CommonEvents must be an array with nil slot zero')
@@ -260,9 +295,10 @@ def template(root, table, template_id):
     _, fields = table_spec(table)
     identifier = integer(template_id, 'template ID', 1, len(root) - 1)
     entry = root[identifier]
-    if set(entry.ivars) != {'@' + k for k in fields}:
+    present = {name[1:] for name in entry.ivars}
+    if not fields <= present <= fields | OPTIONAL_FIELDS.get(table, set()):
         raise ValueError('Selected ' + table + ' template has unknown or missing native fields')
-    for key in fields:
+    for key in present:
         value = entry.get(key)
         if key in TEXT:
             ok = isinstance(value, RubyString)
@@ -277,6 +313,10 @@ def template(root, table, template_id):
     if table == 'troops':
         check_troop_template(entry)
         return entry
+    if table == 'actors':
+        equips = entry.get('equips')
+        if not isinstance(equips, list) or len(equips) != EQUIP_SLOTS or any(type(value) is not int for value in equips):
+            raise ValueError('Selected actor template equips must be five native integers')
     if table == 'items' and entry.get('itype_id') == 2:
         raise ValueError('Key items (item type 2) are not admitted as templates here; use the append_key_item operation instead')
     check_objects(entry, entry.get('features'), 'RPG::BaseItem::Feature', FEATURE_FIELDS, 'features')
@@ -504,6 +544,71 @@ def describe_features(rows, name_of=lambda kind, number: None):
     return text, warnings
 
 
+def feature_pairs(features):
+    """(code, data_id) pairs of native RPG::BaseItem::Feature objects, or of validated (code, data_id, value) tuples."""
+    out = []
+    for feature in features:
+        if isinstance(feature, tuple):
+            out.append((feature[0], feature[1]))
+        else:
+            code, data = feature.get('code'), feature.get('data_id')
+            if type(code) is not int or type(data) is not int:
+                raise ValueError('Feature with unsupported field types')
+            out.append((code, data))
+    return out
+
+
+def actor_equips(value, roots, features):
+    """Validated 5-slot equips list. Slot 0 holds a weapon (etype 0); slots 1..4 hold an armor whose etype_id equals the slot
+    (Game_Actor#init_equips: index -> etype id, slot_list(etype)). Each item must also be equippable by the class/actor features:
+    weapon type (feature 51) / armor type (52) allowed and its equip type not sealed (54); otherwise refresh would silently release it."""
+    if not isinstance(value, list) or len(value) != EQUIP_SLOTS:
+        raise ValueError('equips must be a list of exactly ' + str(EQUIP_SLOTS) + ' ids (weapon, shield, head, body, accessory; 0 = empty)')
+    allowed = lambda code: {data for c, data in features if c == code}
+    if max(allowed(55), default=0) == 1 and type(value[1]) is int and value[1] != 0:
+        raise ValueError('equips[1]: the class/actor features grant dual wield, where slot 1 holds a weapon; that is unsupported, use 0')
+    out = []
+    for slot, item_id in enumerate(value):
+        label = 'equips[' + str(slot) + ']'
+        if type(item_id) is not int:
+            raise ValueError(label + ' must be an integer id')
+        if item_id == 0:
+            out.append(0);continue
+        name, key, expected = ('weapons', 'wtype_id', 51) if slot == 0 else ('armors', 'atype_id', 52)
+        database_id(roots, name, item_id, label)
+        item = roots[name][item_id]
+        if item.get('etype_id') != slot:
+            raise ValueError(label + ' ' + name[:-1] + ' ' + str(item_id) + ' has equip type ' + str(item.get('etype_id')) + ', but slot ' + str(slot) + ' needs equip type ' + str(slot))
+        if item.get(key) not in allowed(expected):
+            raise ValueError(label + ' ' + name[:-1] + ' ' + str(item_id) + ' (' + key + ' ' + str(item.get(key)) + ') is not equippable by the actor class/features (feature ' + str(expected) + ')')
+        if slot in allowed(54):
+            raise ValueError(label + ': equip type ' + str(slot) + ' is sealed by the class/actor features (feature 54)')
+        out.append(item_id)
+    return out
+
+
+def actor_overrides(selected, out, roots):
+    """Cross-field rules of the actor overrides (levels, paired graphics, class, equips)."""
+    initial, maximum = out.get('initial_level', selected.get('initial_level')), out.get('max_level', selected.get('max_level'))
+    if not 1 <= initial <= maximum <= 99:
+        raise ValueError('Levels must satisfy 1 <= initial_level <= max_level <= 99 (inherited values included)')
+    for pair in (('character_name', 'character_index'), ('face_name', 'face_index')):
+        if (pair[0] in out) != (pair[1] in out):
+            raise ValueError(pair[0] + ' and ' + pair[1] + ' must be given together')
+    from vxace_character_graphics import face_schema, graphic_schema
+    if 'character_name' in out:
+        graphic_schema({'character_name': out['character_name'], 'character_index': out['character_index'], 'direction': 2, 'pattern': 0})
+    if 'face_name' in out:
+        face_schema(out['face_name'], out['face_index'])
+    class_id = out.get('class_id', selected.get('class_id'))
+    if 'classes' in roots:
+        database_id(roots, 'classes', class_id, 'class_id')
+    if 'equips' in out:
+        if any(out['equips']):
+            actor_features = out['features'] if 'features' in out else selected.get('features')
+            out['equips'] = actor_equips(out['equips'], roots, feature_pairs(roots['classes'][class_id].get('features')) + feature_pairs(actor_features))
+
+
 def validated_overrides(table, selected, overrides, refs=None):
     """Return the strictly validated override dict; includes cross-field checks against inherited values.
 
@@ -528,6 +633,22 @@ def validated_overrides(table, selected, overrides, refs=None):
             if not isinstance(value, str) or not BATTLER_NAME.fullmatch(value) or '..' in value:
                 raise ValueError('battler_name must be at most 100 characters without path or control characters')
             out[key] = value
+        elif key == 'nickname':
+            out[key] = text(value, key, 0, 100)
+        elif key in ('character_name', 'face_name'):
+            if not isinstance(value, str):
+                raise ValueError(key + ' must be a sheet basename')
+            out[key] = value
+        elif key in ('character_index', 'face_index'):
+            out[key] = integer(value, key, 0, 7)
+        elif key == 'class_id':
+            out[key] = integer(value, key, 1, 999)
+        elif key in ('initial_level', 'max_level'):
+            out[key] = integer(value, key, 1, 99)
+        elif key == 'equips':
+            if not isinstance(value, list) or len(value) != EQUIP_SLOTS or any(type(v) is not int for v in value):
+                raise ValueError('equips must be a list of exactly ' + str(EQUIP_SLOTS) + ' integer ids')
+            out[key] = list(value)
         elif key == 'members':
             out[key] = troop_members(value, roots['enemies'])
         elif key == 'consumable':
@@ -563,6 +684,8 @@ def validated_overrides(table, selected, overrides, refs=None):
             out[key] = integer(value, key, low, high)
     if table in ('items', 'skills') and any(k.startswith('damage_') for k in out) and selected.get('damage').get('type') == 0:
         raise ValueError('Damage overrides require a template with a native damage type')
+    if table == 'actors':
+        actor_overrides(selected, out, roots)
     if table == 'states':
         low = out.get('min_turns', selected.get('min_turns'))
         high = out.get('max_turns', selected.get('max_turns'))
@@ -587,6 +710,11 @@ def summarize(selected, table):
         summary['actions'] = [[o.get('condition_type'), o.get('condition_param1'), o.get('condition_param2'), o.get('skill_id'), o.get('rating')] for o in selected.get('actions')]
     if table == 'states':
         summary['removal'] = {k: selected.get(k) for k in ('restriction','auto_removal_timing','min_turns','max_turns','remove_by_damage','release_by_damage','chance_by_damage','remove_by_walking','steps_to_remove')}
+    if table == 'actors':
+        summary['actor'] = {'class_id': selected.get('class_id'), 'equips': list(selected.get('equips')), 'initial_level': selected.get('initial_level'),
+                            'max_level': selected.get('max_level'),
+                            'character': [selected.get('character_name').data.decode('utf-8', 'replace'), selected.get('character_index')],
+                            'face': [selected.get('face_name').data.decode('utf-8', 'replace'), selected.get('face_index')]}
     if table in ('weapons', 'armors'):
         summary['equipment'] = {k: selected.get(k) for k in ('etype_id','wtype_id','atype_id','animation_id') if '@' + k in selected.ivars}
     return summary
@@ -596,11 +724,11 @@ def scalar_summary(selected, table):
     from vxace_python_mutator import RubyString
     _, fields = table_spec(table)
     out = {}
-    for key in sorted(fields):
+    for key in sorted(fields | OPTIONAL_FIELDS.get(table, set())):
         value = selected.get(key)
         if isinstance(value, RubyString):
             out[key] = value.data.decode('utf-8', 'replace')
-        elif type(value) in (int, bool) or (isinstance(value, list) and key == 'params'):
+        elif type(value) in (int, bool) or (isinstance(value, list) and key in ('params', 'equips')):
             out[key] = value
     return out
 
@@ -611,7 +739,7 @@ def has_shape(root, key, cls, fields):
                for entry in root[1:] for o in (entry.get(key) if isinstance(entry.get(key), list) else []))
 
 
-def snapshot(root, table, template_id, refs=None):
+def snapshot(root, table, template_id, refs=None, assets=None):
     refs = refs_dict(refs)
     need_refs(table, root, refs, {'enemies'} if table == 'troops' else set())
     selected = template(root, table, template_id)
@@ -637,6 +765,10 @@ def snapshot(root, table, template_id, refs=None):
             extra['effects_shape_available'] = has_shape(root, 'effects', 'RPG::UsableItem::Effect', EFFECT_FIELDS)
         if table in LIST_TABLES['features']:
             extra['features_shape_available'] = has_shape(root, 'features', 'RPG::BaseItem::Feature', FEATURE_FIELDS)
+        if table == 'actors':
+            extra['equip_slots'] = ['weapon (etype 0)', 'armor etype 1', 'armor etype 2', 'armor etype 3', 'armor etype 4']
+            if assets:
+                extra['assets'] = assets
     return {**extra, 'array_sha256': digest(root), 'template_sha256': digest(selected), 'template_id': template_id,
             'next_id': len(root), 'existing_entries': len(root) - 1, 'append_slot_supported': len(root) <= 999,
             'template_name': selected.get('name').data.decode('utf-8', 'strict'),
@@ -653,6 +785,10 @@ def object_shape(root, selected, key, cls, fields, what):
         for obj in entry.get(key) if isinstance(entry.get(key), list) else []:
             if getattr(obj, 'cls', None) == cls and set(obj.ivars) == {'@' + f for f in fields}:
                 return obj
+    if cls == 'RPG::BaseItem::Feature' and getattr(root[1], 'cls', None) == 'RPG::Actor':
+        # Editor-saved actors usually have no features to copy from; Project3 Classes/Weapons/Armors/States all store a Feature as ivars code, data_id, value.
+        from vxace_python_mutator import RubyObject
+        return RubyObject(cls, {'@code': 0, '@data_id': 0, '@value': 0.0})
     raise ValueError('No existing ' + what + ' in this file to copy the native object shape from')
 
 
@@ -674,7 +810,7 @@ def build_objects(root, selected, key, rows):
     return out
 
 
-def new_entry(root, table, mutation, refs=None):
+def new_entry(root, table, mutation, refs=None, project=None, rtp=None):
     from vxace_python_mutator import RubyObject, RubyString, convert, marshal_rb
     if not isinstance(mutation, dict) or set(mutation) != mutation_fields(table, mutation.get('overrides')) or mutation.get('action') != ACTION:
         raise ValueError('Only the exact ' + ACTION + ' schema is supported (a referenced-database hash is required exactly for the databases the overrides reference)')
@@ -690,6 +826,15 @@ def new_entry(root, table, mutation, refs=None):
         if mutation[ref_field(name)] != digest(value):
             raise ValueError(REF_FILES[name] + ' fingerprint is stale (' + ref_field(name) + ')')
     overrides = validated_overrides(table, selected, mutation['overrides'], roots)
+    if 'expected_assets' in mutation:
+        # Actor graphics: each sheet is bound by the hash/layout of its PNG in the project (or the explicit RTP).
+        from vxace_character_graphics import actor_assets
+        assets = mutation['expected_assets']
+        characters, faces = actor_graphics(overrides)
+        if project is None:
+            raise ValueError('Actor graphics need the native project to bind the sheets')
+        if not isinstance(assets, dict) or assets != actor_assets(project, rtp, characters, faces):
+            raise ValueError('Actor graphics asset binding is stale or inconsistent')
     entry = marshal_rb.load(marshal_rb.dump(selected))
 
     def put(owner, key, value):
@@ -706,21 +851,34 @@ def new_entry(root, table, mutation, refs=None):
             put(entry.get('damage'), damage[key], value)
         elif key in ('effects', 'features'):
             entry.set(key, build_objects(root, selected, key, value))
+        elif key == 'equips':
+            entry.set(key, list(value))
         else:
             put(entry, key, value)
     return entry
 
 
-def apply(root, mutation, source_path=None):
+def project_of(source_path):
+    """Project root of a native Data file path (None without one)."""
+    if source_path is None:
+        return None
+    from vxace_index_query import unlinked
+    file = unlinked(source_path)
+    if file.parent.name != 'Data':
+        raise ValueError('This append requires a native project Data path')
+    return file.parent.parent
+
+
+def apply(root, mutation, source_path=None, rtp=None):
     table = table_for_class(root)
-    root.append(new_entry(root, table, mutation, mutation_refs(source_path, table, mutation)))
+    root.append(new_entry(root, table, mutation, mutation_refs(source_path, table, mutation), project_of(source_path), rtp))
 
 
-def verify_transition(before, after, table, mutation, refs=None):
+def verify_transition(before, after, table, mutation, refs=None, project=None, rtp=None):
     database_array(before, table);database_array(after, table)
     if len(after) != len(before) + 1 or digest(after[:-1]) != digest(before):
         raise ValueError('Database-entry candidate changed existing entries or array shape')
-    if digest(after[-1]) != digest(new_entry(before, table, mutation, refs)):
+    if digest(after[-1]) != digest(new_entry(before, table, mutation, refs, project, rtp)):
         raise ValueError('Database-entry candidate differs from the approved template-clone record')
 
 
@@ -738,15 +896,21 @@ def indexed_check(data, table, result):
     return indexed[result['template_id']]
 
 
-def indexed_snapshot(data, project, table, template_id):
+def indexed_snapshot(data, project, table, template_id, characters=(), faces=(), rtp=None):
     from pathlib import Path
     from vxace_index_query import unlinked
     from vxace_python_mutator import load
     cls, _ = table_spec(table)
-    file = {'enemies': 'Enemies', 'items': 'Items', 'skills': 'Skills', 'states': 'States', 'weapons': 'Weapons', 'armors': 'Armors', 'troops': 'Troops'}[table]
+    file = {'actors': 'Actors', 'enemies': 'Enemies', 'items': 'Items', 'skills': 'Skills', 'states': 'States', 'weapons': 'Weapons', 'armors': 'Armors', 'troops': 'Troops'}[table]
     root, _ = load(unlinked(Path(project) / 'Data' / (file + '.rvdata2')))
     refs = snapshot_refs(Path(project) / 'Data' / (file + '.rvdata2'), table)
-    result = snapshot(root, table, template_id, refs)
+    assets = None
+    if characters or faces:
+        if table != 'actors':
+            raise ValueError('Character/face sheet bindings are only for the actors table')
+        from vxace_character_graphics import actor_assets
+        assets = actor_assets(project, rtp, characters, faces)
+    result = snapshot(root, table, template_id, refs, assets)
     indexed_check(data, table, result)
     if table == 'troops':
         indexed_enemies = data.json('database/enemies.json')
@@ -756,8 +920,13 @@ def indexed_snapshot(data, project, table, template_id):
                     'Members must reference existing static enemies from the Enemies array fingerprinted here (expected_enemies_sha256); enemy edits after the snapshot make the spec stale.',
                     'The troop is not wired to encounter lists or Battle Processing events; do that separately. Troops have no note field.',
                     'Coordinates are range checked only (x 0..544, y 0..416); overlap and on-screen layout need an editor/battle-test review.'] if table == 'troops' else None
+    actor_limits = ['Only a template with the editor-saved actor field set (an optional trailing icon_index is kept) and five native equips is admitted; the new actor is not in any party until System party_members (set_system_fields) or a party command adds it.',
+                    'class_id, equips (weapon, shield, head, body, accessory; each item must match the slot and be equippable by the class) and features need the matching hashes (expected_classes_sha256, expected_weapons_sha256, expected_armors_sha256, expected_system_sha256, expected_states_sha256, expected_skills_sha256); only the needed hashes may appear in the spec.',
+                    'character_name/character_index and face_name/face_index must be given as a pair; each sheet is bound by expected_assets (character sheets: 4x2 characters or a !/$ single character; face sheets: 384x192 with 8 faces, a $-prefixed face is treated as a single face). Pass --character-sheet / --face-sheet (and --rtp for RTP sheets) to this snapshot to get the bindings.',
+                    'Dual-wield classes (slot type 55) hold a weapon in slot 1; equips[1] must stay 0 for them. Appended equips are created in the actor slots only; the party inventory is not changed.',
+                    'The note is forced empty and the class learnings are not copied; the actor learns the skills of the class at the initial level (Game_Actor#init_skills).'] if table == 'actors' else None
     return {'version': VERSION, 'table': table, **result,
-            'limits': troop_limits or ['Only templates whose exact native field set, nested schemas and types are supported are admitted.',
+            'limits': troop_limits or actor_limits or ['Only templates whose exact native field set, nested schemas and types are supported are admitted.',
                        'Features, effects, drops, actions and damage type/element are inherited as-is unless an effects (skills, items) or features (weapons, armors, states) override replaces the whole list; note is forced empty. Review the inherited lists.',
                        'Each effects/features code that references the database needs that database fingerprinted here (expected_states_sha256, expected_skills_sha256, expected_common_events_sha256, expected_system_sha256); only the needed hashes may appear in the spec, and edits to those files after the snapshot make it stale.',
                        'Item templates of item type 2 (key items) are refused; use append_key_item for key items.',

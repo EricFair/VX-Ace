@@ -73,7 +73,7 @@ def normalize_spec(spec: dict) -> dict:
         if not isinstance(raw, dict):
             raise ValueError(f"Change #{i} must be an object")
         kind = raw.get("kind")
-        if kind not in {"script", "script_slot", "event", "database", "map_region", "map_tile", "map_event", "map_entry", "database_entry", "map_name", "map_label", "map_encounter", "map_shop", "common_event"}:
+        if kind not in {"script", "script_slot", "event", "database", "map_region", "map_tile", "map_event", "map_entry", "database_entry", "map_name", "map_label", "map_encounter", "map_shop", "common_event", "system_fields"}:
             raise ValueError(f"Change #{i} has unsupported kind: {kind}")
         item = dict(raw)
         if kind == "script":
@@ -100,7 +100,7 @@ def normalize_spec(spec: dict) -> dict:
                 native_mutation(locator,mutation)
                 if not item.get('proposal'):raise ValueError('Class learning requires a proposal')
             else:
-                if not isinstance(locator,dict) or set(locator)!={'table'} or locator['table'] not in ('items','enemies','skills','states','weapons','armors','troops') or not item.get('proposal'):
+                if not isinstance(locator,dict) or set(locator)!={'table'} or locator['table'] not in ('actors','items','enemies','skills','states','weapons','armors','troops') or not item.get('proposal'):
                     raise ValueError('Database entry proposal requires an exact supported table locator and proposal')
                 action=mutation.get('action') if isinstance(mutation,dict) else None
                 if action!='append_database_entry' and (locator['table'],action)!=('items','append_key_item'):
@@ -110,6 +110,11 @@ def normalize_spec(spec: dict) -> dict:
             if item.get('locator')!={'table':'common_events'} or not item.get('proposal'):
                 raise ValueError('Common event append proposal requires the exact {"table": "common_events"} locator and proposal')
             common_event_schema(item.get('mutation'))
+        elif kind == 'system_fields':
+            from vxace_system_fields import schema as system_schema
+            if item.get('locator')!={'table':'system'} or not item.get('proposal'):
+                raise ValueError('System fields proposal requires the exact {"table": "system"} locator and proposal')
+            system_schema(item.get('mutation'))
         elif kind == 'map_shop':
             locator=item.get('locator')
             if not isinstance(locator,dict) or set(locator)!={'map_id','event_id'} or any(type(locator[k]) is not int or not 1<=locator[k]<=999 for k in locator):
@@ -213,6 +218,10 @@ def regression_checks(changes: list[dict]) -> list[str]:
                    'For a parallel process confirm its trigger switch is turned ON and OFF where intended, and playtest that the wait keeps the map responsive; autorun is never created.',
                    'Verify the new entry in the VX Ace editor Common Events tab, call it from an event, effect or script, then test with a new game and an older save and a full process restart.',
                    'Confirm only Data/CommonEvents.rvdata2 changed: System, the referenced databases, maps and every existing common event stay byte-identical.']
+    if 'system_fields' in kinds:
+        checks += ['Review the old -> new table in the impact report: the start position and starting party only apply to new games, game_title only shows on the title screen, terms and currency_unit show in old saves.',
+                   'Verify the System tab in the VX Ace editor (title, currency, terms, initial party, start position), then test a new game, an older save and a full process restart.',
+                   'Confirm only Data/System.rvdata2 changed, only the listed System fields differ, version_id is unchanged and every other copied file stays byte-identical.']
     if 'script_slot' in kinds:
         checks += ['Insert only one exact byte-verified native slot before unique canonical Main through the explicit Python copy workflow.',
                    'Verify every existing script ID/name/source/order is preserved; no reordering/deletion or other Scripts edits in the transaction.',

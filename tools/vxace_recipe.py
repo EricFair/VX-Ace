@@ -17,11 +17,11 @@ from vxace_copy_patcher import current_inventory
 from vxace_database_append import LIST_TABLES, ref_field, required_refs
 from vxace_index_query import unlinked
 
-VERSION = '1.22.0'
+VERSION = '1.23.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
-TABLES = ('enemies', 'items', 'skills', 'states', 'weapons', 'armors', 'troops')
+TABLES = ('actors', 'enemies', 'items', 'skills', 'states', 'weapons', 'armors', 'troops')
 STEP_KEYS = {
     'append_entry': ({'type', 'table', 'template_id', 'overrides'}, {'type', 'table', 'template_id', 'overrides'}),
     'append_key_item': ({'type', 'template_item', 'name', 'description'}, {'type', 'template_item', 'name', 'description'}),
@@ -37,6 +37,7 @@ STEP_KEYS = {
     'insert_script': ({'type', 'name', 'source_file'}, {'type', 'name', 'source_file'}),
     'set_map_display_name': ({'type', 'map_id', 'name'}, {'type', 'map_id', 'name'}),
     'text_import': ({'type', 'csv'}, {'type', 'csv', 'allow_shorter'}),
+    'set_system_fields': ({'type'}, {'type', 'game_title', 'currency_unit', 'party_members', 'start', 'terms'}),
 }
 
 
@@ -151,6 +152,9 @@ def shadow_command_refs(ops, number, steps):
         if is_ref(op.get('common_event')):
             check_ref(op['common_event'], number, steps, 'common_events', 'common_event id')
             op['common_event'] = 0
+        if 'party' in op and is_ref(op.get('actor')):
+            check_ref(op['actor'], number, steps, 'actors', 'party actor')
+            op['actor'] = 0
         for holder, key, goods in ((op, 'item', 'item'), (op['if'] if isinstance(op.get('if'), dict) else {}, 'has_item', 'item'),
                                    (op, 'weapon', 'weapon'), (op, 'armor', 'armor')):
             if is_ref(holder.get(key)):
@@ -254,6 +258,12 @@ def validate_recipe(recipe):
                     if isinstance(member, dict) and is_ref(member.get('enemy_id')):
                         check_ref(member['enemy_id'], number, steps, 'enemies', 'members enemy_id')
                         member['enemy_id'] = 0
+            equips = shadow.get('equips')
+            if step['table'] == 'actors' and isinstance(equips, list):
+                for slot, item in enumerate(equips):
+                    if is_ref(item):
+                        check_goods_ref(item, number, steps, 'weapon' if slot == 0 else 'armor')
+                        equips[slot] = 0
             for key, rules in (('effects', EFFECT_REF_TABLE), ('features', FEATURE_REF_TABLE)):
                 rows = shadow.get(key)
                 if step['table'] in LIST_TABLES[key] and isinstance(rows, list):
@@ -265,7 +275,7 @@ def validate_recipe(recipe):
                             check_ref(row['data_id'], number, steps, want, f'{key} data_id (code {row["code"]})')
                             row['data_id'] = 0
             if contains_ref_key(shadow):
-                raise RecipeError(f'step {number}: from_step is only allowed for troop members enemy_id and effects/features data_id')
+                raise RecipeError(f'step {number}: from_step is only allowed for troop members enemy_id, actor equips and effects/features data_id')
         elif kind == 'append_key_item':
             if not is_int(step['template_item']) or step['template_item'] < 1:
                 raise RecipeError(f'step {number}: template_item must be a positive integer')
@@ -401,12 +411,26 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: map_id must be an integer 1..999')
             if not isinstance(step['name'], str):
                 raise RecipeError(f'step {number}: name must be a string')
+        elif kind == 'set_system_fields':
+            if len(step) < 2:
+                raise RecipeError(f'step {number}: give at least one of game_title, currency_unit, party_members, start, terms')
+            if 'party_members' in step:
+                members = step['party_members']
+                if not isinstance(members, list) or not 1 <= len(members) <= 8:
+                    raise RecipeError(f'step {number}: party_members must list 1..8 actors')
+                for member in members:
+                    if is_ref(member):
+                        check_ref(member, number, steps, 'actors', 'party_members actor')
+                    elif not is_int(member) or member < 1:
+                        raise RecipeError(f'step {number}: party_members entries must be positive integers or {{"from_step": N}}')
+            if contains_ref_key({key: value for key, value in step.items() if key != 'party_members'}):
+                raise RecipeError(f'step {number}: from_step is only allowed for party_members')
         elif kind == 'text_import':
             if not isinstance(step['csv'], str) or not step['csv']:
                 raise RecipeError(f'step {number}: csv must be a non-empty string')
             if 'allow_shorter' in step and type(step['allow_shorter']) is not bool:
                 raise RecipeError(f'step {number}: allow_shorter must be a boolean')
-        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest') and contains_ref_key(step):
+        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest', 'set_system_fields') and contains_ref_key(step):
             raise RecipeError(f'step {number}: from_step is not allowed in a {kind} step')
         if kind == 'append_encounter' and contains_ref_key({k: v for k, v in step.items() if k != 'troop_id'}):
             raise RecipeError(f'step {number}: from_step is only allowed for troop_id')
@@ -455,9 +479,32 @@ def build_spec(title, number, step, snapshot, source=None):
             if snapshot.get(name + '_sha256') is None:
                 raise RecipeError(f'snapshot has no {name} hash')
             mutation[ref_field(name)] = snapshot[name + '_sha256']
+        if step['table'] == 'actors':
+            from vxace_database_append import actor_graphics
+            characters, faces = actor_graphics(step['overrides'])
+            if characters or faces:
+                assets = snapshot.get('assets')
+                wanted = {**({'characters': characters} if characters else {}), **({'faces': faces} if faces else {})}
+                if not isinstance(assets, dict) or set(assets) != set(wanted) or any(not isinstance(assets[group], dict) or set(assets[group]) != names for group, names in wanted.items()):
+                    raise RecipeError('snapshot lacks the character/face sheet bindings of the actor graphics')
+                mutation['expected_assets'] = assets
         mutation['overrides'] = step['overrides']
         change = {'kind': 'database_entry', 'locator': {'table': step['table']},
                   'proposal': f'Recipe step {number}: append one {step["table"]} entry cloned from template {step["template_id"]}.',
+                  'mutation': mutation}
+    elif kind == 'set_system_fields':
+        mutation = {'action': 'set_system_fields', 'expected_system_sha256': snapshot['system_sha256']}
+        mutation.update({key: step[key] for key in ('game_title', 'currency_unit', 'party_members', 'start', 'terms') if key in step})
+        if 'party_members' in step:
+            mutation['expected_actors_sha256'] = snapshot['actors_sha256']
+        if 'start' in step:
+            start_map = snapshot.get('start_map')
+            if not isinstance(step['start'], dict) or not isinstance(start_map, dict) or start_map.get('map_id') != step['start'].get('map_id'):
+                raise RecipeError('snapshot lacks the start map binding')
+            mutation['expected_mapinfos_sha256'] = snapshot['mapinfos_sha256']
+            mutation['expected_start_map_sha256'] = start_map['sha256']
+        change = {'kind': 'system_fields', 'locator': {'table': 'system'},
+                  'proposal': f'Recipe step {number}: edit System fields ({", ".join(key for key in ("game_title", "currency_unit", "party_members", "start", "terms") if key in step)}).',
                   'mutation': mutation}
     elif kind == 'append_key_item':
         if not snapshot.get('append_slot_supported'):
@@ -630,6 +677,7 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
         kind = step['type']
         resolved = resolve_refs(step, created)
         from vxace_staged_commands import staged_refs, graphic_names
+        from vxace_database_append import actor_graphics
         resolved_record = dict(resolved)
         source_text = None
         csv_path = None
@@ -666,7 +714,19 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
             if kind in ('append_entry', 'append_key_item'):
                 table_args = (['--table', resolved['table'], '--template-id', resolved['template_id']] if kind == 'append_entry'
                               else ['--template-item', resolved['template_item']])
+                if kind == 'append_entry' and resolved['table'] == 'actors':
+                    from vxace_database_append import actor_graphics
+                    characters, faces = actor_graphics(resolved['overrides'])
+                    table_args += [arg for sheet in sorted(characters) for arg in ('--character-sheet', sheet)]
+                    table_args += [arg for sheet in sorted(faces) for arg in ('--face-sheet', sheet)]
+                    if (characters or faces) and rtp:
+                        table_args += ['--rtp', rtp]
                 script, args, name = 'vxace_database_entries.py', [index, '--project', source, *table_args], 'item-entry-snapshot'
+            elif kind == 'set_system_fields':
+                start = resolved.get('start')
+                script, args, name = ('vxace_system_fields.py', [index, '--project', source,
+                                                                 *(['--start-map', start['map_id']] if isinstance(start, dict) and is_int(start.get('map_id')) else [])],
+                                      'system-fields-snapshot')
             elif kind == 'append_learning':
                 script, args, name = ('vxace_database_entries.py', [index, '--project', source, '--table', 'classes', '--class-id', resolved['class_id']],
                                       'item-entry-snapshot')
@@ -715,7 +775,8 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
         record['impact'] = str(directory / 'impact.json')
         tool('patcher', 'vxace_copy_patcher.py', [index, '--project', source, '--spec', spec, '--copy', copy, '--audit', audit,
                                                   '--backend', 'python', *(['--ruby', ruby] if ruby else []),
-                                                  *(['--rtp', rtp] if rtp and kind == 'append_staged_event' and graphic_names(resolved['pages']) else [])])
+                                                  *(['--rtp', rtp] if rtp and ((kind == 'append_staged_event' and graphic_names(resolved['pages']))
+                                                                               or (kind == 'append_entry' and resolved['table'] == 'actors' and any(actor_graphics(resolved['overrides'])))) else [])])
         record['audit'] = str(audit / 'audit.json')
         record['copy'] = str(copy)
         if not copy.is_dir():

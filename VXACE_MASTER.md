@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v1.22.0
+# VX Ace Masterfile — v1.23.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -33,6 +33,8 @@ v1.20 adds usable [items](references/database-append.md) to the database append 
 v1.21 adds a guarded [common event append](references/common-event-append.md): one call-only or switch-gated parallel common event using the staged-event command language, callable from staged events and item/skill effect 44.
 
 v1.22 adds weapon/armor commands and page graphics/options to the command language and an `add_treasure_chest` [recipe macro](references/treasure-chests.md) (closed and opened chest pages, self switch A).
+
+v1.23 adds actors to the database append (class, levels, graphics, slot-checked equipment) and a guarded [System fields](references/system-fields.md) edit for the starting party, start position, title, currency and menu terms.
 
 v1.4.1 corrects static passage observations in the [ordinary upper-tile snapshot](references/upper-tile-painting.md). Recreate previous snapshots; the native uppermost non-star tile now takes priority over lower flags. Mutation capabilities and copy safety gates remain as documented.
 

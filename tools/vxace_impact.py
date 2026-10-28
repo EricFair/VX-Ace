@@ -230,14 +230,41 @@ APPEND_MARKERS = {
     'armors': ('$data_armors','gain_item','equip'),
     'items': ('$data_items','gain_item','item_number','use_item'),
     'troops': ('$data_troops','troop_id','BattleManager.setup','battle_start'),
+    'actors': ('$data_actors','$game_actors','Game_Actor','party_members','add_actor'),
 }
+
+
+def actor_entry_info(data, selected, overrides, mutation):
+    """Plain description of an appended actor against the indexed databases (native hash-bound checks run in the copy chain)."""
+    classes=data.json('database/classes.json');weapons=data.json('database/weapons.json');armors=data.json('database/armors.json')
+    def row(rows,number):
+        return rows[number] if isinstance(rows,list) and type(number) is int and 0<=number<len(rows) and isinstance(rows[number],dict) else None
+    class_id=overrides.get('class_id',selected.get('class_id'));klass=row(classes,class_id)
+    if klass is None:raise ValueError('class_id is not an existing indexed class')
+    equips=overrides.get('equips',selected.get('equips'))
+    if not isinstance(equips,list) or len(equips)!=5:raise ValueError('equips must list five slots')
+    slots=[];labels=('Weapon','Shield','Head','Body','Accessory')
+    for slot,item_id in enumerate(equips):
+        if item_id==0:slots.append({'slot':labels[slot],'id':0,'name':None});continue
+        item=row(weapons if slot==0 else armors,item_id)
+        if item is None:raise ValueError('equips['+str(slot)+'] is not an existing indexed '+('weapon' if slot==0 else 'armor'))
+        if item.get('etype_id')!=slot:raise ValueError('equips['+str(slot)+'] has the wrong equipment type for its slot')
+        slots.append({'slot':labels[slot],'id':item_id,'name':item.get('name')})
+    warnings=['The new actor is in no party yet: add it with set_system_fields party_members (new games) or a Change Party Member command; an old save only meets it through such a command.',
+              'Game_Actor#setup creates the actor with the initial level, the equips above (placed directly in the slots, the party inventory is not touched) and the skills of the class up to that level.']
+    if 'equips' not in overrides:warnings.append('Equips are inherited from the template unchanged; they must still suit the new class (an unsuitable item is released to the party inventory on setup).')
+    if 'class_id' in overrides and 'equips' not in overrides:warnings.append('The class changes but the template equips are kept; check them against the new class.')
+    graphics={k:overrides[k] for k in ('character_name','character_index','face_name','face_index') if k in overrides}
+    return {'class':{'id':class_id,'name':klass.get('name')},
+            'levels':{'initial':overrides.get('initial_level',selected.get('initial_level')),'max':overrides.get('max_level',selected.get('max_level'))},
+            'equips':slots,'graphics':graphics or 'inherited from the template','expected_assets':mutation.get('expected_assets'),'warnings':warnings}
 
 
 def append_entry_impact(index, change):
     """Impact for append_database_entry; lists what the clone inherits and where the template is referenced."""
     from vxace_index_query import Index
     from vxace_search import search
-    from vxace_database_append import integer, table_spec, OVERRIDES, ACTION, required_refs, effect_rows, feature_rows, describe_effects, describe_features, ref_field
+    from vxace_database_append import integer, table_spec, OVERRIDES, ACTION, required_refs, effect_rows, feature_rows, describe_effects, describe_features, ref_field, OPTIONAL_FIELDS
     table=change['locator'].get('table')
     cls,fields=table_spec(table)
     mutation=change.get('mutation')
@@ -253,12 +280,13 @@ def append_entry_impact(index, change):
     template_id=integer(mutation.get('template_id'),'template ID',1,len(rows)-1)
     if identifier!=len(rows):raise ValueError('Append ID must be the next array slot')
     selected=rows[template_id]
-    if set(selected)!=(fields|{'__class__'}):
+    keys=set(selected)-{'__class__'}
+    if not fields<=keys<=fields|OPTIONAL_FIELDS.get(table,set()) or selected.get('__class__')!=cls:
         raise ValueError('Selected indexed template has unknown native fields')
     overrides=mutation.get('overrides')
     if not isinstance(overrides,dict) or any(k not in OVERRIDES[table] for k in overrides):
         raise ValueError('Overrides contain keys outside the supported whitelist')
-    inherited={k:selected.get(k) for k in sorted(fields-{'id','note'}) if k not in overrides and not (k=='damage' and any(o.startswith('damage_') for o in overrides))}
+    inherited={k:selected.get(k) for k in sorted(keys-{'id','note'}) if k not in overrides and not (k=='damage' and any(o.startswith('damage_') for o in overrides))}
     if 'damage' in selected and any(o.startswith('damage_') for o in overrides):
         damage=dict(selected['damage']) if isinstance(selected['damage'],dict) else {}
         for key,name in (('damage_formula','formula'),('damage_variance','variance'),('damage_critical','critical')):
@@ -268,7 +296,7 @@ def append_entry_impact(index, change):
     # effects / features replacement: re-run the native validators against the freshly indexed referenced databases and describe the result
     listed={}
     if 'effects' in overrides or 'features' in overrides:
-        index_files={'states':'states','skills':'skills','common_events':'common-events','system':'system'}
+        index_files={'states':'states','skills':'skills','common_events':'common-events','system':'system','classes':'classes','weapons':'weapons','armors':'armors'}
         roots={}
         for name in sorted(required_refs(table,overrides)):
             try:roots[name]=rows if name==table else data.json('database/'+index_files[name]+'.json')
@@ -289,6 +317,9 @@ def append_entry_impact(index, change):
             text,warns=describe_features(feature_rows(overrides['features'],roots),name_of)
             listed['new_features']=text;listed['feature_warnings']=warns
         listed['referenced_hashes_required']={ref_field(name):mutation.get(ref_field(name)) for name in sorted(roots)}
+    actor_info={}
+    if table=='actors':
+        actor_info=actor_entry_info(data,selected,overrides,mutation)
     troops=data.json('database/troops.json')
     troop_info={}
     if table=='troops':
@@ -320,8 +351,10 @@ def append_entry_impact(index, change):
             'inherited_from_template':inherited,'template_note_present':bool(selected.get('note')),
             'new_note_forced_empty':table!='troops','template_references':references,'consumer_mentions':mentions,
             **({'troop':troop_info} if table=='troops' else {}),
+            **({'actor':actor_info} if table=='actors' else {}),
             **listed,
-            **({'warnings':[*listed.get('effect_warnings',[]),*listed.get('feature_warnings',[])]} if listed.get('effect_warnings') or listed.get('feature_warnings') else {}),
+            **({'warnings':[*listed.get('effect_warnings',[]),*listed.get('feature_warnings',[]),*actor_info.get('warnings',[])]}
+               if listed.get('effect_warnings') or listed.get('feature_warnings') or actor_info.get('warnings') else {}),
             'limitations':['Every inherited field above is copied as-is; features/effects/drops/actions/damage type and element need reviewer approval.',
                           'The template note is not copied; notetag-driven behavior of the template will not exist on the new entry.',
                           'An appended static ID can collide with runtime-created IDs; literal mentions do not prove freedom from dynamic consumers.',
@@ -856,6 +889,56 @@ def map_label_impact(index,change):
                           'Default MapInfos reloads on process startup; review custom caches and verify editor/window/older-save/movement/save/restart.']}
 
 
+def system_fields_impact(index,change):
+    """Impact for set_system_fields: old -> new per field, plus start/party warnings (indexed evidence; native hashes are enforced by the copy chain)."""
+    from vxace_index_query import Index
+    from vxace_search import search
+    from vxace_system_fields import schema,describe,TERM_COUNTS,ACTION,MAX_PARTY
+    loc=change.get('locator');mutation=change.get('mutation')
+    if loc!={'table':'system'} or not isinstance(mutation,dict) or mutation.get('action')!=ACTION:raise ValueError('Exact System fields proposal required')
+    schema(mutation)
+    data=Index(index);system=data.json('database/system.json')
+    terms=system.get('terms') if isinstance(system,dict) else None
+    if not isinstance(system,dict) or system.get('__class__')!='RPG::System' or not isinstance(terms,dict) or any(not isinstance(terms.get(g),list) for g in TERM_COUNTS):
+        raise ValueError('Indexed native System with terms required')
+    old={'game_title':system.get('game_title'),'currency_unit':system.get('currency_unit'),'party_members':list(system.get('party_members') or []),
+         'start':{'map_id':system.get('start_map_id'),'x':system.get('start_x'),'y':system.get('start_y')},'terms':{g:list(terms[g]) for g in TERM_COUNTS}}
+    for group,entries in mutation.get('terms',{}).items():
+        for key in entries:
+            if int(key)>=len(old['terms'][group]):raise ValueError('terms.'+group+' index '+key+' is outside the indexed terms')
+    for key in ('game_title','currency_unit','party_members','start'):
+        if key in mutation and mutation[key]==old[key]:raise ValueError(key+' already has this value')
+    actors=data.json('database/actors.json');actor_names={}
+    if 'party_members' in mutation:
+        if not isinstance(actors,list):raise ValueError('Indexed Actors required to check party_members')
+        for number in mutation['party_members']:
+            if not 0<number<len(actors) or not isinstance(actors[number],dict):raise ValueError('party_members actor '+str(number)+' is absent from the indexed Actors')
+    if isinstance(actors,list):
+        actor_names={n:a.get('name') for n,a in enumerate(actors) if isinstance(a,dict)}
+    infos=data.json('database/map-infos.json');map_names={int(k):v.get('name') for k,v in infos.items() if isinstance(v,dict)} if isinstance(infos,dict) else {}
+    size=None
+    if 'start' in mutation:
+        start=mutation['start']
+        if start['map_id'] not in map_names:raise ValueError('start map '+str(start['map_id'])+' is absent from the indexed MapInfos')
+        native=data.json('maps/map-'+format(start['map_id'],'03d')+'.json')
+        if not isinstance(native,dict) or type(native.get('width')) is not int or type(native.get('height')) is not int:raise ValueError('Indexed start map has no size')
+        size=(native['width'],native['height'])
+        if start['x']>=size[0] or start['y']>=size[1]:raise ValueError('start cell lies outside the indexed start map')
+    rows,warnings=describe(mutation,old,actor_names,map_names,size,{'opt_draw_title':system.get('opt_draw_title')})
+    mentions=[]
+    for marker in ('$data_system','party_members','start_map_id','game_title','currency_unit','Vocab::','setup_starting_members'):
+        result=search(data,query=marker,scopes=('scripts','events'),limit=10)
+        mentions.append({'literal':marker,'matches':result['matches'],'evidence':result['hits'],'truncated':result['truncated']})
+    data.unchanged()
+    return {'kind':'system_fields','severity':'high','target':{'table':'system','fields':[k for k in ('game_title','currency_unit','party_members','start','terms') if k in mutation]},
+            'changes':rows,'start_moves':'start' in mutation,'party_changes':'party_members' in mutation,'version_id_advanced':False,
+            'warnings':warnings,'consumer_mentions':mentions,
+            'limitations':['Native System, Actors, MapInfos and start-map hashes and the deep-equality of every other System field are enforced separately by the Python copy chain.',
+                           'Only the listed fields are written; version_id, switches, variables, sounds, vehicles, option flags and the other terms keep their exact values.',
+                           'Old saves keep the party, map and position stored in them (DataManager#setup_new_game is the only reader of these fields); terms and currency_unit are read live and change for old saves too.',
+                           'Literal script mentions cannot resolve scripts that overwrite $data_system or compare term strings.']}
+
+
 def build(index: Path, spec_path: Path):
     spec=load(spec_path)
     if not isinstance(spec,dict) or not isinstance(spec.get("changes"),list) or not spec["changes"]:
@@ -882,6 +965,7 @@ def build(index: Path, spec_path: Path):
         elif kind=='map_encounter': impacts.append(map_encounter_impact(index,change))
         elif kind=='map_shop': impacts.append(map_shop_impact(index,change))
         elif kind=='common_event': impacts.append(common_event_impact(index,change))
+        elif kind=='system_fields': impacts.append(system_fields_impact(index,change))
         else: raise ValueError(f"unsupported change kind: {kind}")
     high=sum(1 for x in impacts if x.get("severity")=="high")
     return {"impact_version":VERSION,"title":str(spec.get("title") or "VX Ace impact analysis"),"impact_count":len(impacts),
@@ -900,6 +984,8 @@ def markdown(report):
             lines.append("")
         if x.get("kind")=="common_event":
             lines += ["Commands:",""]+[f"    {row}" for row in x["common_event"]["summary"]]+[""]+[f"- Warning: {w}" for w in x.get("warnings",[])]+[""]
+        if x.get("kind")=="system_fields":
+            lines += ["Changes (old -> new):",""]+[f"- {r['field']}: {json.dumps(r['old'],ensure_ascii=False)} -> {json.dumps(r['new'],ensure_ascii=False)}" for r in x["changes"]]+[""]+[f"- Warning: {w}" for w in x.get("warnings",[])]+[""]
         for lim in x.get("limitations",[]): lines.append(f"- Limitation: {lim}")
         if x.get("limitations"): lines.append("")
     lines += ["## Global limitations","",*[f"- {x}" for x in report.get("limitations",[])],""]

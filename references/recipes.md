@@ -106,6 +106,20 @@ An `append_common_event` step creates the next common event id, and later steps 
    "contents": {"weapon": {"from_step": 1}, "amount": 1}}]}
 ```
 
+## Actors and System fields (v1.23)
+
+`append_entry` accepts table `actors`, and a new step type `set_system_fields` edits the title, currency, starting party, start position and a few terms (see [database-append.md](database-append.md#actors-v123) and [system-fields.md](system-fields.md)). New `from_step` positions: actor `equips` ids (slot 0 needs a weapons step, slots 1..4 an armors step), `party_members` entries of `set_system_fields`, and the `actor` of a `party` command in staged and common events (each must name an earlier `append_entry` step on `actors`). Actor graphics that live in the RTP need `--rtp` on the recipe run. The System step does not advance `version_id`.
+
+```json
+{"title": "New hero", "steps": [
+  {"type": "append_entry", "table": "weapons", "template_id": 1, "overrides": {"name": "Hero Blade", "price": 400}},
+  {"type": "append_entry", "table": "actors", "template_id": 1, "overrides": {"name": "Lena", "class_id": 1, "initial_level": 3,
+    "equips": [{"from_step": 1}, 0, 0, 0, 0]}},
+  {"type": "set_system_fields", "game_title": "Hero Quest", "party_members": [{"from_step": 2}, 1]},
+  {"type": "append_staged_event", "map_id": 1, "template_event": 1, "x": 6, "y": 6, "name": "Recruiter", "pages": [
+    {"condition": {}, "commands": [{"text": ["Join us!"]}, {"party": "add", "actor": {"from_step": 2}, "initialize": true}]}]}]}
+```
+
 ## Limits
 
 - Every step clones the whole project, so N steps need roughly N+1 project copies of disk space, plus one more for smoke staging.

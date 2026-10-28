@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v1.22
+# RPG Maker VX Ace Developer — v1.23
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -42,7 +42,7 @@ Each operation is a narrow, separately evidenced subset with exact native guards
 | One random-encounter entry (troop, weight, regions, optional step) | [encounters](references/map-encounters.md) |
 | Upper-layer scenery tiles | [upper tiles](references/upper-tile-painting.md) |
 | Inert key items | [key items](references/key-item-append.md) |
-| Enemies, skills, states, weapons, armors, usable items, troops (template clone + whitelisted overrides, bounded effects and features) | [database append](references/database-append.md) |
+| Actors, enemies, skills, states, weapons, armors, usable items, troops (template clone + whitelisted overrides, bounded effects and features) | [database append](references/database-append.md) |
 | One class skill learning (existing skill, level) | [database append](references/database-append.md) |
 | One script slot before canonical Main | [script slots](references/script-slot-insertion.md) |
 | Blank events (schema donor) and stationary dialogue events, optionally with character graphics | [map events](references/map-event-creation.md), [graphics](references/character-event-graphics.md) |
@@ -53,6 +53,7 @@ Each operation is a narrow, separately evidenced subset with exact native guards
 | Quest-stage NPCs: 1..8 conditional pages with dialogue, switch/variable/self-switch changes and nested choices, if/else, battles, party, gold, item, transfer and wait commands | [staged events](references/staged-events.md) |
 | Common events (call-only or switch-gated parallel) with the same command language | [common events](references/common-event-append.md) |
 | Treasure chests (gold, item, weapon or armor; closed/opened pages with the RTP chest graphic) | [treasure chests](references/treasure-chests.md) |
+| Starting party, start position, game title, currency and menu terms | [system fields](references/system-fields.md) |
 | Map display name and editor/tree name | [display names](references/map-display-names.md), [tree names](references/map-tree-names.md) |
 
 [Recipes](references/recipes.md) chain several of these operations as separate guarded transactions on successive disposable copies, optionally ending with a smoke run.

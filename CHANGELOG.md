@@ -2,6 +2,10 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.23.0 — Actors and System fields
+
+- Database append gains actors: class, levels, nickname, character and face graphics (asset-bound), and equipment checked against slot, equip type and class rules. A new guarded `set_system_fields` edit sets the starting party, start position, game title, currency unit and menu terms. Recipes can put an actor appended earlier into the starting party or a party command. Verified in the real engine: a new game started at the new position, with the new actor leading the party in her own graphics and equipped weapon, and with the new title and terms; an old save kept its own party but showed the new terms. See [database append](references/database-append.md) and [system fields](references/system-fields.md).
+
 ## 1.22.0 — Treasure chests
 
 - The shared command language gains Change Weapons/Armors (127/128, bound by their own hashes), and staged pages can set a character graphic and page options. The new `add_treasure_chest` recipe macro builds a closed/opened two-page chest holding gold, an item, a weapon or an armor (also one appended earlier in the recipe). Verified in the real engine with the RTP `!Chest`: chests gave their contents once, switched to the opened frame, and stayed open. See [treasure chests](references/treasure-chests.md).

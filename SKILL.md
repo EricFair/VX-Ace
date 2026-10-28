@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.22.0
+Version: 1.23.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -91,10 +91,11 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Chain several guarded additions (enemy -> skill -> troop -> encounter -> smoke run) | `tools/vxace_recipe.py run` ([references/recipes.md](references/recipes.md)) |
 | Quest NPC whose dialogue changes with progress | [references/staged-events.md](references/staged-events.md), [patterns/quest-state-machine.md](patterns/quest-state-machine.md) |
 | Shared logic: inn, reward chain, timer (common event) | [references/common-event-append.md](references/common-event-append.md) |
+| Starting party, start position, title, currency or menu terms | [references/system-fields.md](references/system-fields.md) |
 | Treasure chest | recipe step `add_treasure_chest` ([references/treasure-chests.md](references/treasure-chests.md)) |
 | Sell items/weapons/armors from a shopkeeper | [references/map-shops.md](references/map-shops.md) |
 | Make a troop appear as a random encounter | [references/map-encounters.md](references/map-encounters.md) |
-| Add an enemy, skill, state, weapon, armor, usable item, troop or class skill learning; set item/skill effects or equipment/state features | [references/database-append.md](references/database-append.md) |
+| Add an actor, enemy, skill, state, weapon, armor, usable item, troop or class skill learning; set item/skill effects or equipment/state features | [references/database-append.md](references/database-append.md) |
 | Ship a build | [workflows/release-checklist.md](workflows/release-checklist.md) |
 | Bring a reviewed copy into the real project, or undo it | `tools/vxace_adopt.py` ([references/adopt.md](references/adopt.md)) |
 | Day-to-day working loop | [workflows/daily-game-dev.md](workflows/daily-game-dev.md) |
@@ -124,12 +125,13 @@ Only these structural writes exist; everything else is proposal/manual-only. Eac
 - existing-map region cells ([map-region-editing.md](references/map-region-editing.md));
 - one random-encounter entry on an existing map ([map-encounters.md](references/map-encounters.md));
 - append-only inert key items ([key-item-append.md](references/key-item-append.md));
-- one template-clone append of an enemy, skill, state, weapon, armor, usable item or troop (blank battle page, 1..8 existing enemies) with whitelisted overrides (including bounded effects for skills/items and features for weapons/armors/states), or one class skill learning ([database-append.md](references/database-append.md));
+- one template-clone append of an actor, enemy, skill, state, weapon, armor, usable item or troop (blank battle page, 1..8 existing enemies) with whitelisted overrides (including bounded effects for skills/items and features for weapons/armors/states), or one class skill learning ([database-append.md](references/database-append.md));
 - one script slot before canonical Main ([script-slot-insertion.md](references/script-slot-insertion.md), [script-byte-fidelity.md](references/script-byte-fidelity.md));
 - ordinary upper-layer B-E tile painting ([upper-tile-painting.md](references/upper-tile-painting.md));
 - one blank event from an existing schema donor, or one stationary literal-dialogue event, per map ([map-event-creation.md](references/map-event-creation.md)) with optional character graphic ([character-event-graphics.md](references/character-event-graphics.md));
 - one-time constant gold/item map rewards ([one-time-event-rewards.md](references/one-time-event-rewards.md));
 - one quest-stage event: 1..8 action-button pages with switch/variable/self-switch conditions, literal dialogue, Control Switch/Variable/Self Switch, nested choices, if/else and battles, plus party, common event, gold, item, weapon, armor, transfer and wait commands and optional page graphics ([staged-events.md](references/staged-events.md));
+- one System fields edit: starting party, start position, game title, currency unit and menu terms ([system-fields.md](references/system-fields.md));
 - one common event (call-only or switch-gated parallel process with a wait) using the same command language ([common-event-append.md](references/common-event-append.md));
 - Shop Processing (1..32 existing goods) on a blank or single-dialogue action-button event ([map-shops.md](references/map-shops.md));
 - blank-map append ([blank-map-append.md](references/blank-map-append.md)) and one direct transfer to it ([direct-map-transfer.md](references/direct-map-transfer.md));

@@ -108,10 +108,15 @@ def new_key_item(root, mutation):
     return item
 
 
-def apply(root, mutation, source_path=None):
+def apply(root, mutation, source_path=None, context=None):
     if isinstance(mutation,dict) and mutation.get('action')=='append_database_entry':
         from vxace_database_append import apply as append_entry
-        return append_entry(root,mutation,source_path)
+        rtp=None
+        if context is not None:
+            if not isinstance(context,dict) or set(context)!={'rtp'} or (context['rtp'] is not None and not isinstance(context['rtp'],str)):
+                raise ValueError('Entry append asset context is unsupported')
+            rtp=context['rtp']
+        return append_entry(root,mutation,source_path,rtp)
     if isinstance(mutation,dict) and mutation.get('action')=='append_class_learning':
         from vxace_class_learning import apply as append_learning
         return append_learning(root,mutation,source_path)
@@ -127,11 +132,11 @@ def verify_transition(before,after,mutation):
         raise ValueError('Key-item candidate differs from the approved inert native record')
 
 
-def indexed_snapshot(data,project,template_id,table='items',clone=False):
+def indexed_snapshot(data,project,template_id,table='items',clone=False,characters=(),faces=(),rtp=None):
     """Read-only snapshot. Items give the inert key-item preconditions unless `clone` asks for the template-clone (append_database_entry) snapshot."""
     if table!='items' or clone:
         from vxace_database_append import indexed_snapshot as table_snapshot
-        return table_snapshot(data,project,table,template_id)
+        return table_snapshot(data,project,table,template_id,characters,faces,rtp)
     from vxace_python_mutator import load
     root,_=load(unlinked(Path(project)/'Data/Items.rvdata2'))
     result=snapshot(root,template_id)
@@ -153,9 +158,12 @@ def main(argv=None):
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('index');ap.add_argument('--project',required=True);ap.add_argument('--output',required=True)
     ap.add_argument('--template-item',type=int,help='Items template ID for the inert key-item append (append_key_item)')
-    ap.add_argument('--table',default='items',help='items (with --template-id: template clone; with --template-item: key item), enemies, skills, states, weapons, armors, troops or classes (learnings)')
+    ap.add_argument('--table',default='items',help='items (with --template-id: template clone; with --template-item: key item), actors, enemies, skills, states, weapons, armors, troops or classes (learnings)')
     ap.add_argument('--template-id',type=int)
     ap.add_argument('--class-id',type=int,help='classes table only: the class whose skill learnings are snapshotted')
+    ap.add_argument('--character-sheet',action='append',default=[],help='actors table only: also bind this Graphics/Characters sheet (repeatable; project first, optional --rtp)')
+    ap.add_argument('--face-sheet',action='append',default=[],help='actors table only: also bind this Graphics/Faces sheet (repeatable; project first, optional --rtp)')
+    ap.add_argument('--rtp',help='actors table only: explicit read-only RTP root used to resolve the sheets')
     args=ap.parse_args(argv)
     if args.table=='classes':
         if args.class_id is None or args.template_item is not None or args.template_id is not None:
@@ -173,6 +181,10 @@ def main(argv=None):
             return 2
     if args.class_id is not None:
         ap.error('--class-id is only for --table classes')
+    if (args.character_sheet or args.face_sheet or args.rtp) and args.table!='actors':
+        ap.error('--character-sheet, --face-sheet and --rtp are only for --table actors')
+    if args.rtp and not (args.character_sheet or args.face_sheet):
+        ap.error('--rtp needs --character-sheet or --face-sheet')
     if (args.template_item is None)==(args.template_id is None):
         ap.error('give exactly one of --template-item or --template-id')
     if args.template_item is not None and args.table!='items':
@@ -181,7 +193,10 @@ def main(argv=None):
     try:
         project=unlinked(args.project)
         if project.is_file() and project.suffix.lower()=='.rvproj2':project=project.parent
-        result=execute(args.index,project,args.output,lambda data:indexed_snapshot(data,project,template_id,args.table,clone=args.template_item is None),'item-entry-snapshot')
+        rtp=unlinked(args.rtp) if args.rtp else None
+        output=unlinked(args.output)
+        if rtp is not None and (output==rtp or rtp in output.parents):raise ValueError('Snapshot output must be outside read-only RTP')
+        result=execute(args.index,project,output,lambda data:indexed_snapshot(data,project,template_id,args.table,clone=args.template_item is None,characters=tuple(args.character_sheet),faces=tuple(args.face_sheet),rtp=rtp),'item-entry-snapshot')
         (Path(args.output)/'item-entry-snapshot.md').write_text('# VX Ace key-item append preconditions\n\nRead-only; no mutation authorized.\n\n```json\n'+json.dumps(result,indent=2)+'\n```\n',encoding='utf-8')
         print(json.dumps({'status':'ok','table':args.table,'template_id':template_id,'next_id':result.get('next_id',result.get('next_item_id'))}))
         return 0
