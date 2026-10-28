@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v1.17.0
+# VX Ace Masterfile — v1.18.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -23,6 +23,8 @@ v1.15 adds guarded [Shop Processing](references/map-shops.md) on a blank or sing
 v1.16 adds a guarded [blank-event append](references/map-event-creation.md) that uses an existing event only as a schema donor and forces editor defaults, so dialogue/shop recipes work on maps without a hand-made blank template.
 
 v1.17 adds [adopt](references/adopt.md): the only path that writes to a working project. `plan` is read-only; `apply` requires the plan id, a closed editor and matching hashes, backs up replaced files and records an undo. The master workflow never adopts.
+
+v1.18 adds guarded [quest-stage events](references/staged-events.md): one new event with 1..8 conditional action-button pages, literal dialogue and switch/variable/self-switch commands (no branches, autorun or parallel), bound to the System hash.
 
 v1.4.1 corrects static passage observations in the [ordinary upper-tile snapshot](references/upper-tile-painting.md). Recreate previous snapshots; the native uppermost non-star tile now takes priority over lower flags. Mutation capabilities and copy safety gates remain as documented.
 
