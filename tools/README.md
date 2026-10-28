@@ -118,6 +118,14 @@ python tools/vxace_text_export.py PROJECT_INDEX --project PROJECT --json NEW.jso
 
 Balance evaluates damage formulas without executing Ruby and reports stat/EXP curves, matchups, troop rewards and shop prices ([balance](../references/balance-analysis.md)). The notetag registry cross-references note/comment tags with script regexes ([notetags](../references/notetag-registry.md)). Text export writes dialogue and database text for proofreading or translation and lints messages ([text export](../references/text-export.md)). All three are heuristic, write only new files outside the project and index, and never authorize mutation.
 
+## Text import — v1.10
+
+```powershell
+python tools/vxace_text_import.py PROJECT_INDEX --project PROJECT --csv EDITED.csv --spec-out NEW_SPEC.json --report NEW_REPORT.md
+```
+
+Turns the `translation` column of a text-export CSV into a spec of existing guarded edits (event command parameters, database string fields, map display names). Rows whose fingerprint no longer matches are skipped as `stale`. Apply the spec with the normal planner/impact/copy-patcher chain. See [text import](../references/text-import.md).
+
 ## In-engine smoke tests — v1.8
 
 ```powershell

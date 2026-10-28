@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.10.0 — Text import
+
+- Add read-only `vxace_text_import.py`: reads the `translation` column of an edited v1.7 text-export CSV (UTF-8 with or without BOM, Excel quoting), re-derives each block from a fresh index and skips rows whose fingerprint changed (`stale`). It writes a spec of existing guarded change kinds only: event `set_parameter` for Show Text/scrolling text lines, choices and matching branch labels and name commands; database string fields; and one `map_name` spec per display name. No new mutation backend.
+- Equal line counts are required; `--allow-shorter` pads with empty lines; adding lines (structural insertion) and System terms are refused or reported as unsupported. Each applied line reuses the export lint as warnings.
+- Native evidence: an edited CSV for an editor-created project changed a map message line and an actor nickname through the planner/copy-patcher chain. A smoke run confirmed both in data, then triggered the event and found the imported line in the live message window.
+- Add `tests/text_import` (23 tests, including a Ruby end-to-end planner/copy-patcher run).
+
 ## 1.9.0 — Template-clone database appends
 
 - Add `append_database_entry` for Enemies, Skills, States, Weapons and Armors: deep-clone an existing template entry, set the next static ID, force an empty note and apply only whitelisted, type/range-checked overrides (stats, rewards, costs, messages, prices, turn limits). Skill damage formulas must parse in the balance formula evaluator. One append per transaction through the existing snapshot, planner, impact and Python copy-patcher gates; key-item append is unchanged.
