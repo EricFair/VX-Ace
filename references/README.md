@@ -43,7 +43,7 @@ Use the smallest relevant reference first.
 - `event-structure.md` — guarded command/page insertion and deletion.
 - `map-region-editing.md` — region cells on an existing map.
 - `key-item-append.md` — inert key-item append.
-- `database-append.md` — template-clone append of enemies, skills, states, weapons and armors.
+- `database-append.md` — template-clone append of enemies, skills, states, weapons, armors and troops.
 - `script-slot-insertion.md` — one script slot before Main.
 - `upper-tile-painting.md` — upper-layer B-E tile painting.
 - `map-event-creation.md` — stationary dialogue-event append.

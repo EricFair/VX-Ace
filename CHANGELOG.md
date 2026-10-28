@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.11.0 — Troop append
+
+- Extend `append_database_entry` to `troops`: the template troop must have exactly one blank battle page (no valid condition, terminator-only list), which is deep-cloned; template members and battle events are never copied. Overrides are `name` and 1..8 `members` (`enemy_id` of an existing static enemy, `x` 0..544, `y` 0..416, `hidden`). The Enemies array is read-only and bound by `expected_enemies_sha256` in the snapshot, the copy-patcher pre-check, the mutation and candidate verification.
+- Snapshot (`--table troops`) reports the enemies hash, valid enemy range and template page blankness; impact lists the referenced enemies and notes that encounters/Battle Processing are not wired.
+- Native evidence: troop 31 with two appended Cave Bats was staged on an editor-created project copy and fought in a real smoke-run battle (engine labels Cave Bat A/B; party won in nine turns).
+- Add `tests/structure/test_troop_append.py` (16 tests).
+
 ## 1.10.0 — Text import
 
 - Add read-only `vxace_text_import.py`: reads the `translation` column of an edited v1.7 text-export CSV (UTF-8 with or without BOM, Excel quoting), re-derives each block from a fresh index and skips rows whose fingerprint changed (`stale`). It writes a spec of existing guarded change kinds only: event `set_parameter` for Show Text/scrolling text lines, choices and matching branch labels and name commands; database string fields; and one `map_name` spec per display name. No new mutation backend.

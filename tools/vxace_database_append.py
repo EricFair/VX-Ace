@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Guarded append-only native template clones for Enemies, Skills, States, Weapons and Armors."""
+"""Guarded append-only native template clones for Enemies, Skills, States, Weapons, Armors and blank-page Troops."""
 from __future__ import annotations
 import hashlib
 import math
 import re
 
-VERSION = '1.9.0'
+VERSION = '1.11.0'
 ACTION = 'append_database_entry'
 MUTATION_FIELDS = {'action','template_id','new_id','expected_array_sha256','expected_template_sha256','overrides'}
 BASE = {'id','name','icon_index','description','features','note'}
@@ -21,10 +21,17 @@ TABLES = {
                                      'steps_to_remove','message1','message2','message3','message4'}),
     'weapons': ('RPG::Weapon', BASE | {'price','etype_id','params','wtype_id','animation_id'}),
     'armors': ('RPG::Armor', BASE | {'price','etype_id','params','atype_id'}),
+    # Editor-saved RPG::Troop has no note/features; only a blank-page template is admitted and members are rebuilt.
+    'troops': ('RPG::Troop', {'id','name','members','pages'}),
 }
+TROOP_MEMBER_FIELDS = ('enemy_id','x','y','hidden')
+CONDITION_BOOLS = ('turn_ending','turn_valid','enemy_valid','actor_valid','switch_valid')
+CONDITION_INTS = ('turn_a','turn_b','enemy_index','enemy_hp','actor_id','actor_hp','switch_id')
+MEMBER_RANGES = {'x':(0,544),'y':(0,416)}
+MAX_MEMBERS = 8
 TEXT = {'name','description','note','battler_name','message1','message2','message3','message4'}
 BOOLS = {'remove_at_battle_end','remove_by_restriction','remove_by_damage','release_by_damage','remove_by_walking'}
-LISTS = {'features','effects','drop_items','actions','params'}
+LISTS = {'features','effects','drop_items','actions','params','members','pages'}
 NESTED = {'damage'}
 FEATURE_FIELDS = {'code','data_id','value'}
 EFFECT_FIELDS = {'code','data_id','value1','value2'}
@@ -38,6 +45,7 @@ OVERRIDES = {
     'states': ('name','icon_index','message1','message2','message3','message4','priority','min_turns','max_turns','auto_removal_timing'),
     'weapons': ('name','description','icon_index','price','params'),
     'armors': ('name','description','icon_index','price','params'),
+    'troops': ('name','members'),
 }
 INT_RANGES = {'icon_index':(0,4095),'exp':(0,9999999),'gold':(0,9999999),'battler_hue':(0,360),
               'mp_cost':(0,9999),'tp_cost':(0,100),'damage_variance':(0,100),'priority':(0,100),
@@ -56,6 +64,28 @@ def integer(value, label, minimum, maximum):
 def digest(value):
     from vxace_python_mutator import marshal_rb
     return hashlib.sha256(marshal_rb.dump(value)).hexdigest()
+
+
+def mutation_fields(table):
+    return MUTATION_FIELDS | ({'expected_enemies_sha256'} if table == 'troops' else set())
+
+
+def enemies_for(path):
+    """Read-only load of Data/Enemies.rvdata2 beside a native Data file (same snapshot/copy); returns the validated array."""
+    from vxace_index_query import unlinked
+    from vxace_python_mutator import load
+    file = unlinked(path)
+    if file.parent.name != 'Data':
+        raise ValueError('Troop append requires a native project Data path to read Enemies')
+    root, _ = load(unlinked(file.parent / 'Enemies.rvdata2'))
+    return database_array(root, 'enemies')
+
+
+def need_enemies(table, enemies):
+    if table == 'troops':
+        if enemies is None:
+            raise ValueError('Troop append requires the Enemies array of the same snapshot')
+        database_array(enemies, 'enemies')
 
 
 def table_spec(table):
@@ -98,6 +128,38 @@ def check_objects(entry, objects, cls, fields, label):
             raise ValueError('Template has unknown ' + label + ' schema')
 
 
+def check_troop_template(entry):
+    """Troop template: native schema, and exactly one blank battle page (no condition, one terminator command)."""
+    from vxace_python_mutator import RubyObject
+    check_objects(entry, entry.get('members'), 'RPG::Troop::Member', TROOP_MEMBER_FIELDS, 'members')
+    for member in entry.get('members'):
+        if any(type(member.get(k)) is not int for k in ('enemy_id', 'x', 'y')) or type(member.get('hidden')) is not bool:
+            raise ValueError('Selected troop member field types are unsupported')
+    pages = entry.get('pages')
+    if not isinstance(pages, list) or len(pages) != 1:
+        raise ValueError('Troop template must have exactly one blank battle page')
+    page = pages[0]
+    if not isinstance(page, RubyObject) or page.cls != 'RPG::Troop::Page' or set(page.ivars) != {'@condition', '@span', '@list'} or type(page.get('span')) is not int:
+        raise ValueError('Selected troop page has unknown schema')
+    condition = page.get('condition')
+    cond_fields = CONDITION_BOOLS + CONDITION_INTS
+    if not isinstance(condition, RubyObject) or condition.cls != 'RPG::Troop::Page::Condition' or set(condition.ivars) != {'@' + k for k in cond_fields}:
+        raise ValueError('Selected troop page condition has unknown schema')
+    if any(type(condition.get(k)) is not bool for k in CONDITION_BOOLS) or any(type(condition.get(k)) is not int for k in CONDITION_INTS):
+        raise ValueError('Selected troop page condition field types are unsupported')
+    if any(condition.get(k) for k in CONDITION_BOOLS):
+        raise ValueError('Troop template page is not blank: battle-event conditions are never copied')
+    commands = page.get('list')
+    if not isinstance(commands, list) or len(commands) != 1:
+        raise ValueError('Troop template page is not blank: battle-event commands are never copied')
+    command = commands[0]
+    if not isinstance(command, RubyObject) or command.cls != 'RPG::EventCommand' or set(command.ivars) != {'@code', '@indent', '@parameters'}:
+        raise ValueError('Selected troop page command has unknown schema')
+    if type(command.get('code')) is not int or type(command.get('indent')) is not int or not isinstance(command.get('parameters'), list) or \
+       command.get('parameters') != [] or command.get('code') != 0 or command.get('indent') != 0:
+        raise ValueError('Troop template page is not blank: it must hold only the terminator command')
+
+
 def template(root, table, template_id):
     """Return the validated selected template; any schema deviation refuses."""
     from vxace_python_mutator import RubyObject, RubyString
@@ -119,6 +181,9 @@ def template(root, table, template_id):
             ok = type(value) is int
         if not ok:
             raise ValueError('Selected template field types are unsupported')
+    if table == 'troops':
+        check_troop_template(entry)
+        return entry
     check_objects(entry, entry.get('features'), 'RPG::BaseItem::Feature', FEATURE_FIELDS, 'features')
     for feature in entry.get('features'):
         if any(type(feature.get(k)) is not int for k in ('code', 'data_id')) or not finite_number(feature.get('value')):
@@ -152,11 +217,30 @@ def text(value, label, minimum, maximum, newline=False):
     return value
 
 
-def validated_overrides(table, selected, overrides):
+def troop_members(value, enemies):
+    """Strictly validated member list; every enemy must be an existing static entry of the same-snapshot Enemies array."""
+    if not isinstance(value, list) or not 1 <= len(value) <= MAX_MEMBERS:
+        raise ValueError('members must contain 1..' + str(MAX_MEMBERS) + ' entries')
+    out = []
+    for number, member in enumerate(value):
+        label = 'members[' + str(number) + ']'
+        if not isinstance(member, dict) or set(member) != set(TROOP_MEMBER_FIELDS):
+            raise ValueError(label + ' must have exactly enemy_id, x, y and hidden')
+        enemy_id = integer(member['enemy_id'], label + '.enemy_id', 1, len(enemies) - 1)
+        if enemies[enemy_id] is None:
+            raise ValueError(label + '.enemy_id references a missing enemy')
+        if type(member['hidden']) is not bool:
+            raise ValueError(label + '.hidden must be boolean')
+        out.append({'enemy_id': enemy_id, 'x': integer(member['x'], label + '.x', *MEMBER_RANGES['x']),
+                    'y': integer(member['y'], label + '.y', *MEMBER_RANGES['y']), 'hidden': member['hidden']})
+    return out
+
+
+def validated_overrides(table, selected, overrides, enemies=None):
     """Return the strictly validated override dict; includes cross-field checks against inherited values."""
     from vxace_balance import parse, Opaque, MAX_FORMULA
-    if not isinstance(overrides, dict) or 'name' not in overrides:
-        raise ValueError('overrides must be an object that includes a name')
+    if not isinstance(overrides, dict) or 'name' not in overrides or (table == 'troops' and 'members' not in overrides):
+        raise ValueError('overrides must be an object that includes a name' + (' and members' if table == 'troops' else ''))
     allowed = OVERRIDES[table]
     for key in overrides:
         if key not in allowed:
@@ -173,6 +257,8 @@ def validated_overrides(table, selected, overrides):
             if not isinstance(value, str) or not BATTLER_NAME.fullmatch(value) or '..' in value:
                 raise ValueError('battler_name must be at most 100 characters without path or control characters')
             out[key] = value
+        elif key == 'members':
+            out[key] = troop_members(value, enemies)
         elif key == 'damage_critical':
             if type(value) is not bool:
                 raise ValueError('damage_critical must be boolean')
@@ -208,6 +294,9 @@ def validated_overrides(table, selected, overrides):
 
 def summarize(selected, table):
     """Bounded description of what a clone inherits as-is."""
+    if table == 'troops':
+        return {'members_not_copied': [[m.get('enemy_id'), m.get('x'), m.get('y'), m.get('hidden')] for m in selected.get('members')],
+                'page': 'one blank battle page (cloned)'}
     summary = {'features': [[f.get('code'), f.get('data_id'), f.get('value')] for f in selected.get('features')[:LIST_BUDGET]]}
     if table == 'skills':
         summary['effects'] = [[e.get('code'), e.get('data_id'), e.get('value1'), e.get('value2')] for e in selected.get('effects')]
@@ -237,35 +326,49 @@ def scalar_summary(selected, table):
     return out
 
 
-def snapshot(root, table, template_id):
+def snapshot(root, table, template_id, enemies=None):
+    need_enemies(table, enemies)
     selected = template(root, table, template_id)
-    return {'array_sha256': digest(root), 'template_sha256': digest(selected), 'template_id': template_id,
+    extra = {}
+    if table == 'troops':
+        extra = {'enemies_sha256': digest(enemies), 'valid_enemy_id_range': [1, len(enemies) - 1],
+                 'enemy_count': sum(1 for e in enemies[1:] if e is not None),
+                 'template_page_blank': True, 'template_member_count': len(selected.get('members')),
+                 'max_members': MAX_MEMBERS, 'member_x_range': list(MEMBER_RANGES['x']), 'member_y_range': list(MEMBER_RANGES['y'])}
+    return {**extra, 'array_sha256': digest(root), 'template_sha256': digest(selected), 'template_id': template_id,
             'next_id': len(root), 'existing_entries': len(root) - 1, 'append_slot_supported': len(root) <= 999,
             'template_name': selected.get('name').data.decode('utf-8', 'strict'),
             'template_fields': scalar_summary(selected, table), 'inherited': summarize(selected, table),
-            'template_note_present': bool(selected.get('note').data),
+            'template_note_present': '@note' in selected.ivars and bool(selected.get('note').data),
             'supported_overrides': list(OVERRIDES[table]),
-            'forced_values': {'id': 'new_id', 'note': ''},
+            'forced_values': {'id': 'new_id'} if table == 'troops' else {'id': 'new_id', 'note': ''},
             'scope': 'append-only native template clone; no deletion/reuse/reorder or arbitrary object creation'}
 
 
-def new_entry(root, table, mutation):
-    from vxace_python_mutator import RubyString, convert, marshal_rb
-    if not isinstance(mutation, dict) or set(mutation) != MUTATION_FIELDS or mutation.get('action') != ACTION:
+def new_entry(root, table, mutation, enemies=None):
+    from vxace_python_mutator import RubyObject, RubyString, convert, marshal_rb
+    if not isinstance(mutation, dict) or set(mutation) != mutation_fields(table) or mutation.get('action') != ACTION:
         raise ValueError('Only the exact ' + ACTION + ' schema is supported')
     database_array(root, table)
+    need_enemies(table, enemies)
     new_id = integer(mutation['new_id'], 'new ' + table + ' ID', 1, 999)
     if new_id != len(root):
         raise ValueError('New ID must append at the exact next array slot')
     selected = template(root, table, mutation['template_id'])
     if mutation['expected_array_sha256'] != digest(root) or mutation['expected_template_sha256'] != digest(selected):
         raise ValueError('Database array/template fingerprint is stale')
-    overrides = validated_overrides(table, selected, mutation['overrides'])
+    if table == 'troops' and mutation['expected_enemies_sha256'] != digest(enemies):
+        raise ValueError('Enemies array fingerprint is stale')
+    overrides = validated_overrides(table, selected, mutation['overrides'], enemies)
     entry = marshal_rb.load(marshal_rb.dump(selected))
 
     def put(owner, key, value):
         owner.set(key, convert(value, owner.get(key)) if isinstance(owner.get(key), RubyString) else value)
     put(entry, 'id', new_id)
+    if table == 'troops':
+        put(entry, 'name', overrides['name'])
+        entry.set('members', [RubyObject('RPG::Troop::Member', {'@' + k: m[k] for k in TROOP_MEMBER_FIELDS}) for m in overrides['members']])
+        return entry
     put(entry, 'note', '')
     damage = {'damage_formula': 'formula', 'damage_variance': 'variance', 'damage_critical': 'critical'}
     for key, value in overrides.items():
@@ -276,15 +379,17 @@ def new_entry(root, table, mutation):
     return entry
 
 
-def apply(root, mutation):
-    root.append(new_entry(root, table_for_class(root), mutation))
+def apply(root, mutation, source_path=None):
+    table = table_for_class(root)
+    enemies = enemies_for(source_path) if table == 'troops' and source_path is not None else None
+    root.append(new_entry(root, table, mutation, enemies))
 
 
-def verify_transition(before, after, table, mutation):
+def verify_transition(before, after, table, mutation, enemies=None):
     database_array(before, table);database_array(after, table)
     if len(after) != len(before) + 1 or digest(after[:-1]) != digest(before):
         raise ValueError('Database-entry candidate changed existing entries or array shape')
-    if digest(after[-1]) != digest(new_entry(before, table, mutation)):
+    if digest(after[-1]) != digest(new_entry(before, table, mutation, enemies)):
         raise ValueError('Database-entry candidate differs from the approved template-clone record')
 
 
@@ -307,12 +412,21 @@ def indexed_snapshot(data, project, table, template_id):
     from vxace_index_query import unlinked
     from vxace_python_mutator import load
     cls, _ = table_spec(table)
-    file = {'enemies': 'Enemies', 'skills': 'Skills', 'states': 'States', 'weapons': 'Weapons', 'armors': 'Armors'}[table]
+    file = {'enemies': 'Enemies', 'skills': 'Skills', 'states': 'States', 'weapons': 'Weapons', 'armors': 'Armors', 'troops': 'Troops'}[table]
     root, _ = load(unlinked(Path(project) / 'Data' / (file + '.rvdata2')))
-    result = snapshot(root, table, template_id)
+    enemies = enemies_for(Path(project) / 'Data' / (file + '.rvdata2')) if table == 'troops' else None
+    result = snapshot(root, table, template_id, enemies)
     indexed_check(data, table, result)
+    if table == 'troops':
+        indexed_enemies = data.json('database/enemies.json')
+        if not isinstance(indexed_enemies, list) or len(indexed_enemies) != len(enemies):
+            raise ValueError('Indexed/native Enemies array sizes disagree')
+    troop_limits = ['Only a template with exactly one blank battle page is admitted; battle-event logic is never copied and template members are not copied.',
+                    'Members must reference existing static enemies from the Enemies array fingerprinted here (expected_enemies_sha256); enemy edits after the snapshot make the spec stale.',
+                    'The troop is not wired to encounter lists or Battle Processing events; do that separately. Troops have no note field.',
+                    'Coordinates are range checked only (x 0..544, y 0..416); overlap and on-screen layout need an editor/battle-test review.'] if table == 'troops' else None
     return {'version': VERSION, 'table': table, **result,
-            'limits': ['Only templates whose exact native field set, nested schemas and types are supported are admitted.',
+            'limits': troop_limits or ['Only templates whose exact native field set, nested schemas and types are supported are admitted.',
                        'Features, effects, drops, actions and damage type/element are inherited as-is; note is forced empty. Review the inherited lists.',
                        'battler_name is only charset/length checked; the asset audit must confirm Graphics/Battlers files exist.',
                        'A new static ID can still collide with runtime-created IDs or custom consumers; review scripts/events/notes.',

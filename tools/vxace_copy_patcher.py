@@ -9,7 +9,7 @@ def mutator_command(ruby, mutator, *args):
     return [sys.executable if mutator.suffix == '.py' else ruby, str(mutator), *map(str, args)]
 DB_FILES={'actors':'Actors.rvdata2','classes':'Classes.rvdata2','skills':'Skills.rvdata2','items':'Items.rvdata2','weapons':'Weapons.rvdata2','armors':'Armors.rvdata2','enemies':'Enemies.rvdata2','troops':'Troops.rvdata2','states':'States.rvdata2','animations':'Animations.rvdata2','tilesets':'Tilesets.rvdata2','common-events':'CommonEvents.rvdata2','common_events':'CommonEvents.rvdata2','system':'System.rvdata2','map-infos':'MapInfos.rvdata2','map_infos':'MapInfos.rvdata2'}
 
-ENTRY_TABLES={'items','enemies','skills','states','weapons','armors'}
+ENTRY_TABLES={'items','enemies','skills','states','weapons','armors','troops'}
 
 
 def sha256(path:Path)->str:
@@ -97,7 +97,7 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
                 raise ValueError('Entry creation supports only an exact items or append-table locator')
             action=mut.get('action') if isinstance(mut,dict) else None
             if (loc['table']=='items',action)not in ((True,'append_key_item'),(False,'append_database_entry')):
-                raise ValueError('Entry action does not match the table: items use append_key_item; enemies/skills/states/weapons/armors use append_database_entry')
+                raise ValueError('Entry action does not match the table: items use append_key_item; enemies/skills/states/weapons/armors/troops use append_database_entry')
             out.append({'kind':'database_entry','target':'Data/'+DB_FILES[loc['table']],
                         'ruby_spec':{'type':'database_entry','mutation':mut},'description':c.get('description',''),
                         'locator':loc,'mutation':mut})
@@ -255,9 +255,10 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if change['kind']=='database_entry':
         from vxace_python_mutator import load
         from vxace_database_entries import snapshot as items_snapshot
-        from vxace_database_append import snapshot as table_snapshot
+        from vxace_database_append import snapshot as table_snapshot, enemies_for
         entry_table=change['locator']['table']
-        entry_snapshot=(lambda root,tid:items_snapshot(root,tid)) if entry_table=='items' else (lambda root,tid:table_snapshot(root,entry_table,tid))
+        entry_enemies=enemies_for(target) if entry_table=='troops' else None
+        entry_snapshot=(lambda root,tid:items_snapshot(root,tid)) if entry_table=='items' else (lambda root,tid:table_snapshot(root,entry_table,tid,entry_enemies))
         before_entry_root=load(target)[0]
         before_entry=entry_snapshot(before_entry_root,mutation['template_id'])
     before_event_root=None
@@ -311,7 +312,7 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
             verify_entry(before_entry_root,load(tmp)[0],mutation)
         else:
             from vxace_database_append import verify_transition as verify_table_entry
-            verify_table_entry(before_entry_root,load(tmp)[0],entry_table,mutation)
+            verify_table_entry(before_entry_root,load(tmp)[0],entry_table,mutation,entry_enemies)
     if change['kind']=='map_event':
         from vxace_map_events import verify_transition as verify_event
         verify_event(before_event_root,load(tmp)[0],mutation,copy_root,change['ruby_spec'].get('context',{}).get('rtp'))
@@ -516,14 +517,14 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
             raise ValueError('Entry creation requires the explicit Python backend and mandatory post-copy re-indexing')
         from vxace_python_mutator import load
         from vxace_database_entries import new_key_item, indexed_snapshot
-        from vxace_database_append import new_entry
+        from vxace_database_append import new_entry, enemies_for
         from vxace_index_query import Index, unlinked
         for c in entries:
             table=c['locator']['table']
             indexed_snapshot(Index(index),project,c['mutation']['template_id'],table)
             native=load(unlinked(project/c['target']))[0]
             if table=='items':new_key_item(native,c['mutation'])
-            else:new_entry(native,table,c['mutation'])
+            else:new_entry(native,table,c['mutation'],enemies_for(project/c['target']) if table=='troops' else None)
     if regions:
         if len({c['target'] for c in regions}) != len(regions):
             raise ValueError('Use one bounded region operation per map per transaction')

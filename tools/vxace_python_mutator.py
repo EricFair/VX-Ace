@@ -192,7 +192,7 @@ def apply(root, spec, *, source_path=None):
         region_apply(root, mutation)
     elif kind == 'database_entry':
         from vxace_database_entries import apply as entry_apply
-        entry_apply(root, mutation)
+        entry_apply(root, mutation, source_path)
     elif kind == "database":
         owner = object_by_id(root, mutation["id"])
         field = mutation["field"]
