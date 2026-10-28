@@ -303,9 +303,9 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     before_event_root=None
     if change['kind']=='map_event':
         from vxace_python_mutator import load
-        from vxace_map_events import snapshot as event_snapshot
+        from vxace_map_events import snapshot as event_snapshot,blank_snapshot
         before_event_root=load(target)[0]
-        before_event=event_snapshot(before_event_root,mutation['template_id'])
+        before_event=blank_snapshot(before_event_root,mutation['donor_event_id']) if mutation['action']=='append_blank_event' else event_snapshot(before_event_root,mutation['template_id'])
     before_tile_root=None
     if change['kind']=='map_tile':
         from vxace_python_mutator import load
@@ -403,9 +403,12 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
                      'only_approved_event_list_changed':True,'goods_arrays_unchanged':True}
         rec['diff']=''.join(difflib.unified_diff([],[json.dumps(row)+chr(10) for row in rec['shop']['inserted_rows']],fromfile='source-shop-rows',tofile='staged-shop-rows'))
     if change['kind']=='map_event':
-        rec['map_event']={'before':before_event,'after':event_snapshot(load(target)[0],mutation['template_id']),
+        blank=mutation['action']=='append_blank_event'
+        rec['map_event']={'before':before_event,'after':blank_snapshot(load(target)[0],mutation['donor_event_id']) if blank else event_snapshot(load(target)[0],mutation['template_id']),
                           'new_id':mutation['new_id'],'name':mutation['name'],'x':mutation['x'],'y':mutation['y'],
-                          'text':mutation['text'],'old_events_and_other_map_fields_preserved':True}
+                          'old_events_and_other_map_fields_preserved':True}
+        if blank:rec['map_event'].update(action='append_blank_event',donor_event_id=mutation['donor_event_id'],blank_template_predicate_ok=True)
+        else:rec['map_event']['text']=mutation['text']
         if 'graphic' in mutation:rec['map_event'].update(graphic=mutation['graphic'],asset=mutation['expected_asset'])
     if change['kind']=='map_tile':
         after_tiles=upper_snapshot(load(target)[0],copy_root,tile_cells,tile_values,tile_rtp)
@@ -565,7 +568,8 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         from vxace_python_mutator import load
         for c in map_events:
             event_data=Index(index)
-            event_indexed_snapshot(event_data,project,c['locator']['map_id'],c['mutation']['template_id'],c['mutation'].get('graphic'),rtp)
+            blank=c['mutation']['action']=='append_blank_event'
+            event_indexed_snapshot(event_data,project,c['locator']['map_id'],c['mutation']['donor_event_id'] if blank else c['mutation']['template_id'],c['mutation'].get('graphic'),rtp,blank)
             event_data.unchanged()
             new_event(load(unlinked(project/c['target']))[0],c['mutation'],project,rtp)
             if 'graphic' in c['mutation']:c['ruby_spec']['context']={'rtp':str(rtp) if rtp else None}

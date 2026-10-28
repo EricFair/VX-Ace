@@ -43,3 +43,26 @@ Public tests use an authored Ruby schema fixture and synthetic data. Fourteen ne
 On a private native blank-seed copy, VX Ace displayed the appended ID002/name, one fixed action-button page and both literal dialogue lines. Canceling inspection kept the map bytes unchanged. An unchanged older save reconstructed the map once through the version change, found the new event at(9,6) and retained the player at(8,6). Facing right and pressing the native action button displayed both lines; dismissing the message completed the interpreter and wrote one new native save. A different Game process reloaded the new event and the driver's saved completion state without extra map setup or save rewrites. Existing events, other map fields and other Data files were unchanged. These results establish the inspected fixture's behavior, not arbitrary custom event/save scripts.
 
 For each actual project, inspect ID/coordinates/priority/commands in VX Ace and test action-button access, saving and restart. Preserve source/RTP/original hashes and keep proprietary fixtures/reports private.
+
+## Blank event from a schema donor — v1.16
+
+Editor-made maps often lack the exact blank one-page event that `append_dialogue_event` needs as a template. `append_blank_event` creates one from **any existing event on that map used only as a schema donor**. It is the same `map_event` change kind, Python backend and postgates; one append per map per transaction.
+
+```powershell
+python tools/vxace_map_events.py PROJECT_INDEX --project PROJECT --map MAP_ID --donor-event EXISTING_ID --output NEW_PRIVATE_SNAPSHOT
+```
+
+The donor snapshot reports `donor_schema_ok`, the exact native map/donor Marshal hashes, the next maximum event ID, a default name (`EV%03d`) and occupied cells. The donor's RPG::Event, first RPG::Event::Page, Condition, Graphic, MoveRoute, MoveCommand and EventCommand classes and field sets must equal the exact native schema the v0.26 template predicate enforces (otherwise refuse); the values may be anything. Only the structure is used: the donor is deep-cloned, reduced to page 1, then every value is forced to the editor's new-event defaults (all conditions disabled with ids 1/value 0 and self-switch `A`, blank graphic with direction 2/pattern 0, stationary action-button page, speed/frequency 3, priority 0, walk animation on, repeating empty move route, a single empty command terminator). The result is asserted to satisfy `template(..., blank_list=True)`, so it can serve as the `template_id` of a later `append_dialogue_event`.
+
+```python
+mutation = {"action": "append_blank_event", "donor_event_id": 1, "new_id": snapshot["next_event_id"],
+            "name": snapshot["default_name"], "x": reviewed_x, "y": reviewed_y,
+            "expected_map_sha256": snapshot["map_sha256"], "expected_donor_sha256": snapshot["donor_sha256"]}
+spec = {"changes": [{"kind": "map_event", "locator": {"map_id": 1}, "proposal": "Add a blank event.", "mutation": mutation}]}
+```
+
+Rules: `new_id` is the next maximum ID (no holes, at most 999); `x`/`y` are in bounds and unoccupied; `name` is 1..100 characters and unique. Candidate verification requires all other map bytes and existing events to be identical and the new event to equal the factory result exactly; `System.version_id` advances once, as in v0.26. The Ruby backend, `--no-reindex`, stale hashes, a donor with a different schema (for example a hand-built event missing Condition/Graphic fields) and combined changes to the same map are refused. The audit records `action`, `donor_event_id` and `blank_template_predicate_ok`. A blank event has no commands and does nothing by itself; add dialogue with a following `append_dialogue_event` step.
+
+## Native evidence (v1.16 blank events)
+
+On an editor-created project whose only map event was a scripted dialogue event, a four-step [recipe](recipes.md) appended a weapon, a blank event using that event only as schema donor, a Smith dialogue event from the new blank template and a shop. A smoke run of the final copy found the Smith commands `[101, 401, 302, 605, 0]`, opened `Scene_Shop` with the expected goods, and the original project was unchanged.

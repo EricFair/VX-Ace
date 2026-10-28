@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.16.0 — Blank events from a schema donor
+
+- Add `map_event` / `append_blank_event`: deep-clone an existing event whose classes and field sets match the exact native schema, keep page 1 only and force every value to editor new-event defaults (no conditions, blank graphic, default move route, terminator-only list). The result must pass the v0.26 blank-template predicate; next max id, in-bounds unoccupied cell, unique 1..100-character name; every other map byte verified; `System.version_id` advances once. One per map per transaction; Python backend and postgates only.
+- `vxace_map_events.py --donor-event N` snapshot; recipe step `append_blank_event`, and `append_dialogue_event.template_event` may reference it with `from_step`.
+- Native evidence: on an editor-created project with no blank event, a four-step recipe (weapon, blank event, Smith dialogue, shop) produced a working shop in a smoke run; the original was unchanged.
+- Add 7 map-event tests and recipe tests.
+
 ## 1.15.0 — Map shops
 
 - Add `map_shop` / `add_shop` and the read-only `vxace_map_shops.py` snapshot: insert Shop Processing (302 plus 605 continuations, 1..32 unique goods, database or specified prices, purchase-only flag) before the terminator of an existing one-page stationary unconditional action-button event whose list is blank or exactly one literal Show Text block. Goods must be existing static items/weapons/armors bound by their array hashes; every other byte is verified unchanged; `System.version_id` advances once. One per transaction; Python backend and postgates only.

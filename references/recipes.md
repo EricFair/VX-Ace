@@ -20,7 +20,8 @@ Top level: `{"title": "optional text", "steps": [ ... ]}` (1..50 steps). Unknown
 | `append_key_item` | `template_item`, `name`, `description` | [key-item append](key-item-append.md) |
 | `append_learning` | `class_id`, `skill_id` (integer or `{"from_step": k}`), `level` | [class skill learnings](database-append.md#class-skill-learnings-v114) (`append_class_learning`) |
 | `append_encounter` | `map_id`, `troop_id`, `weight`; optional `region_ids` (default `[]`), `encounter_step` (default `null`) | [map encounters](map-encounters.md) |
-| `append_dialogue_event` | `map_id`, `template_event` (an existing blank event), `x`, `y`, `name`, `lines` (1..4 literal strings) | [map event creation](map-event-creation.md) (`append_dialogue_event`, no graphic); creates the next event id |
+| `append_blank_event` | `map_id`, `donor_event` (any existing event, used for its native schema only), `x`, `y`; optional `name` (default `EV%03d`) | [blank event from a schema donor](map-event-creation.md#blank-event-from-a-schema-donor--v116) (`append_blank_event`); creates the next event id |
+| `append_dialogue_event` | `map_id`, `template_event` (an existing blank event, or `{"from_step": k}` for an `append_blank_event` step on the same map), `x`, `y`, `name`, `lines` (1..4 literal strings) | [map event creation](map-event-creation.md) (`append_dialogue_event`, no graphic); creates the next event id |
 | `add_shop` | `map_id`, `event_id` (integer or `{"from_step": k}`), `goods` (1..32 of `{"type": "item"/"weapon"/"armor", "id": integer or {"from_step": k}, "price": null or 0..9999999}`), `purchase_only` (boolean) | [map shops](map-shops.md) |
 | `insert_script` | `name`, `source_file` (UTF-8 file, relative to the recipe) | [script slot insertion](script-slot-insertion.md), before canonical Main |
 | `set_map_display_name` | `map_id`, `name` | [map display names](map-display-names.md) |
@@ -30,7 +31,7 @@ Recipes never contain hashes, next ids or counts. Those come from each step's sn
 
 ## from_step
 
-`{"from_step": k}` resolves to the id created by step *k*. It is allowed in exactly these places: a troop's `members[].enemy_id` (step *k* must be an `append_entry` on `enemies`), `append_encounter.troop_id` (an `append_entry` on `troops`), `append_learning.skill_id` (an `append_entry` on `skills`), `add_shop.event_id` (an `append_dialogue_event` step on the same `map_id`) and `add_shop.goods[].id` (an `append_entry` on `weapons` for a weapon, on `armors` for an armor, or an `append_key_item` step for an item). *k* must be an earlier step; forward, self or unknown references are refused during validation. The id is the snapshot's next id for that step and is cross-checked against the copy patcher's audit (`created_id`, or the new event id for `append_dialogue_event`).
+`{"from_step": k}` resolves to the id created by step *k*. It is allowed in exactly these places: a troop's `members[].enemy_id` (step *k* must be an `append_entry` on `enemies`), `append_dialogue_event.template_event` (an `append_blank_event` step on the same `map_id`), `append_encounter.troop_id` (an `append_entry` on `troops`), `append_learning.skill_id` (an `append_entry` on `skills`), `add_shop.event_id` (an `append_dialogue_event` step on the same `map_id`) and `add_shop.goods[].id` (an `append_entry` on `weapons` for a weapon, on `armors` for an armor, or an `append_key_item` step for an item). *k* must be an earlier step; forward, self or unknown references are refused during validation. The id is the snapshot's next id for that step and is cross-checked against the copy patcher's audit (`created_id`, or the new event id for `append_dialogue_event` and `append_blank_event`).
 
 Example: a new sword on sale in a new shopkeeper.
 
@@ -43,14 +44,14 @@ Example: a new sword on sale in a new shopkeeper.
 ]}
 ```
 
-`append_dialogue_event` needs an existing blank one-page stationary event on the map as `template_event`; the created event has a blank graphic. The shop step reads Items, Weapons and Armors of the previous copy.
+`append_dialogue_event` needs an existing blank one-page stationary event on the map as `template_event`, or a preceding `append_blank_event` step (`"template_event": {"from_step": k}`) when the map has none; the created event has a blank graphic. The shop step reads Items, Weapons and Armors of the previous copy.
 
 ## How a step maps to the guarded chain
 
 For step `NN`, in `WORK/step-NN/`:
 
 1. `vxace_project_reader.py <source>` into `index/` (source is the original project for step 1, otherwise the previous `copy/`).
-2. The operation's snapshot CLI into `snapshot/`: `vxace_database_entries.py` (`--table/--template-id`, `--template-item`, or `--table classes --class-id` for `append_learning`), `vxace_map_encounters.py`, `vxace_map_names.py`, `vxace_map_events.py` (`--template-event`, for `append_dialogue_event`), `vxace_map_shops.py` (for `add_shop`) or `vxace_script_slots.py` (Main located from `index/scripts/order.json`). `text_import` runs `vxace_text_import.py` instead, which writes the spec itself.
+2. The operation's snapshot CLI into `snapshot/`: `vxace_database_entries.py` (`--table/--template-id`, `--template-item`, or `--table classes --class-id` for `append_learning`), `vxace_map_encounters.py`, `vxace_map_names.py`, `vxace_map_events.py` (`--template-event` for `append_dialogue_event`, `--donor-event` for `append_blank_event`), `vxace_map_shops.py` (for `add_shop`) or `vxace_script_slots.py` (Main located from `index/scripts/order.json`). `text_import` runs `vxace_text_import.py` instead, which writes the spec itself.
 3. The exact spec is built from the snapshot plus the recipe's parameters into `spec.json`.
 4. `vxace_patch_planner.py` into `plan/`, `vxace_impact.py` into `impact.json`/`impact.md`, then `vxace_copy_patcher.py --backend python` into `copy/` and `audit/`.
 
@@ -76,3 +77,8 @@ Before step 1 the runner runs `vxace_project_validator.py --backend python` on t
 ## Native evidence (v1.13)
 
 The example recipe ran unchanged against an editor-created project: four transactions created enemy 31, skill 127, troop 31 (members resolved to the new enemy) and a map 1 encounter (resolved to the new troop); the original project's files were unchanged. The attached smoke run on the final copy confirmed the encounter list, the engine's troop choice and a random battle against Cave Bat A/B after walking.
+
+## Bundled examples
+
+- `tools/recipes/example_cave.json` — enemy, skill, troop and a random encounter on map 1.
+- `tools/recipes/example_smith.json` — a weapon, a blank event (event 1 as schema donor), a Smith dialogue event and a shop selling the weapon and item 1. Check the donor id, coordinates and item ids against your own map before running it.

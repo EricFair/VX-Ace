@@ -151,6 +151,57 @@ class ValidationTests(unittest.TestCase):
         self.shop_bad(lambda d: d['steps'][3].update(name={'from_step': 1}), 'name')
         self.shop_bad(lambda d: d['steps'][1]['overrides'].update(price={'from_step': 1}), 'only allowed')
 
+    def blank_recipe(self):
+        return {'steps': [
+            {'type': 'append_blank_event', 'map_id': 1, 'donor_event': 1, 'x': 5, 'y': 5},
+            {'type': 'append_dialogue_event', 'map_id': 1, 'template_event': {'from_step': 1}, 'x': 7, 'y': 7, 'name': 'Smith', 'lines': ['Hello.']},
+            {'type': 'add_shop', 'map_id': 1, 'event_id': {'from_step': 2}, 'purchase_only': False,
+             'goods': [{'type': 'item', 'id': 1, 'price': 20}]}]}
+
+    def test_blank_event_step_validates_and_is_strict(self):
+        self.assertEqual(len(recipe.validate_recipe(self.blank_recipe())), 3)
+        data = self.blank_recipe()
+        data['steps'][0]['name'] = 'EV009'
+        recipe.validate_recipe(data)
+        for key, value, text in (('map_id', 0, 'map_id'), ('map_id', True, 'map_id'), ('donor_event', 0, 'donor_event'), ('donor_event', True, 'donor_event'),
+                                 ('donor_event', {'from_step': 1}, 'donor_event'), ('x', -1, 'x'), ('y', True, 'y'), ('name', '', 'name'),
+                                 ('name', 'x' * 101, 'name'), ('name', 3, 'name'), ('name', {'from_step': 1}, 'name')):
+            data = self.blank_recipe()
+            data['steps'][0][key] = value
+            with self.assertRaises(recipe.RecipeError) as ctx:
+                recipe.validate_recipe(data)
+            self.assertIn(text, str(ctx.exception))
+        for extra in ({'expected_map_sha256': '0' * 64}, {'lines': ['x']}, {'graphic': {}}):
+            data = self.blank_recipe()
+            data['steps'][0].update(extra)
+            with self.assertRaises(recipe.RecipeError):
+                recipe.validate_recipe(data)
+
+    def test_template_event_from_step_rules(self):
+        for mutate, text in ((lambda d: d['steps'][1].update(template_event={'from_step': 2}), 'earlier step'),
+                             (lambda d: d['steps'][1].update(template_event={'from_step': 9}), 'earlier step'),
+                             (lambda d: d['steps'][1].update(template_event={'from_step': 1, 'x': 1}), 'exactly'),
+                             (lambda d: d['steps'][1].update(map_id=2), 'different map'),
+                             (lambda d: d['steps'].insert(0, {'type': 'append_key_item', 'template_item': 1, 'name': 'C', 'description': 'x'}), 'append_blank_event'),
+                             (lambda d: d['steps'][1].update(x={'from_step': 1}), 'x must be'),
+                             (lambda d: d['steps'][0].update(donor_event={'from_step': 1}), 'donor_event')):
+            data = self.blank_recipe()
+            mutate(data)
+            with self.assertRaises(recipe.RecipeError) as ctx:
+                recipe.validate_recipe(data)
+            self.assertIn(text, str(ctx.exception))
+
+    def test_blank_event_spec_takes_hashes_id_and_default_name_from_snapshot(self):
+        step = {'type': 'append_blank_event', 'map_id': 2, 'donor_event': 3, 'x': 1, 'y': 2}
+        snap = {'next_event_id': 7, 'default_name': 'EV007', 'map_sha256': 'm' * 64, 'donor_sha256': 'd' * 64}
+        change = recipe.build_spec('T', 1, step, snap)['changes'][0]
+        self.assertEqual((change['kind'], change['locator']), ('map_event', {'map_id': 2}))
+        self.assertEqual(change['mutation'], {'action': 'append_blank_event', 'donor_event_id': 3, 'new_id': 7, 'name': 'EV007', 'x': 1, 'y': 2,
+                                              'expected_map_sha256': 'm' * 64, 'expected_donor_sha256': 'd' * 64})
+        named = recipe.build_spec('T', 1, dict(step, name='Gate'), snap)['changes'][0]
+        self.assertEqual(named['mutation']['name'], 'Gate')
+        self.assertEqual(recipe.created_id(step, snap), 7)
+
     def test_resolve_from_step(self):
         value = {'a': [{'enemy_id': {'from_step': 1}}, {'from_step': 3}], 'b': 2}
         self.assertEqual(recipe.resolve_refs(value, {1: 31, 3: 7}), {'a': [{'enemy_id': 31}, 7], 'b': 2})
@@ -471,6 +522,50 @@ class EndToEndTests(unittest.TestCase):
             for key in ('spec', 'plan', 'impact', 'audit', 'copy'):
                 self.assertTrue(Path(step[key]).exists(), (step['step'], key))
             self.assertEqual(set(step['exit_codes'].values()), {0})
+
+    def strip_blank_events(self):
+        # Make the fixture map's only event non-blank so no v0.26 blank template exists (the donor keeps the native schema).
+        path = self.game / 'Data/Map001.rvdata2'
+        root, _ = backend.load(path)
+        page = root.get('events').pairs[0][1].get('pages')[0]
+        page.set('priority_type', 2)
+        page.set('trigger', 3)
+        page.get('list').insert(0, backend.marshal_rb.load(backend.marshal_rb.dump(page.get('list')[0])))
+        page.get('list')[0].set('code', 101)
+        path.write_bytes(backend.marshal_rb.dump(root))
+
+    def test_blank_event_dialogue_event_and_shop_chain_on_map_without_blank_event(self):
+        self.add_items()
+        self.strip_blank_events()
+        data = {'title': 'Blank smithy', 'steps': [
+            {'type': 'append_blank_event', 'map_id': 1, 'donor_event': 1, 'x': 5, 'y': 5},
+            {'type': 'append_dialogue_event', 'map_id': 1, 'template_event': {'from_step': 1}, 'x': 8, 'y': 8, 'name': 'Smith', 'lines': ['Fine steel.']},
+            {'type': 'add_shop', 'map_id': 1, 'event_id': {'from_step': 2}, 'purchase_only': True,
+             'goods': [{'type': 'weapon', 'id': 1, 'price': 150}, {'type': 'item', 'id': 1, 'price': 20}]}]}
+        path = self.base / 'blank-smithy.json'
+        path.write_text(json.dumps(data), encoding='utf-8')
+        before = current_inventory(self.game)
+        # The only existing event is not a blank template, so a literal template_event 1 is refused.
+        literal = self.base / 'literal.json'
+        literal.write_text(json.dumps({'steps': [dict(data['steps'][1], template_event=1)]}), encoding='utf-8')
+        self.assertNotEqual(self.cli(literal, work=self.base / 'literal-work').returncode, 0)
+        result = self.cli(path)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertEqual(current_inventory(self.game), before)
+        report = self.report()
+        self.assertEqual([s['status'] for s in report['steps']], ['ok'] * 3)
+        self.assertEqual([s['created_id'] for s in report['steps']], [2, 3, None])
+        self.assertEqual(report['steps'][1]['resolved_parameters']['template_event'], 2)
+        self.assertEqual(report['steps'][2]['resolved_parameters']['event_id'], 3)
+        final = Path(report['final_copy'])
+        game_map, _ = backend.load(final / 'Data/Map001.rvdata2')
+        by_id = dict(game_map.get('events').pairs)
+        self.assertEqual(sorted(by_id), [1, 2, 3])
+        self.assertEqual((by_id[2].get('name').data, by_id[2].get('x'), by_id[2].get('y')), (b'EV002', 5, 5))
+        self.assertEqual([c.get('code') for c in by_id[3].get('pages')[0].get('list')], [101, 401, 302, 605, 0])
+        original, _ = backend.load(self.game / 'Data/System.rvdata2')
+        system, _ = backend.load(final / 'Data/System.rvdata2')
+        self.assertEqual(system.get('version_id'), original.get('version_id') + 3)
 
     def test_shop_step_with_absent_goods_id_stops_chain(self):
         self.add_items()

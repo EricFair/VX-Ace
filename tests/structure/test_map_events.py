@@ -155,4 +155,100 @@ class MapEventTests(unittest.TestCase):
         self.assertFalse((self.base/'copy').exists());self.assertTrue(json.loads((self.base/'audit/failure.json').read_text())['staged_copy_removed'])
 
 
+    def blank_mutation(self,donor=1,**change):
+        snap=events.blank_snapshot(self.before,donor)
+        return dict({'action':'append_blank_event','donor_event_id':donor,'new_id':snap['next_event_id'],'name':'EV%03d'%snap['next_event_id'],'x':9,'y':9,
+                     'expected_map_sha256':snap['map_sha256'],'expected_donor_sha256':snap['donor_sha256']},**change)
+
+    def set_blank_spec(self,mutation):
+        self.spec['changes'][0]['mutation']=mutation;self.specfile.write_text(json.dumps(self.spec))
+
+    def test_blank_event_from_nonblank_donor_passes_v026_predicate(self):
+        original=self.clone()
+        donor=self.before.get('events').pairs[0][1]
+        page=donor.get('pages')[0];page.set('priority_type',2);page.set('trigger',3);page.set('move_type',2);page.set('list',[page.get('list')[0],page.get('list')[0]])
+        page.get('condition').set('switch1_valid',True);page.get('graphic').set('tile_id',5);page.get('move_route').set('repeat',False)
+        donor.set('pages',[page,page])
+        self.assertEqual(donor.get('id'),1)
+        snap=events.blank_snapshot(self.before,1)
+        mutation=self.blank_mutation(1)
+        before=self.clone()
+        events.apply(self.before,mutation);events.verify_transition(before,self.before,mutation)
+        added=self.before.get('events').pairs[-1][1]
+        self.assertIs(events.template(self.before,mutation['new_id']),added)
+        self.assertEqual((added.get('id'),added.get('x'),added.get('y'),added.get('name').data),(mutation['new_id'],9,9,b'EV003'))
+        blank=added.get('pages')[0]
+        self.assertEqual(len(added.get('pages')),1);self.assertEqual(blank.get('priority_type'),0)
+        self.assertEqual((blank.get('trigger'),blank.get('move_type'),blank.get('move_speed'),blank.get('move_frequency')),(0,0,3,3))
+        self.assertEqual([c.get('code') for c in blank.get('list')],[0])
+        self.assertEqual(blank.get('move_route').get('repeat'),True)
+        self.assertEqual(snap['donor_sha256'],mutation['expected_donor_sha256'])
+        self.assertNotEqual(events.digest(original),events.digest(before))
+
+    def test_blank_event_equals_template_blank_defaults(self):
+        mutation=self.blank_mutation(1);candidate=self.clone();events.apply(candidate,mutation);events.verify_transition(self.before,candidate,mutation)
+        added=candidate.get('events').pairs[-1][1];events.template(candidate,3,True)
+        graphic=added.get('pages')[0].get('graphic')
+        self.assertEqual((graphic.get('tile_id'),graphic.get('character_name').data,graphic.get('direction'),graphic.get('pattern')),(0,b'',2,0))
+        condition=added.get('pages')[0].get('condition')
+        self.assertEqual((condition.get('self_switch_ch').data,condition.get('switch1_id'),condition.get('variable_value')),(b'A',1,0))
+
+    def test_blank_event_refusals(self):
+        for change in ({'x':4,'y':5},{'x':-1},{'x':10},{'y':10},{'x':True},{'new_id':2},{'new_id':4},{'new_id':True},{'name':''},{'name':'x'*101},{'name':self.before.get('events').pairs[0][1].get('name').data.decode()},
+                       {'expected_map_sha256':'0'*64},{'expected_donor_sha256':'0'*64},{'donor_event_id':9},{'donor_event_id':2},{'donor_event_id':True},{'extra':1}):
+            with self.assertRaises(ValueError,msg=str(change)):events.apply(self.clone(),dict(self.blank_mutation(1),**change))
+        for part in ('event','page','condition','graphic','route','command','eventcommand'):
+            candidate=self.clone();event=candidate.get('events').pairs[0][1];page=event.get('pages')[0]
+            selected={'event':event,'page':page,'condition':page.get('condition'),'graphic':page.get('graphic'),
+                      'route':page.get('move_route'),'command':page.get('move_route').get('list')[0],'eventcommand':page.get('list')[0]}[part]
+            selected.set('unknown',7)
+            with self.assertRaises(ValueError,msg=part):events.apply(candidate,dict(self.blank_mutation(1),expected_map_sha256='0'*64))
+            with self.assertRaises(ValueError,msg=part):events.blank_snapshot(candidate,1)
+
+    def test_blank_candidate_verifier_rejects_tampering(self):
+        mutation=self.blank_mutation(1)
+        for mode in ('old','table','name','position','page','extra'):
+            candidate=self.clone();events.apply(candidate,mutation);added=candidate.get('events').pairs[-1][1]
+            if mode=='old':candidate.get('events').pairs[0][1].set('x',0)
+            elif mode=='table':candidate.get('data').data[0]=1
+            elif mode=='name':added.set('name',backend.convert('Changed'))
+            elif mode=='position':added.set('x',8)
+            elif mode=='page':added.get('pages')[0].set('priority_type',1)
+            else:candidate.set('unknown_field',1)
+            with self.assertRaises(ValueError):events.verify_transition(self.before,candidate,mutation)
+
+    def test_blank_event_copy_chain(self):
+        mutation=self.blank_mutation(1);self.set_blank_spec(mutation);original=current_inventory(self.game)
+        result=self.stage();self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(current_inventory(self.game),original)
+        candidate,_=backend.load(self.base/'copy/Data/Map001.rvdata2');events.verify_transition(self.before,candidate,mutation)
+        events.template(candidate,3)
+        system,_=backend.load(self.base/'copy/Data/System.rvdata2');self.assertEqual(system.get('version_id'),21)
+        report=json.loads((self.base/'audit/audit.json').read_text())['changes'][0]['map_event']
+        self.assertEqual((report['action'],report['new_id'],report['donor_event_id']),('append_blank_event',3,1));self.assertTrue(report['blank_template_predicate_ok'])
+        for name in ('structural-impact.json','semantic-diff.json','post-validation/validation.json'):self.assertTrue((self.base/'audit'/name).is_file())
+
+    def test_blank_event_transaction_refusals(self):
+        self.set_blank_spec(self.blank_mutation(1))
+        for extra in (('--backend','ruby'),('--no-reindex',)):
+            result=self.stage(extra);self.assertNotEqual(result.returncode,0);self.assertFalse((self.base/'copy').exists())
+        self.spec['changes'].append(self.spec['changes'][0]);self.specfile.write_text(json.dumps(self.spec))
+        self.assertNotEqual(self.stage().returncode,0);self.assertFalse((self.base/'copy').exists())
+        self.spec['changes'].pop();self.set_blank_spec(dict(self.blank_mutation(1),x=4,y=5))
+        self.assertNotEqual(self.stage().returncode,0);self.assertFalse((self.base/'copy').exists())
+        self.set_blank_spec(dict(self.blank_mutation(1),expected_map_sha256='0'*64))
+        self.assertNotEqual(self.stage().returncode,0);self.assertFalse((self.base/'copy').exists())
+
+    def test_donor_snapshot_cli(self):
+        original=current_inventory(self.game)
+        result=subprocess.run([sys.executable,str(ROOT/'tools/vxace_map_events.py'),str(self.index),'--project',str(self.game),
+                               '--map','1','--donor-event','1','--output',str(self.base/'snapshot')],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        report=json.loads((self.base/'snapshot/map-event-snapshot.json').read_text())
+        self.assertTrue(report['donor_schema_ok']);self.assertEqual((report['next_event_id'],report['default_name']),(3,'EV003'));self.assertFalse(report['mutation_authorized'])
+        self.assertEqual(current_inventory(self.game),original)
+        bad=subprocess.run([sys.executable,str(ROOT/'tools/vxace_map_events.py'),str(self.index),'--project',str(self.game),
+                            '--map','1','--donor-event','2','--output',str(self.base/'snapshot2')],capture_output=True,text=True)
+        self.assertNotEqual(bad.returncode,0)
+
+
 if __name__=='__main__':unittest.main()
