@@ -145,3 +145,56 @@ Limits:
 ## Native evidence (v1.11 troops)
 
 On the same project copy that already held appended enemy 31, a troop append cloned blank template troop 1 into troop 31 (Cave Bat Pair, two enemy-31 members) through the planner/copy-patcher postgates. A smoke run confirmed the members, the single blank page and an unchanged troop 1, then started Battle Processing for troop 31: the engine labelled the members Cave Bat A/B and the party defeated both in nine turns before returning to the map.
+
+## Class skill learnings (v1.14)
+
+A separate narrow operation appends one skill learning to an existing native class: `append_class_learning`. It adds exactly one `RPG::Class::Learning` (`@level`, `@skill_id`, `@note`) at the end of one class's `learnings` list. It never edits, removes or reorders existing learnings, never touches any other class field or class, and never writes `Skills.rvdata2` (which is only read).
+
+Capture the preconditions (read-only, needs a fresh external Project Reader index):
+
+```powershell
+python tools/vxace_database_entries.py PROJECT_INDEX --project PROJECT --table classes --class-id 1 --output NEW_EXTERNAL_SNAPSHOT
+```
+
+`--table classes` takes only `--class-id` (no `--template-id`/`--template-item`). The snapshot reports `array_sha256` (Classes array), `class_sha256` (the selected class), `skills_sha256` (the Marshal SHA-256 of the parsed `Data/Skills.rvdata2` array, the same convention as `expected_enemies_sha256` for troops), `learning_count`, the existing learnings (level, skill id, skill name), `valid_skill_id_range` and `valid_level_range`. A snapshot is not mutation permission.
+
+```json
+{
+  "title": "Knight learns Fang Strike",
+  "changes": [{
+    "kind": "database_entry",
+    "locator": {"table": "classes", "id": 1},
+    "proposal": "Class 1 learns skill 127 at level 3 after reviewing its existing learnings.",
+    "mutation": {
+      "action": "append_class_learning",
+      "expected_array_sha256": "REPLACE_WITH_EXACT_CLASSES_ARRAY_SHA256",
+      "expected_class_sha256": "REPLACE_WITH_EXACT_CLASS_SHA256",
+      "expected_learning_count": 5,
+      "expected_skills_sha256": "REPLACE_WITH_EXACT_SKILLS_SHA256",
+      "skill_id": 127,
+      "level": 3
+    }
+  }]
+}
+```
+
+Rules:
+
+- The locator is exactly `{"table": "classes", "id": CLASS_ID}`; the copy patcher passes the id into the native chain, so it is not repeated in the mutation. The mutation has exactly the seven fields shown; unknown or missing keys refuse.
+- Classes array: dense native `RPG::Class` entries with a nil slot zero and exact slot ids, no aliased entries. The selected class must have exactly the native field set `id`, `name`, `icon_index`, `description`, `features`, `note`, `exp_params`, `params`, `learnings`. Its `learnings` must be an unaliased list (not shared with another class) of at most 256 entries, each exactly `RPG::Class::Learning` with `@level` (int), `@skill_id` (int) and `@note` (String); anything else refuses.
+- `skill_id` must be an integer (booleans refuse) naming an existing, non-nil skill of the dense native `Data/Skills.rvdata2` read beside the target (same snapshot/copy), bound by `expected_skills_sha256`. `level` must be an integer 1..99.
+- A class that already learns `skill_id` at any level refuses (no duplicate skill ids). The new learning is appended last with `@note` equal to an empty UTF-8 string; order does not matter to the engine, which checks every learning on level-up.
+- `expected_array_sha256`, `expected_class_sha256`, `expected_skills_sha256` and `expected_learning_count` are checked in the copy patcher pre-check, in the mutation and in candidate verification; any edit after the snapshot makes the spec stale.
+- Candidate verification proves that the whole array except the selected class serializes identically, the selected class is identical except `learnings`, the old learnings are an identical prefix, and the appended object equals the factory result. `Skills.rvdata2` must be byte-identical in the copy.
+- One change per transaction. It cannot be combined with another change to `Classes.rvdata2` or to `Skills.rvdata2`. It requires the explicit Python backend and mandatory post-copy re-indexing (Ruby backend and `--no-reindex` refuse). Post-validation and the semantic diff run as for the other database appends. `System.version_id` is not advanced: the database reloads when the game starts.
+
+Limits:
+
+- New learnings take effect through `Game_Actor#level_up`, which learns the skills of the new level. Actors that already exist in old saves do not learn the skill retroactively; they learn it on their next level-up to a level at or above the learning level, and a learning level they have already passed is not back-filled. A new game builds actors from the changed database. Do not describe this operation as granting the skill to existing characters.
+- Actor initial levels, class-change scripts, custom skill-learning scripts and notetag consumers are not analysed; the impact report lists literal mentions only.
+- The skill itself (cost, scope, damage) is not judged; create new skills with the template-clone append above (or the recipe `append_learning` step with `from_step`) and review them in the editor.
+- Learning notes are never authored; existing notes are preserved untouched.
+
+## Native evidence (v1.14 class learnings)
+
+A two-step [recipe](recipes.md) on an editor-created project appended skill 127 and then a class 1 learning (skill `from_step` 1, level 3). A smoke run confirmed the learning in `\`, that actor 1 started at level 1 without the skill, and that raising its EXP to level 3 made the engine's own `level_up` teach skill 127. The original project was unchanged.

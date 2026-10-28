@@ -112,6 +112,9 @@ def apply(root, mutation, source_path=None):
     if isinstance(mutation,dict) and mutation.get('action')=='append_database_entry':
         from vxace_database_append import apply as append_entry
         return append_entry(root,mutation,source_path)
+    if isinstance(mutation,dict) and mutation.get('action')=='append_class_learning':
+        from vxace_class_learning import apply as append_learning
+        return append_learning(root,mutation,source_path)
     item=new_key_item(root,mutation)
     root.append(item)
 
@@ -149,9 +152,26 @@ def main(argv=None):
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('index');ap.add_argument('--project',required=True);ap.add_argument('--output',required=True)
     ap.add_argument('--template-item',type=int,help='Items template ID (key-item append; same as --table items --template-id)')
-    ap.add_argument('--table',default='items',help='items, enemies, skills, states, weapons, armors or troops')
+    ap.add_argument('--table',default='items',help='items, enemies, skills, states, weapons, armors, troops or classes (learnings)')
     ap.add_argument('--template-id',type=int)
+    ap.add_argument('--class-id',type=int,help='classes table only: the class whose skill learnings are snapshotted')
     args=ap.parse_args(argv)
+    if args.table=='classes':
+        if args.class_id is None or args.template_item is not None or args.template_id is not None:
+            ap.error('--table classes takes only --class-id')
+        try:
+            project=unlinked(args.project)
+            if project.is_file() and project.suffix.lower()=='.rvproj2':project=project.parent
+            from vxace_class_learning import indexed_snapshot as learning_snapshot
+            result=execute(args.index,project,args.output,lambda data:learning_snapshot(data,project,args.class_id),'item-entry-snapshot')
+            (Path(args.output)/'item-entry-snapshot.md').write_text('# VX Ace class skill-learning append preconditions\n\nRead-only; no mutation authorized.\n\n```json\n'+json.dumps(result,indent=2)+'\n```\n',encoding='utf-8')
+            print(json.dumps({'status':'ok','table':'classes','class_id':args.class_id,'learning_count':result['learning_count']}))
+            return 0
+        except Exception as exc:
+            print('Class learning snapshot refused: '+str(exc),file=sys.stderr)
+            return 2
+    if args.class_id is not None:
+        ap.error('--class-id is only for --table classes')
     if (args.template_item is None)==(args.template_id is None):
         ap.error('give exactly one of --template-item or --template-id')
     if args.template_item is not None and args.table!='items':

@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v1.13
+# RPG Maker VX Ace Developer — v1.14
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -43,6 +43,7 @@ Each operation is a narrow, separately evidenced subset with exact native guards
 | Upper-layer scenery tiles | [upper tiles](references/upper-tile-painting.md) |
 | Inert key items | [key items](references/key-item-append.md) |
 | Enemies, skills, states, weapons, armors, troops (template clone + whitelisted overrides) | [database append](references/database-append.md) |
+| One class skill learning (existing skill, level) | [database append](references/database-append.md) |
 | One script slot before canonical Main | [script slots](references/script-slot-insertion.md) |
 | Stationary dialogue events, optionally with character graphics | [map events](references/map-event-creation.md), [graphics](references/character-event-graphics.md) |
 | One-time gold/item rewards | [rewards](references/one-time-event-rewards.md) |
@@ -186,7 +187,7 @@ Uses a pinned MIT-declared codec subset from `azureknight63/rpgvxace-mcp`, needs
 
 ## Automated validation
 
-The suite has **630 tests** (see [CHANGELOG.md](CHANGELOG.md) for per-release counts). CI runs on Ubuntu and Windows with Python 3.11 and Ruby 3.2; consult the latest Actions run for actual status. Ruby-dependent tests skip when Ruby is not installed.
+The suite has **651 tests** (see [CHANGELOG.md](CHANGELOG.md) for per-release counts). CI runs on Ubuntu and Windows with Python 3.11 and Ruby 3.2; consult the latest Actions run for actual status. Ruby-dependent tests skip when Ruby is not installed.
 
 ```bash
 python tools/run_tests.py

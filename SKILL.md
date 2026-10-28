@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.13.0
+Version: 1.14.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -90,7 +90,7 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Plan and stage a change | [workflows/project-aware-patching.md](workflows/project-aware-patching.md), [workflows/verified-copy-mutation.md](workflows/verified-copy-mutation.md) |
 | Chain several guarded additions (enemy -> skill -> troop -> encounter -> smoke run) | `tools/vxace_recipe.py run` ([references/recipes.md](references/recipes.md)) |
 | Make a troop appear as a random encounter | [references/map-encounters.md](references/map-encounters.md) |
-| Add an enemy, skill, state, weapon, armor or troop | [references/database-append.md](references/database-append.md) |
+| Add an enemy, skill, state, weapon, armor, troop or class skill learning | [references/database-append.md](references/database-append.md) |
 | Ship a build | [workflows/release-checklist.md](workflows/release-checklist.md) |
 | First playable slice | [workflows/playable-slice-verification.md](workflows/playable-slice-verification.md), [examples/oakfall](examples/oakfall/README.md) |
 | MCP read-only adapter | [references/mcp-read-only.md](references/mcp-read-only.md) |
@@ -117,7 +117,7 @@ Only these structural writes exist; everything else is proposal/manual-only. Eac
 - existing-map region cells ([map-region-editing.md](references/map-region-editing.md));
 - one random-encounter entry on an existing map ([map-encounters.md](references/map-encounters.md));
 - append-only inert key items ([key-item-append.md](references/key-item-append.md));
-- one template-clone append of an enemy, skill, state, weapon, armor or troop (blank battle page, 1..8 existing enemies) with whitelisted overrides ([database-append.md](references/database-append.md));
+- one template-clone append of an enemy, skill, state, weapon, armor or troop (blank battle page, 1..8 existing enemies) with whitelisted overrides, or one class skill learning ([database-append.md](references/database-append.md));
 - one script slot before canonical Main ([script-slot-insertion.md](references/script-slot-insertion.md), [script-byte-fidelity.md](references/script-byte-fidelity.md));
 - ordinary upper-layer B-E tile painting ([upper-tile-painting.md](references/upper-tile-painting.md));
 - one stationary literal-dialogue event per map ([map-event-creation.md](references/map-event-creation.md)) with optional character graphic ([character-event-graphics.md](references/character-event-graphics.md));

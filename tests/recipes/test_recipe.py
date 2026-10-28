@@ -54,6 +54,35 @@ class ValidationTests(unittest.TestCase):
         self.bad(lambda d: d['steps'][0]['overrides'].update(exp={'from_step': 1}), 'only allowed')
         self.bad(lambda d: d['steps'][3].update(weight={'from_step': 1}), 'weight')
 
+    def test_append_learning_validation(self):
+        good = {'type': 'append_learning', 'class_id': 1, 'skill_id': {'from_step': 2}, 'level': 5}
+
+        def bad(step, text):
+            data = example()
+            data['steps'].append(step)
+            with self.assertRaises(recipe.RecipeError) as ctx:
+                recipe.validate_recipe(data)
+            self.assertIn(text, str(ctx.exception))
+        data = example()
+        data['steps'].append(good)
+        self.assertEqual(len(recipe.validate_recipe(data)), 5)
+        data['steps'][4]['skill_id'] = 7
+        recipe.validate_recipe(data)
+        bad({**good, 'skill_id': {'from_step': 1}}, 'table skills')
+        bad({**good, 'skill_id': {'from_step': 5}}, 'earlier step')
+        bad({**good, 'skill_id': {'from_step': 9}}, 'earlier step')
+        bad({**good, 'skill_id': {'from_step': 2, 'x': 1}}, 'exactly')
+        bad({**good, 'skill_id': 0}, 'skill_id')
+        bad({**good, 'skill_id': True}, 'skill_id')
+        bad({**good, 'class_id': 0}, 'class_id')
+        bad({**good, 'class_id': {'from_step': 2}}, 'class_id')
+        bad({**good, 'level': {'from_step': 2}}, 'level')
+        bad({**good, 'level': '5'}, 'level')
+        bad({**good, 'level': 5.0}, 'level')
+        bad({**good, 'extra': 1}, 'unknown keys')
+        bad({'type': 'append_learning', 'class_id': 1, 'level': 5}, 'missing keys')
+        bad({**good, 'expected_class_sha256': '0' * 64}, 'unknown keys')
+
     def test_resolve_from_step(self):
         value = {'a': [{'enemy_id': {'from_step': 1}}, {'from_step': 3}], 'b': 2}
         self.assertEqual(recipe.resolve_refs(value, {1: 31, 3: 7}), {'a': [{'enemy_id': 31}, 7], 'b': 2})
@@ -65,6 +94,7 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(recipe.created_id({'type': 'append_entry'}, {'next_id': 31}), 31)
         self.assertEqual(recipe.created_id({'type': 'append_key_item'}, {'next_item_id': 17}), 17)
         self.assertIsNone(recipe.created_id({'type': 'append_encounter'}, {}))
+        self.assertIsNone(recipe.created_id({'type': 'append_learning'}, {'next_id': 5}))
 
 
 class SpecBuildingTests(unittest.TestCase):
@@ -90,6 +120,17 @@ class SpecBuildingTests(unittest.TestCase):
         step = {'type': 'append_entry', 'table': 'enemies', 'template_id': 1, 'overrides': {'name': 'Bat'}}
         with self.assertRaises(recipe.RecipeError):
             recipe.build_spec('T', 1, step, {**self.ENTRY, 'append_slot_supported': False})
+
+    def test_learning_spec_takes_hashes_and_count_from_snapshot(self):
+        snap = {'array_sha256': 'a' * 64, 'class_sha256': 'b' * 64, 'skills_sha256': 'c' * 64, 'learning_count': 4, 'append_supported': True}
+        spec = recipe.build_spec('T', 3, {'type': 'append_learning', 'class_id': 2, 'skill_id': 9, 'level': 5}, snap)
+        change = spec['changes'][0]
+        self.assertEqual((change['kind'], change['locator']), ('database_entry', {'table': 'classes', 'id': 2}))
+        self.assertEqual(change['mutation'], {'action': 'append_class_learning', 'expected_array_sha256': 'a' * 64,
+                                              'expected_class_sha256': 'b' * 64, 'expected_learning_count': 4,
+                                              'expected_skills_sha256': 'c' * 64, 'skill_id': 9, 'level': 5})
+        with self.assertRaises(recipe.RecipeError):
+            recipe.build_spec('T', 3, {'type': 'append_learning', 'class_id': 2, 'skill_id': 9, 'level': 5}, {**snap, 'append_supported': False})
 
     def test_key_item_encounter_name_and_script_specs(self):
         item = recipe.build_spec('T', 1, {'type': 'append_key_item', 'template_item': 2, 'name': 'Key', 'description': 'd'},
@@ -131,6 +172,10 @@ class EndToEndTests(unittest.TestCase):
                         "s << [104,'Main',Zlib::Deflate.deflate(\"rgss_main { SceneManager.run }\\r\\n\").force_encoding('UTF-8')]\n"
                         "File.binwrite(p,Marshal.dump(s))\n", encoding='utf-8')
         subprocess.run(['ruby', str(main), str(self.game)], check=True, capture_output=True)
+        import test_class_learning as learning_tests
+        script = self.base / 'classes.rb'
+        script.write_text(prelude + '\n' + learning_tests.CLASS_RUBY, encoding='utf-8')
+        subprocess.run(['ruby', str(script), str(self.game)], check=True, capture_output=True)
         self.work = self.base / 'recipe-work'
 
     def cli(self, recipe_path, *extra, work=None):
@@ -206,6 +251,43 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(self.cli(EXAMPLE).returncode, 2)
         self.assertEqual(self.cli(EXAMPLE, work=self.game / 'inside').returncode, 2)
         self.assertFalse((self.game / 'inside').exists())
+
+    def test_new_skill_then_class_learning_with_from_step(self):
+        data = {'title': 'Learn', 'steps': [
+            {'type': 'append_entry', 'table': 'skills', 'template_id': 1, 'overrides': {'name': 'Fang Strike', 'mp_cost': 4}},
+            {'type': 'append_learning', 'class_id': 1, 'skill_id': {'from_step': 1}, 'level': 6}]}
+        path = self.base / 'learn.json'
+        path.write_text(json.dumps(data), encoding='utf-8')
+        before = current_inventory(self.game)
+        result = self.cli(path)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertEqual(current_inventory(self.game), before)
+        report = self.report()
+        self.assertEqual([s['status'] for s in report['steps']], ['ok', 'ok'])
+        self.assertEqual([s['created_id'] for s in report['steps']], [3, None])
+        self.assertEqual(report['steps'][1]['resolved_parameters']['skill_id'], 3)
+        self.assertEqual(report['steps'][1]['source'], str(self.work.resolve() / 'step-01/copy'))
+        final = Path(report['final_copy'])
+        classes, _ = backend.load(final / 'Data/Classes.rvdata2')
+        skills, _ = backend.load(final / 'Data/Skills.rvdata2')
+        self.assertEqual(skills[3].get('name').data, b'Fang Strike')
+        self.assertEqual([(x.get('level'), x.get('skill_id')) for x in classes[1].get('learnings')], [(1, 1), (6, 3)])
+        self.assertEqual(classes[2].get('learnings'), [])
+        read_spec = json.loads(Path(report['steps'][1]['spec']).read_text(encoding='utf-8'))
+        self.assertEqual(read_spec['changes'][0]['locator'], {'table': 'classes', 'id': 1})
+        self.assertEqual(read_spec["changes"][0]["mutation"]["skill_id"], 3)
+        for key in ('spec', 'plan', 'impact', 'audit', 'copy'):
+            self.assertTrue(Path(report['steps'][1][key]).exists(), key)
+
+    def test_learning_step_duplicate_skill_stops_chain(self):
+        data = {'title': 'Dup', 'steps': [{'type': 'append_learning', 'class_id': 1, 'skill_id': 1, 'level': 9}]}
+        path = self.base / 'dup.json'
+        path.write_text(json.dumps(data), encoding='utf-8')
+        result = self.cli(path)
+        self.assertEqual(result.returncode, 3, result.stderr)
+        report = self.report()
+        self.assertEqual((report['status'], report['steps'][0]['status']), ('step_failed', 'failed'))
+        self.assertIsNone(report['final_copy'])
 
     def test_display_name_and_encounter_steps(self):
         data = {'title': 'Misc', 'steps': [

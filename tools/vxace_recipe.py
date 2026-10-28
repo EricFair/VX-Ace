@@ -16,7 +16,7 @@ from pathlib import Path
 from vxace_copy_patcher import current_inventory
 from vxace_index_query import unlinked
 
-VERSION = '1.13.0'
+VERSION = '1.14.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -24,6 +24,7 @@ TABLES = ('enemies', 'skills', 'states', 'weapons', 'armors', 'troops')
 STEP_KEYS = {
     'append_entry': ({'type', 'table', 'template_id', 'overrides'}, {'type', 'table', 'template_id', 'overrides'}),
     'append_key_item': ({'type', 'template_item', 'name', 'description'}, {'type', 'template_item', 'name', 'description'}),
+    'append_learning': ({'type', 'class_id', 'skill_id', 'level'}, {'type', 'class_id', 'skill_id', 'level'}),
     'append_encounter': ({'type', 'map_id', 'troop_id', 'weight'}, {'type', 'map_id', 'troop_id', 'weight', 'region_ids', 'encounter_step'}),
     'insert_script': ({'type', 'name', 'source_file'}, {'type', 'name', 'source_file'}),
     'set_map_display_name': ({'type', 'map_id', 'name'}, {'type', 'map_id', 'name'}),
@@ -122,6 +123,15 @@ def validate_recipe(recipe):
             for key in ('name', 'description'):
                 if not isinstance(step[key], str):
                     raise RecipeError(f'step {number}: {key} must be a string')
+        elif kind == 'append_learning':
+            if not is_int(step['class_id']) or step['class_id'] < 1:
+                raise RecipeError(f'step {number}: class_id must be a positive integer')
+            if is_ref(step['skill_id']):
+                check_ref(step['skill_id'], number, steps, 'skills', 'skill_id')
+            elif not is_int(step['skill_id']) or step['skill_id'] < 1:
+                raise RecipeError(f'step {number}: skill_id must be a positive integer or {{"from_step": N}}')
+            if not is_int(step['level']):
+                raise RecipeError(f'step {number}: level must be an integer')
         elif kind == 'append_encounter':
             if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
                 raise RecipeError(f'step {number}: map_id must be an integer 1..999')
@@ -150,10 +160,12 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: csv must be a non-empty string')
             if 'allow_shorter' in step and type(step['allow_shorter']) is not bool:
                 raise RecipeError(f'step {number}: allow_shorter must be a boolean')
-        if kind != 'append_entry' and kind != 'append_encounter' and contains_ref_key(step):
+        if kind not in ('append_entry', 'append_encounter', 'append_learning') and contains_ref_key(step):
             raise RecipeError(f'step {number}: from_step is not allowed in a {kind} step')
         if kind == 'append_encounter' and contains_ref_key({k: v for k, v in step.items() if k != 'troop_id'}):
             raise RecipeError(f'step {number}: from_step is only allowed for troop_id')
+        if kind == 'append_learning' and contains_ref_key({k: v for k, v in step.items() if k != 'skill_id'}):
+            raise RecipeError(f'step {number}: from_step is only allowed for skill_id')
     return steps
 
 
@@ -206,6 +218,14 @@ def build_spec(title, number, step, snapshot, source=None):
                   'mutation': {'action': 'append_key_item', 'template_id': step['template_item'], 'new_id': snapshot['next_item_id'],
                                'expected_array_sha256': snapshot['array_sha256'], 'expected_template_sha256': snapshot['template_sha256'],
                                'name': step['name'], 'description': step['description']}}
+    elif kind == 'append_learning':
+        if not snapshot.get('append_supported'):
+            raise RecipeError('class has no supported learning append slot')
+        change = {'kind': 'database_entry', 'locator': {'table': 'classes', 'id': step['class_id']},
+                  'proposal': f'Recipe step {number}: class {step["class_id"]} learns skill {step["skill_id"]} at level {step["level"]}.',
+                  'mutation': {'action': 'append_class_learning', 'expected_array_sha256': snapshot['array_sha256'],
+                               'expected_class_sha256': snapshot['class_sha256'], 'expected_learning_count': snapshot['learning_count'],
+                               'expected_skills_sha256': snapshot['skills_sha256'], 'skill_id': step['skill_id'], 'level': step['level']}}
     elif kind == 'append_encounter':
         change = {'kind': 'map_encounter', 'locator': {'map_id': step['map_id']},
                   'proposal': f'Recipe step {number}: append one random encounter to map {step["map_id"]}.',
@@ -339,6 +359,9 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
                 table_args = (['--table', resolved['table'], '--template-id', resolved['template_id']] if kind == 'append_entry'
                               else ['--template-item', resolved['template_item']])
                 script, args, name = 'vxace_database_entries.py', [index, '--project', source, *table_args], 'item-entry-snapshot'
+            elif kind == 'append_learning':
+                script, args, name = ('vxace_database_entries.py', [index, '--project', source, '--table', 'classes', '--class-id', resolved['class_id']],
+                                      'item-entry-snapshot')
             elif kind == 'append_encounter':
                 script, args, name = 'vxace_map_encounters.py', [index, '--project', source, '--map', resolved['map_id']], 'map-encounter-snapshot'
             elif kind == 'set_map_display_name':

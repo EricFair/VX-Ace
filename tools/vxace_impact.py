@@ -304,7 +304,53 @@ def append_entry_impact(index, change):
                           'Exact native array/template hashes and schema are enforced separately by the snapshot/copy backend.']}
 
 
+LEARNING_MARKERS = ('learn_skill','forget_skill','learnings','$data_classes','change_class','level_up')
+
+
+def class_learning_impact(index, change):
+    """Impact for append_class_learning; shows the class, its existing learnings and the skill."""
+    from vxace_index_query import Index
+    from vxace_search import search
+    from vxace_class_learning import native_mutation, LEVEL_RANGE, MAX_LEARNINGS
+    mutation=native_mutation(change.get('locator'),change.get('mutation'))
+    class_id=mutation['class_id']
+    data=Index(index);classes=data.json('database/classes.json');skills=data.json('database/skills.json')
+    if not isinstance(classes,list) or not 2<=len(classes)<=1000 or classes[0] is not None or not isinstance(skills,list) or len(skills)<2 or skills[0] is not None:
+        raise ValueError('Indexed Classes and Skills arrays are required')
+    for number,row in enumerate(classes[1:],1):
+        if not isinstance(row,dict) or row.get('__class__')!='RPG::Class' or type(row.get('id')) is not int or row['id']!=number:
+            raise ValueError('Indexed class IDs must match native array slots')
+    if type(class_id) is not int or not 0<class_id<len(classes):raise ValueError('class ID outside the indexed Classes array')
+    skill_id=mutation['skill_id']
+    if type(skill_id) is not int or not 0<skill_id<len(skills) or not isinstance(skills[skill_id],dict):
+        raise ValueError('skill_id is not an existing indexed skill')
+    level=mutation['level']
+    if type(level) is not int or not LEVEL_RANGE[0]<=level<=LEVEL_RANGE[1]:raise ValueError('level outside 1..99')
+    selected=classes[class_id];learned=selected.get('learnings')
+    existing=[{'level':x.get('level'),'skill_id':x.get('skill_id'),'skill':skills[x['skill_id']].get('name') if type(x.get('skill_id')) is int and 0<x['skill_id']<len(skills) and isinstance(skills[x['skill_id']],dict) else None}
+              for x in (learned if isinstance(learned,list) else []) if isinstance(x,dict)]
+    if isinstance(learned,list) and mutation['expected_learning_count']!=len(learned):
+        raise ValueError('expected_learning_count disagrees with the indexed class learnings')
+    if any(x['skill_id']==skill_id for x in existing):raise ValueError('The class already learns this skill')
+    mentions=[]
+    for marker in LEARNING_MARKERS:
+        result=search(data,query=marker,scopes=('scripts','events'),limit=20)
+        mentions.append({'literal':marker,'matches':result['matches'],'evidence':result['hits'],'evidence_truncated':result['truncated']})
+    data.unchanged()
+    return {'kind':'database_entry','severity':'medium','action':mutation['action'],
+            'target':{'table':'classes','class_id':class_id,'class_name':selected.get('name'),'skill_id':skill_id,'skill_name':skills[skill_id].get('name'),'level':level},
+            'existing_learnings':existing,'learning_count_after':len(existing)+1,'learning_budget':MAX_LEARNINGS,
+            'new_learning_note':'','consumer_mentions':mentions,
+            'limitations':['The learning is appended last with an empty note; existing learnings are not edited, removed or reordered.',
+                           'Actors already in old saves only learn the skill on a later level-up to or past that level (Game_Actor#level_up); nothing is learned retroactively and already-reached levels are not back-filled.',
+                           'Actor initial levels, class-change scripts and custom skill-learning scripts are not analysed; literal mentions do not prove freedom from dynamic consumers.',
+                           'The skill is not checked for cost, scope or battle suitability; review it in the editor.',
+                           'Exact native array/class/skills hashes and schema are enforced separately by the snapshot/copy backend.']}
+
+
 def entry_impact(index, change):
+    if isinstance(change.get('mutation'),dict) and change['mutation'].get('action')=='append_class_learning':
+        return class_learning_impact(index,change)
     if isinstance(change.get('mutation'),dict) and change['mutation'].get('action')=='append_database_entry':
         return append_entry_impact(index,change)
     from vxace_index_query import Index
