@@ -89,4 +89,25 @@ v1.4 is complete. v1.4.1 is a separate diagnostic patch correcting [upper-tile s
 
 v1.4.1 is complete. v1.5 separately adds [one existing-map display-name change](references/map-display-names.md), without general map-property or tree editing. The453-test local suite and native editor/window/older-save/movement/save/restart checks passed; the finite prior releases stay closed.
 
+## v1.7–v1.16 — Game-development layer
+
+Each milestone below was verified in the real VX Ace runtime on disposable copies (see the CHANGELOG for evidence):
+
+- v1.7 read-only balance, notetag and text-export analyses; design patterns; RGSS3 templates;
+- v1.8 in-engine smoke tests (`vxace_smoke.py`);
+- v1.9 template-clone appends for enemies, skills, states, weapons and armors;
+- v1.10 edited-CSV text import to existing guarded edits;
+- v1.11 troop append; v1.12 random-encounter append;
+- v1.13 recipes chaining guarded transactions with `from_step` references;
+- v1.14 class skill learnings; v1.15 shops; v1.16 blank events from a schema donor.
+
+## Next candidates
+
+- Battle Processing (301) on a blank event, so troops can be fought from story events;
+- actor append (template clone with class/initial level/equipment overrides);
+- text import that inserts or removes message lines (guarded structural insertion);
+- one-time chest recipe step (blank event + existing reward op) and transfer step;
+- compatibility notes for popular third-party script packs (method overrides and load order only);
+- recipe dry-run that prints every resolved spec without staging copies.
+
 v1.5 is complete. v1.6 separately adds [one existing editor/tree map-name change](references/map-tree-names.md), preserving all maps, display names, other tree metadata, System/version and saves. The465-test local suite and native editor/tree/window/existing-save/movement/save/restart checks passed; broader tree/property authoring remains separately scoped.
