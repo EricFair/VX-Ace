@@ -16,7 +16,7 @@ from pathlib import Path
 from vxace_copy_patcher import current_inventory
 from vxace_index_query import unlinked
 
-VERSION = '1.16.0'
+VERSION = '1.18.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -27,6 +27,7 @@ STEP_KEYS = {
     'append_learning': ({'type', 'class_id', 'skill_id', 'level'}, {'type', 'class_id', 'skill_id', 'level'}),
     'append_encounter': ({'type', 'map_id', 'troop_id', 'weight'}, {'type', 'map_id', 'troop_id', 'weight', 'region_ids', 'encounter_step'}),
     'append_dialogue_event': ({'type', 'map_id', 'template_event', 'x', 'y', 'name', 'lines'}, {'type', 'map_id', 'template_event', 'x', 'y', 'name', 'lines'}),
+    'append_staged_event': ({'type', 'map_id', 'template_event', 'x', 'y', 'name', 'pages'}, {'type', 'map_id', 'template_event', 'x', 'y', 'name', 'pages'}),
     'append_blank_event': ({'type', 'map_id', 'donor_event', 'x', 'y'}, {'type', 'map_id', 'donor_event', 'x', 'y', 'name'}),
     'add_shop': ({'type', 'map_id', 'event_id', 'goods', 'purchase_only'}, {'type', 'map_id', 'event_id', 'goods', 'purchase_only'}),
     'insert_script': ({'type', 'name', 'source_file'}, {'type', 'name', 'source_file'}),
@@ -208,6 +209,22 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: lines must be a list of 1..4 strings')
             if contains_ref_key({k: v for k, v in step.items() if k != 'template_event'}):
                 raise RecipeError(f'step {number}: from_step is only allowed for template_event')
+        elif kind == 'append_staged_event':
+            if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
+                raise RecipeError(f'step {number}: map_id must be an integer 1..999')
+            if is_ref(step['template_event']):
+                check_template_ref(step['template_event'], number, steps, step['map_id'])
+            elif not is_int(step['template_event']) or not 1 <= step['template_event'] <= 999:
+                raise RecipeError(f'step {number}: template_event must be an integer 1..999 or {{"from_step": N}}')
+            for key in ('x', 'y'):
+                if not is_int(step[key]) or not 0 <= step[key] <= 9999:
+                    raise RecipeError(f'step {number}: {key} must be a non-negative integer')
+            if not isinstance(step['name'], str) or not 1 <= len(step['name']) <= 100:
+                raise RecipeError(f'step {number}: name must be a string of 1..100 characters')
+            if not isinstance(step['pages'], list) or not 1 <= len(step['pages']) <= 8:
+                raise RecipeError(f'step {number}: pages must be a list of 1..8 page objects')
+            if contains_ref_key({k: v for k, v in step.items() if k != 'template_event'}):
+                raise RecipeError(f'step {number}: from_step is only allowed for template_event')
         elif kind == 'append_blank_event':
             if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
                 raise RecipeError(f'step {number}: map_id must be an integer 1..999')
@@ -266,7 +283,7 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: csv must be a non-empty string')
             if 'allow_shorter' in step and type(step['allow_shorter']) is not bool:
                 raise RecipeError(f'step {number}: allow_shorter must be a boolean')
-        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event') and contains_ref_key(step):
+        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event') and contains_ref_key(step):
             raise RecipeError(f'step {number}: from_step is not allowed in a {kind} step')
         if kind == 'append_encounter' and contains_ref_key({k: v for k, v in step.items() if k != 'troop_id'}):
             raise RecipeError(f'step {number}: from_step is only allowed for troop_id')
@@ -345,6 +362,13 @@ def build_spec(title, number, step, snapshot, source=None):
                   'mutation': {'action': 'append_dialogue_event', 'template_id': step['template_event'], 'new_id': snapshot['next_event_id'],
                                'name': step['name'], 'x': step['x'], 'y': step['y'], 'text': step['lines'],
                                'expected_map_sha256': snapshot['map_sha256'], 'expected_template_sha256': snapshot['template_sha256']}}
+    elif kind == 'append_staged_event':
+        change = {'kind': 'map_event', 'locator': {'map_id': step['map_id']},
+                  'proposal': f'Recipe step {number}: append one {len(step["pages"])}-page staged event "{step["name"]}" to map {step["map_id"]}.',
+                  'mutation': {'action': 'append_staged_event', 'template_id': step['template_event'], 'new_id': snapshot['next_event_id'],
+                               'name': step['name'], 'x': step['x'], 'y': step['y'], 'pages': step['pages'],
+                               'expected_map_sha256': snapshot['map_sha256'], 'expected_template_sha256': snapshot['template_sha256'],
+                               'expected_system_sha256': snapshot['system_sha256']}}
     elif kind == 'append_blank_event':
         change = {'kind': 'map_event', 'locator': {'map_id': step['map_id']},
                   'proposal': f'Recipe step {number}: append one blank event "{step.get("name", snapshot["default_name"])}" to map {step["map_id"]} using donor event {step["donor_event"]} for schema only.',
@@ -381,7 +405,7 @@ def created_id(step, snapshot):
         return snapshot['next_id']
     if step['type'] == 'append_key_item':
         return snapshot['next_item_id']
-    if step['type'] in ('append_dialogue_event', 'append_blank_event'):
+    if step['type'] in ('append_dialogue_event', 'append_blank_event', 'append_staged_event'):
         return snapshot['next_event_id']
     return None
 
@@ -494,6 +518,9 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
             elif kind == 'append_dialogue_event':
                 script, args, name = ('vxace_map_events.py', [index, '--project', source, '--map', resolved['map_id'],
                                                               '--template-event', resolved['template_event']], 'map-event-snapshot')
+            elif kind == 'append_staged_event':
+                script, args, name = ('vxace_map_events.py', [index, '--project', source, '--map', resolved['map_id'],
+                                                              '--template-event', resolved['template_event'], '--staged'], 'map-event-snapshot')
             elif kind == 'append_blank_event':
                 script, args, name = ('vxace_map_events.py', [index, '--project', source, '--map', resolved['map_id'],
                                                               '--donor-event', resolved['donor_event']], 'map-event-snapshot')
@@ -532,7 +559,7 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
         if record['created_id'] is not None:
             try:
                 audit_change = read_json(audit / 'audit.json')['changes'][0]
-                audited = audit_change['map_event']['new_id'] if kind in ('append_dialogue_event', 'append_blank_event') else audit_change['entry']['created_id']
+                audited = audit_change['map_event']['new_id'] if kind in ('append_dialogue_event', 'append_blank_event', 'append_staged_event') else audit_change['entry']['created_id']
             except (OSError, KeyError, IndexError, ValueError):
                 audited = None
             if audited != record['created_id']:

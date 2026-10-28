@@ -2,6 +2,10 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.18.0 — Quest-stage events
+
+- `append_staged_event` builds one event with 1..8 action-button pages (switch, variable and self-switch conditions), literal dialogue and Control Switches/Variables/Self Switch commands; recipe step `append_staged_event`. Verified in the real engine: three talks advanced a quest NPC through all pages. See [staged events](references/staged-events.md).
+
 ## 1.17.0 — Adopt and daily workflow
 
 - `vxace_adopt.py plan/apply/undo/status` brings a reviewed staged copy (single audit or recipe) into the working project: drift, undeclared-difference and smoke-harness refusals, editor/game-running refusal, per-file backup, atomic writes with rollback, verified undo. Verified on a stand-in project: recipe → plan → apply → real-engine smoke run → byte-identical undo. See [adopt](references/adopt.md).

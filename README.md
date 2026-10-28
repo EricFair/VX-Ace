@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v1.17
+# RPG Maker VX Ace Developer — v1.18
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -50,6 +50,7 @@ Each operation is a narrow, separately evidenced subset with exact native guards
 | Blank-map append | [blank map](references/blank-map-append.md) |
 | One direct map transfer | [transfer](references/direct-map-transfer.md) |
 | Shop Processing on a blank or single-dialogue event | [shops](references/map-shops.md) |
+| Quest-stage NPCs: 1..8 conditional pages with dialogue and switch/variable/self-switch changes | [staged events](references/staged-events.md) |
 | Map display name and editor/tree name | [display names](references/map-display-names.md), [tree names](references/map-tree-names.md) |
 
 [Recipes](references/recipes.md) chain several of these operations as separate guarded transactions on successive disposable copies, optionally ending with a smoke run.

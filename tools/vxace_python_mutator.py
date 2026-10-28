@@ -160,6 +160,12 @@ def apply(root, spec, *, source_path=None):
             if source_file.parent.name!='Data' or not re.fullmatch(r'Map\d{3,6}\.rvdata2',source_file.name) or not isinstance(context,dict) or set(context)!={'rtp'} or (context['rtp'] is not None and not isinstance(context['rtp'],str)):
                 raise ValueError('Character event native path/explicit asset context is unsupported')
             project=source_file.parent.parent;rtp=context['rtp']
+        if mutation.get('action')=='append_staged_event':
+            from vxace_index_query import unlinked
+            if source_path is None:raise ValueError('Staged event writes require an actual native project source path')
+            source_file=unlinked(source_path)
+            if source_file.parent.name!='Data' or not re.fullmatch(r'Map\d{3,6}\.rvdata2',source_file.name):raise ValueError('Staged event native path is unsupported')
+            project=source_file.parent.parent
         append_dialogue_event(root,mutation,project,rtp)
     elif kind == 'map_tile':
         from vxace_index_query import unlinked

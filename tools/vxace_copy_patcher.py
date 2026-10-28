@@ -408,6 +408,9 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
                           'new_id':mutation['new_id'],'name':mutation['name'],'x':mutation['x'],'y':mutation['y'],
                           'old_events_and_other_map_fields_preserved':True}
         if blank:rec['map_event'].update(action='append_blank_event',donor_event_id=mutation['donor_event_id'],blank_template_predicate_ok=True)
+        elif mutation['action']=='append_staged_event':
+            rec['map_event'].update(action='append_staged_event',template_id=mutation['template_id'],page_count=len(mutation['pages']),pages=mutation['pages'],
+                                    expected_system_sha256=mutation['expected_system_sha256'],system_read_only_hash_bound=True)
         else:rec['map_event']['text']=mutation['text']
         if 'graphic' in mutation:rec['map_event'].update(graphic=mutation['graphic'],asset=mutation['expected_asset'])
     if change['kind']=='map_tile':

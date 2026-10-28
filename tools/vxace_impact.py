@@ -497,6 +497,7 @@ def map_event_impact(index,change):
     locator=change.get('locator');mutation=change.get('mutation')
     schema(mutation)
     blank=mutation['action']=='append_blank_event'
+    staged=mutation['action']=='append_staged_event'
     if not isinstance(locator,dict) or set(locator)!={'map_id'}:
         raise ValueError('Exact map-event append proposal required')
     mid=integer(locator['map_id'],'map ID',1,999999);data=Index(index);native=data.json(f'maps/map-{mid:03d}.json')
@@ -509,22 +510,46 @@ def map_event_impact(index,change):
     x=integer(mutation['x'],'new event x',0,width-1);y=integer(mutation['y'],'new event y',0,height-1)
     if any(not isinstance(event,dict) or (event.get('x'),event.get('y'))==(x,y) for event in old.values()):raise ValueError('Occupied or opaque event position')
     name=text(mutation['name'],'new event name',100)
-    lines=[] if blank else mutation['text']
-    if not blank:
+    lines=[] if blank or staged else mutation['text']
+    if not blank and not staged:
         if not isinstance(lines,list) or not 1<=len(lines)<=4 or not any(lines):raise ValueError('One to four literal dialogue lines required')
         for line in lines:text(line,'dialogue line',500,True)
     mentions=[]
     for marker in ('$data_map','$game_map.events','Game_Event','event_id','self_switches','setup_events'):
         result=search(data,query=marker,scopes=('scripts','events'),limit=10)
         mentions.append({'literal':marker,'matches':result['matches'],'evidence':result['hits'],'truncated':result['truncated']})
+    staged_report=None
+    if staged:
+        from vxace_map_events import staged_ids
+        system=data.json('database/system.json')
+        if not isinstance(system,dict) or not isinstance(system.get('switches'),list) or not isinstance(system.get('variables'),list) or len(system['switches'])<2 or len(system['variables'])<2:
+            raise ValueError('Indexed native System switches/variables required')
+        pages=mutation['pages'];staged_ids(pages,len(system['switches']),len(system['variables']))
+        def label(names,number):
+            return names[number] if isinstance(names[number],str) and names[number] else None
+        warnings=[];rows=[]
+        for number,page in enumerate(pages,1):
+            condition=page['condition']
+            rows.append({'page':number,'condition':condition,'commands':len(page['commands']),'trigger':'action'})
+            if not condition and number<len(pages):
+                warnings.append(f'Page {number} has no conditions but is not the last page: the engine checks pages highest-number first, so it only runs when no later page condition holds.')
+            for key in ('switch1','switch2'):
+                if key in condition and not label(system['switches'],condition[key]):warnings.append(f'Page {number} condition {key} {condition[key]} is an unnamed switch.')
+            if 'variable' in condition and not label(system['variables'],condition['variable']['id']):warnings.append(f'Page {number} condition variable {condition["variable"]["id"]} is an unnamed variable.')
+            for op in page['commands']:
+                if 'set_switch' in op and not label(system['switches'],op['set_switch']):warnings.append(f'Page {number} sets unnamed switch {op["set_switch"]}.')
+                if 'set_variable' in op and not label(system['variables'],op['set_variable']):warnings.append(f'Page {number} sets unnamed variable {op["set_variable"]}.')
+        staged_report={'page_count':len(pages),'pages':rows,'priority_note':'The engine runs the highest-numbered page whose conditions are all met; verify the page order against the quest state machine.',
+                       'warnings':warnings}
     data.unchanged()
     return {'kind':'map_event','severity':'high','target':{'map_id':mid,'new_id':identifier,'name':name,'x':x,'y':y,('donor_event_id' if blank else 'template_id'):template_id},
-            'literal_dialogue':lines,'event_consumer_mentions':mentions,'proposed_graphic':mutation.get('graphic'),
+            **({'staged':staged_report} if staged_report else {}),'literal_dialogue':lines,'event_consumer_mentions':mentions,'proposed_graphic':mutation.get('graphic'),
             'limitations':['Native exact template/map/schema preservation gates are enforced separately by the Python copy chain.',
                           'An appended static ID can collide with runtime-created events or pre-existing orphan self-switch/save state.',
                           'Literal consumers miss dynamic ownership; inspect custom map/save hooks and action-button accessibility.',
                           'Stationary, one unconditional action-button page; optional character assets require independent native/header/hash checks.',
-                          'Review character/object prefix semantics, native rendering, old-save reload, dialogue and restart.']}
+                          'Review character/object prefix semantics, native rendering, old-save reload, dialogue and restart.',
+                          *(['Staged pages: conditions use only switch/variable/self-switch; no branches, autorun, parallel or item/actor conditions. Self-switch state of the new event id may pre-exist in saves.'] if staged else [])]}
 
 
 def map_entry_impact(index,change):
