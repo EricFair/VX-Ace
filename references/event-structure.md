@@ -67,4 +67,4 @@ Review `audit.json`, `audit.md`, `structural-impact.json`, `index-diff.md`, `sem
 
 VX Ace saves can cache the old map and event page. Every structural transaction automatically increments the verified native `System.version_id` in the copy, with the same byte gates. The default runtime then reloads the current map when an older save is loaded. Save files themselves are copied unchanged. A version mismatch can reset transient map event state, as native editor updates do; custom save/load scripts need separate review. This is not general save migration or proof of compatibility with customized runtimes.
 
-Actual native editor/runtime evidence and its limits: [v0.12 validation](real-project-validation-v0.12.md).
+Native editor/runtime evidence for this subset was recorded on disposable copies of an editor-created project (structural edits, old-save map reload and restart); it does not establish compatibility with arbitrary customized games.

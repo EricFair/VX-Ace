@@ -24,7 +24,7 @@ v1.16 adds a guarded [blank-event append](references/map-event-creation.md) that
 
 v1.4.1 corrects static passage observations in the [ordinary upper-tile snapshot](references/upper-tile-painting.md). Recreate previous snapshots; the native uppermost non-star tile now takes priority over lower flags. Mutation capabilities and copy safety gates remain as documented.
 
-v1.0 is released with [its frozen scope](RELEASE_1_0.md). v1.1 adds [bounded read-only regex search](references/regex-search.md). v1.2 separately adds [one guarded blank-map append](references/blank-map-append.md), with native movement/save/restart and editor evidence; broader authoring remains separately scoped.
+v1.0 is the validated specialist release. v1.1 adds [bounded read-only regex search](references/regex-search.md). v1.2 separately adds [one guarded blank-map append](references/blank-map-append.md), with native movement/save/restart and editor evidence; broader authoring remains separately scoped.
 
 ## Recommended setup
 
@@ -123,7 +123,7 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Guarded one-time native rewards | Python copy backend: one constant gold/item addition batch in a blank lower action-button page, exact higher self-switch/literal-only page and actual native Items binding; preserve unrelated map bytes and require version/postgates; no variables/removal/equipment/common/troop scopes |
 | Optional native syntax diagnostics | Private source-as-data bundle, different trusted disposable VX Ace host and complete bound Ruby1.9.2 compile-only report; no inspected-source evaluation, app launching or runtime compatibility claim |
 | Change review | Source hashes, before/after byte and semantic hashes, re-index, normalized diff, semantic Codex diff |
-| Actual editor/runtime verification | Structural edit/old-save evidence in v0.12; search locations, hidden page selection, terminating cutscene and counted autorun restart in `references/real-project-validation-v0.13.md` |
+| Actual editor/runtime verification | Recorded in each operation's reference (Native evidence sections) and summarised in the CHANGELOG |
 
 ## Exact individual commands
 
@@ -239,11 +239,7 @@ Never invent switch meanings, event IDs, APIs, load order, quest-stage semantics
 
 ## Tests and completion criteria
 
-```powershell
-python tools/run_tests.py
-```
-
-CI runs on Ubuntu and Windows with Python 3.11 and Ruby 3.2. Local release validation uses Python 3.12.14 and portable Ruby 3.2.11 on Windows. Executable tests cover both narrow writer backends, project gates, conformance, master policy, the generated fixture and existing analysis/planning workflows. See the versioned evidence document for actual counts and outcomes.
+The published skill does not include its development test suite. Every release is validated locally with the full suite (Python 3.12+, Ruby 3.2, Windows) and, for each guarded operation, a native run in actual VX Ace on disposable copies; each reference records that native evidence.
 
 A release is complete when its documented scope is implemented, tests pass, real-project evidence is recorded honestly, original hashes are unchanged, staged edits are reviewed/tested, and the repository is updated. This is not a claim that every upstream feature or all possible VX Ace projects are supported.
 
@@ -277,9 +273,6 @@ Do not run broad unsupported writes merely because one project passed validation
 - [`vxace-master.json`](vxace-master.json): machine-readable default policy/features.
 - [`references/upstream-adoption.md`](references/upstream-adoption.md): full staged capability inventory.
 - [`tools/_vendor/NOTICE.md`](tools/_vendor/NOTICE.md): pinned codec provenance and license declarations.
-- [`references/real-project-validation-v0.11.md`](references/real-project-validation-v0.11.md): actual release evidence and limits.
-- [`references/real-project-validation-v0.12.md`](references/real-project-validation-v0.12.md): structural editing and native runtime evidence.
 - [`references/event-structure.md`](references/event-structure.md): supported event edits, exact commands, preconditions and refusal rules.
 - [`references/search-and-event-diagnostics.md`](references/search-and-event-diagnostics.md): fresh-index search, lint, coverage and resource limits.
-- [`references/real-project-validation-v0.13.md`](references/real-project-validation-v0.13.md): read-only batch and native-copy evidence.
-- [`CHANGELOG.md`](CHANGELOG.md): v0.1 through current release history.
+- [`CHANGELOG.md`](CHANGELOG.md): release summary.

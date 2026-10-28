@@ -144,10 +144,3 @@ python tools/vxace_smoke.py run NEW_WORK_DIR --mode test --frames 600 --json NEW
 
 `stage` inserts the harness slot through the guarded validator/reader/slot/planner/impact/copy chain; `run` launches the copy's `Game.exe` (Windows) with a fresh nonce and validates the results file. The harness is inert without the launcher's nonce. See [smoke testing](../references/smoke-testing.md) and `tools/smoke/example_suite.rb`.
 
-## Tests
-
-```bash
-python tools/run_tests.py
-```
-
-v0.10 adds `tests/impact` to the full suite. Synthetic fixtures contain no proprietary RPG Maker default scripts.

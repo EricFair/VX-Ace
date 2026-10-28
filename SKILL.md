@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.16.0
+Version: 1.16.1
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -145,4 +145,4 @@ Choose the owning runtime object, define old-save behavior, inspect other save h
 
 ## Evidence and limits
 
-The suite runs on Ubuntu and Windows CI; check the current commit's actual run before claiming online CI success. Real-project evidence: [references/real-project-validation-v0.12.md](references/real-project-validation-v0.12.md), [release-1.0-evidence.md](references/release-1.0-evidence.md). It covers a small editor-produced project and disposable native scenarios; it does not establish compatibility with arbitrary customized games. Never imply unsupported operations are enabled.
+Native evidence is recorded in each operation's reference. It covers a small editor-produced project and disposable native scenarios; it does not establish compatibility with arbitrary customized games. Never imply unsupported operations are enabled.

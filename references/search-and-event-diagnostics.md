@@ -60,4 +60,4 @@ Both CLIs require a hashed fresh Project Reader manifest, recheck source invento
 
 Walk limits: 500,000 charged steps, depth 128, 4,096 reads, 16 MiB per file, 128 MiB total reads; lint permits at most 5,000 findings. Oversized/changed/incomplete inputs refuse instead of claiming exhaustive results. Large projects may need a future separately designed partitioned workflow; do not waive limits or stale checks to force a result.
 
-See [v0.13 validation evidence](real-project-validation-v0.13.md) for native-copy scenarios, automated tests and remaining limits.
+Native-copy scenarios (search locations, hidden page selection, terminating cutscenes, counted autorun restarts) were checked on disposable copies; the limits above still apply.

@@ -57,8 +57,6 @@ Use the smallest relevant reference first.
 - `map-display-names.md` — player-visible map name.
 - `map-tree-names.md` — editor/tree map name.
 
-## Evidence and history
+## Provenance
 
-- `release-1.0-evidence.md` — v1.0 acceptance evidence and limits.
-- `real-project-validation-v0.11.md`, `-v0.12.md`, `-v0.13.md` — real-project validation records.
-- `integration-batch-1-validation.md`, `upstream-adoption.md` — upstream codec adoption.
+- `upstream-adoption.md` — vendored Python codec adoption and scope.

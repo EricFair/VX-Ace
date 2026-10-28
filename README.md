@@ -1,10 +1,10 @@
-# RPG Maker VX Ace Developer — v1.16
+# RPG Maker VX Ace Developer — v1.16.1
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
 - **Start here:** [getting started](GETTING_STARTED.md), then **[VXACE_MASTER.md](VXACE_MASTER.md)** for the complete settings, capability matrix, commands, safety contract and evidence. Machine-readable defaults are in `vxace-master.json`.
 - **Agent skill:** [SKILL.md](SKILL.md).
-- **Release history:** [CHANGELOG.md](CHANGELOG.md) records every version's scope, tests and native evidence. The closed v1.0 scope is in [RELEASE_1_0.md](RELEASE_1_0.md); limits are in [release evidence](references/release-1.0-evidence.md).
+- **Release history:** [CHANGELOG.md](CHANGELOG.md) summarises each release; detailed limits and native evidence live in each operation's reference.
 
 ```bash
 python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR
@@ -118,7 +118,7 @@ The script syntax result is intentionally **not** the mutation gate: host-Ruby p
 
 Outputs `validation/validation.json` and `validation/validation.md`. Exit codes: `0` all files passed the byte-identical gate; `3` one or more files failed and copy mutation should be refused; `2` configuration/tool/validation error.
 
-The master workflow is read-only and selects the Python backend. Individual validator/patcher commands keep their Ruby default unless `--backend python` is given. Real-project validation found modern-Ruby float formatting differences that failed seven of sixteen files; the pinned Python codec preserves all sixteen exactly (see `references/real-project-validation-v0.11.md`).
+The master workflow is read-only and selects the Python backend. Individual validator/patcher commands keep their Ruby default unless `--backend python` is given. Real-project validation found modern-Ruby float formatting differences that failed seven of sixteen files; the pinned Python codec preserves all sixteen exactly.
 
 ### Read-only Project Reader + Codex
 
@@ -188,11 +188,11 @@ Uses a pinned MIT-declared codec subset from `azureknight63/rpgvxace-mcp`, needs
 
 ## Automated validation
 
-The suite has **692 tests** (see [CHANGELOG.md](CHANGELOG.md) for per-release counts). CI runs on Ubuntu and Windows with Python 3.11 and Ruby 3.2; consult the latest Actions run for actual status. Ruby-dependent tests skip when Ruby is not installed.
+The development test suite is not part of the published skill. Each release is validated locally with the full suite and, for every guarded operation, a native run in actual VX Ace on disposable copies; the references record that evidence.
 
-```bash
-python tools/run_tests.py
-```
+## License
+
+[MIT](LICENSE) — free to use, modify and share. The vendored codec keeps its own MIT notice in `tools/_vendor/`. The skill contains no RPG Maker default scripts or assets; you need your own licensed copy of RPG Maker VX Ace.
 
 ## Safety model
 
@@ -207,6 +207,6 @@ python tools/run_tests.py
 
 ## Current limitation
 
-Native editor/runtime evidence comes from a small editor-produced VX Ace project, disposable copies and controlled fixtures; see [v0.13 evidence](references/real-project-validation-v0.13.md) and later entries in the CHANGELOG. Validate each snapshot and review custom runtime/save hooks. User project data is not included in the repository.
+Native editor/runtime evidence comes from a small editor-produced VX Ace project, disposable copies and controlled fixtures; see the Native evidence sections of each reference. Validate each snapshot and review custom runtime/save hooks. User project data is not included in the repository.
 
 See `references/copy-mutation.md`, `workflows/verified-copy-mutation.md`, `workflows/real-project-validation.md` and `workflows/impact-review.md`.
