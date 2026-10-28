@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.20.0
+Version: 1.21.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -90,6 +90,7 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Plan and stage a change | [workflows/project-aware-patching.md](workflows/project-aware-patching.md), [workflows/verified-copy-mutation.md](workflows/verified-copy-mutation.md) |
 | Chain several guarded additions (enemy -> skill -> troop -> encounter -> smoke run) | `tools/vxace_recipe.py run` ([references/recipes.md](references/recipes.md)) |
 | Quest NPC whose dialogue changes with progress | [references/staged-events.md](references/staged-events.md), [patterns/quest-state-machine.md](patterns/quest-state-machine.md) |
+| Shared logic: inn, reward chain, timer (common event) | [references/common-event-append.md](references/common-event-append.md) |
 | Sell items/weapons/armors from a shopkeeper | [references/map-shops.md](references/map-shops.md) |
 | Make a troop appear as a random encounter | [references/map-encounters.md](references/map-encounters.md) |
 | Add an enemy, skill, state, weapon, armor, usable item, troop or class skill learning; set item/skill effects or equipment/state features | [references/database-append.md](references/database-append.md) |
@@ -127,7 +128,8 @@ Only these structural writes exist; everything else is proposal/manual-only. Eac
 - ordinary upper-layer B-E tile painting ([upper-tile-painting.md](references/upper-tile-painting.md));
 - one blank event from an existing schema donor, or one stationary literal-dialogue event, per map ([map-event-creation.md](references/map-event-creation.md)) with optional character graphic ([character-event-graphics.md](references/character-event-graphics.md));
 - one-time constant gold/item map rewards ([one-time-event-rewards.md](references/one-time-event-rewards.md));
-- one quest-stage event: 1..8 action-button pages with switch/variable/self-switch conditions, literal dialogue and Control Switch/Variable/Self Switch commands, no branches ([staged-events.md](references/staged-events.md));
+- one quest-stage event: 1..8 action-button pages with switch/variable/self-switch conditions, literal dialogue, Control Switch/Variable/Self Switch, nested choices, if/else and battles, plus party, common event, gold, item, transfer and wait commands ([staged-events.md](references/staged-events.md));
+- one common event (call-only or switch-gated parallel process with a wait) using the same command language ([common-event-append.md](references/common-event-append.md));
 - Shop Processing (1..32 existing goods) on a blank or single-dialogue action-button event ([map-shops.md](references/map-shops.md));
 - blank-map append ([blank-map-append.md](references/blank-map-append.md)) and one direct transfer to it ([direct-map-transfer.md](references/direct-map-transfer.md));
 - one map display name ([map-display-names.md](references/map-display-names.md)) or editor/tree name ([map-tree-names.md](references/map-tree-names.md)).

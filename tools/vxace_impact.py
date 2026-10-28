@@ -587,6 +587,83 @@ def map_event_impact(index,change):
                           *(['Staged pages: conditions use only switch/variable/self-switch; commands may nest choices, if/else and battles (depth <= 4); no autorun, parallel or item/actor page conditions. Self-switch state of the new event id may pre-exist in saves.'] if staged else [])]}
 
 
+def common_event_impact(index,change):
+    """Impact for append_common_event: the commands in plain language, warnings and the common-event call graph before/after."""
+    from vxace_index_query import Index
+    from vxace_search import search
+    from vxace_common_event_append import schema,analyse,call_edges,ACTION,NONE_SWITCH_ID
+    from vxace_common_event_graph import cycles
+    from vxace_map_events import staged_ids
+    from vxace_staged_commands import index_check,plain_rows
+    loc=change.get('locator');mutation=change.get('mutation')
+    if loc!={'table':'common_events'} or not isinstance(mutation,dict) or mutation.get('action')!=ACTION:raise ValueError('Exact common event append proposal required')
+    schema(mutation)
+    data=Index(index);rows=data.json('database/common-events.json')
+    if not isinstance(rows,list) or not 2<=len(rows)<=999 or rows[0] is not None:raise ValueError('A supported native CommonEvents array with append capacity is required')
+    for number,row in enumerate(rows[1:],1):
+        if row is not None and (not isinstance(row,dict) or row.get('__class__')!='RPG::CommonEvent' or type(row.get('id')) is not int or row['id']!=number):
+            raise ValueError('Indexed common event IDs must match native array slots')
+    identifier=mutation['new_id']
+    if identifier!=len(rows):raise ValueError('Append ID must be the next array slot')
+    system=data.json('database/system.json')
+    if not isinstance(system,dict) or not isinstance(system.get('switches'),list) or not isinstance(system.get('variables'),list) or len(system['switches'])<2 or len(system['variables'])<2:
+        raise ValueError('Indexed native System switches/variables required')
+    pages=[{'condition':{},'commands':mutation['commands']}]
+    staged_ids(pages,len(system['switches']),len(system['variables']))
+    if mutation['trigger']=='parallel' and not 1<=mutation['switch_id']<=len(system['switches'])-1:
+        raise ValueError('parallel switch_id is outside the indexed System switches')
+    index_check(data.json,pages)
+    if any(isinstance(row,dict) and row.get('name')==mutation['name'] for row in rows[1:]):raise ValueError('New common event name must be unique')
+    cache={}
+    def table(relative):
+        if relative not in cache:
+            try:cache[relative]=data.json(relative)
+            except Exception:cache[relative]=None
+        return cache[relative]
+    def lookup(kind,number):
+        if kind in ('switch','variable'):
+            names=system.get({'switch':'switches','variable':'variables'}[kind]);value=names[number] if isinstance(names,list) and 0<=number<len(names) else None
+            return value if isinstance(value,str) and value else None
+        if kind=='map':
+            infos=table('database/map-infos.json');row=infos.get(str(number)) if isinstance(infos,dict) else None
+            return row.get('name') if isinstance(row,dict) and row.get('name') else None
+        source=table('database/'+{'troop':'troops','actor':'actors','item':'items','common event':'common-events'}[kind]+'.json')
+        row=source[number] if isinstance(source,list) and 0<=number<len(source) else None
+        return row.get('name') if isinstance(row,dict) and row.get('name') else None
+    analysis=analyse(mutation,lookup);warnings=list(analysis['warnings'])
+    ids={number for number,row in enumerate(rows) if number and row is not None}
+    old_edges=set(call_edges(rows,ids,data.spend))
+    new_edges=set(call_edges(rows,ids|{identifier},data.spend))|{(identifier,call['id']) for call in analysis['calls']}
+    existing=cycles(ids,old_edges,data.spend);after=cycles(ids|{identifier},new_edges,data.spend)
+    if existing:
+        warnings.append('The project already has common event call cycle(s) '+'; '.join(str(c) for c in existing)+' (see references/common-event-cycles.md); this append does not change them.')
+    members={member for component in existing for member in component}
+    for call in analysis['calls']:
+        if call['id'] in members:warnings.append(f'Calls common event {call["id"]}, which is part of an existing call cycle.')
+    callers=sorted(source for source,target in new_edges if target==identifier)
+    if callers:warnings.append(f'Common event(s) {callers} already contain a Call Common Event for id {identifier} (currently absent); after the append they call this new event.')
+    if any(identifier in component for component in after):warnings.append(f'The new common event would be part of a call cycle: {[c for c in after if identifier in c][0]}.')
+    mentions=[]
+    for marker in ('$data_common_events','reserve_common_event','common_event_id','command_117','trigger'):
+        result=search(data,query=marker,scopes=('scripts','events'),limit=10)
+        mentions.append({'literal':marker,'matches':result['matches'],'evidence':result['hits'],'truncated':result['truncated']})
+    data.unchanged()
+    return {'kind':'common_event','severity':'high',
+            'target':{'table':'common_events','new_id':identifier,'name':mutation['name'],'trigger':mutation['trigger'],
+                      'switch_id':mutation['switch_id'] if mutation['trigger']=='parallel' else None,
+                      'stored_switch_id':mutation['switch_id'] if mutation['trigger']=='parallel' else NONE_SWITCH_ID},
+            'common_event':{'command_count':len(mutation['commands']),'native_command_count':len(plain_rows(mutation['commands']))+1,
+                            'summary':analysis['summary'],'calls':analysis['calls']},
+            'call_graph':{'existing_cycles':existing,'cycles_after_append':after,'callers_of_new_id':callers},
+            'warnings':warnings,'consumer_mentions':mentions,
+            'limitations':['Native array, System and referenced-database hashes and the exact factory result are enforced separately by the Python copy chain.',
+                           'The call graph covers direct Call Common Event commands of existing common events only; map and troop events that already call the new id are not scanned, and scripts are not analysed.',
+                           'Nothing calls the new common event yet; wire it from an event, an item/skill effect 44 or another common event.',
+                           'A parallel process has no termination proof: it repeats while its switch is ON, so review every place that turns the switch OFF. Autorun is never created.',
+                           'An appended static ID can collide with runtime-created or custom-indexed common events; literal mentions cannot prove otherwise.',
+                           'System is read only and its version_id is not advanced (common events load with the database, not from saves).']}
+
+
 def map_entry_impact(index,change):
     from vxace_maps import FIELDS,integer
     from vxace_index_query import Index
@@ -784,6 +861,7 @@ def build(index: Path, spec_path: Path):
         elif kind=='map_label': impacts.append(map_label_impact(index,change))
         elif kind=='map_encounter': impacts.append(map_encounter_impact(index,change))
         elif kind=='map_shop': impacts.append(map_shop_impact(index,change))
+        elif kind=='common_event': impacts.append(common_event_impact(index,change))
         else: raise ValueError(f"unsupported change kind: {kind}")
     high=sum(1 for x in impacts if x.get("severity")=="high")
     return {"impact_version":VERSION,"title":str(spec.get("title") or "VX Ace impact analysis"),"impact_count":len(impacts),
@@ -800,6 +878,8 @@ def markdown(report):
             lines += ["Dependencies / relationships:",""]
             for d in deps: lines.append(f"- {d.get('direction')} `{d.get('relation')}` → `{d.get('node',{}).get('id')}` ({d.get('node',{}).get('label','')})")
             lines.append("")
+        if x.get("kind")=="common_event":
+            lines += ["Commands:",""]+[f"    {row}" for row in x["common_event"]["summary"]]+[""]+[f"- Warning: {w}" for w in x.get("warnings",[])]+[""]
         for lim in x.get("limitations",[]): lines.append(f"- Limitation: {lim}")
         if x.get("limitations"): lines.append("")
     lines += ["## Global limitations","",*[f"- {x}" for x in report.get("limitations",[])],""]

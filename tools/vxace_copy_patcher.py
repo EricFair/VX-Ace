@@ -106,6 +106,12 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             out.append({'kind':'database_entry','target':'Data/'+DB_FILES[loc['table']],
                         'ruby_spec':{'type':'database_entry','mutation':mut},'description':c.get('description',''),
                         'locator':loc,'mutation':mut})
+        elif kind=='common_event':
+            from vxace_common_event_append import schema
+            if loc!={'table':'common_events'}:raise ValueError('Common event append locator must be exactly {"table": "common_events"}')
+            schema(mut)
+            out.append({'kind':'common_event','target':'Data/CommonEvents.rvdata2','ruby_spec':{'type':'common_event','mutation':mut},
+                        'description':c.get('description',''),'locator':loc,'mutation':mut})
         elif kind=='map_entry':
             from vxace_maps import FIELDS,integer
             if not isinstance(loc,dict) or set(loc)!={'template_map_id'}:raise ValueError('Map append requires exactly template_map_id locator')
@@ -298,6 +304,10 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
             entry_ref_hashes={n:sha256(target.parent/(REF_FILES[n]+'.rvdata2')) for n in required_refs(entry_table,mutation.get('overrides'))-{entry_table}}
         before_entry_root=load(target)[0]
         before_entry=entry_snapshot(before_entry_root,entry_key)
+    before_ce_root=None
+    if change['kind']=='common_event':
+        from vxace_python_mutator import load
+        before_ce_root=load(target)[0]
     before_shop_root=None
     if change['kind']=='map_shop':
         from vxace_python_mutator import load
@@ -364,6 +374,9 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         else:
             from vxace_database_append import verify_transition as verify_table_entry
             verify_table_entry(before_entry_root,load(tmp)[0],entry_table,mutation,entry_enemies)
+    if change['kind']=='common_event':
+        from vxace_common_event_append import verify_transition as verify_common_event
+        verify_common_event(before_ce_root,load(tmp)[0],mutation,copy_root)
     if change['kind']=='map_event':
         from vxace_map_events import verify_transition as verify_event
         verify_event(before_event_root,load(tmp)[0],mutation,copy_root,change['ruby_spec'].get('context',{}).get('rtp'))
@@ -417,6 +430,19 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
                                     reference_hashes={key:value for key,value in mutation.items() if key.startswith('expected_') and key not in ('expected_map_sha256','expected_template_sha256','expected_system_sha256')})
         else:rec['map_event']['text']=mutation['text']
         if 'graphic' in mutation:rec['map_event'].update(graphic=mutation['graphic'],asset=mutation['expected_asset'])
+    if change['kind']=='common_event':
+        from vxace_common_event_append import IVAR_ORDER
+        created=load(target)[0][-1]
+        from vxace_event_structure import command_rows
+        rows=command_rows(created.get('list'))
+        rec['common_event']={'action':'append_common_event','new_id':mutation['new_id'],'name':mutation['name'],'trigger':mutation['trigger'],
+                             'stored_trigger':created.get('trigger'),'stored_switch_id':created.get('switch_id'),'field_order':list(IVAR_ORDER),
+                             'operation_count':len(mutation['commands']),'native_command_count':len(rows),'commands':mutation['commands'],'native_rows':rows,
+                             'expected_common_events_sha256':mutation['expected_common_events_sha256'],'expected_system_sha256':mutation['expected_system_sha256'],
+                             'system_read_only_hash_bound':True,'system_version_unchanged':True,
+                             'reference_hashes':{key:value for key,value in mutation.items() if key.startswith('expected_') and key not in ('expected_common_events_sha256','expected_system_sha256')},
+                             'existing_entries_unchanged':True,'approved_factory_result_verified':True,'only_common_events_file_changed':True}
+        rec['diff']=''.join(difflib.unified_diff([],[json.dumps(row,ensure_ascii=False)+chr(10) for row in rows],fromfile='source-common-event',tofile='staged-common-event-'+str(mutation['new_id'])))
     if change['kind']=='map_tile':
         after_tiles=upper_snapshot(load(target)[0],copy_root,tile_cells,tile_values,tile_rtp)
         rec['upper_tiles']={'locator':change['locator'],'before':before_tiles,'after':after_tiles,
@@ -504,6 +530,7 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
     slots=[c for c in changes if c['kind']=='script_slot']
     upper_tiles=[c for c in changes if c['kind']=='map_tile']
     map_events=[c for c in changes if c['kind']=='map_event']
+    common_events=[c for c in changes if c['kind']=='common_event']
     map_entries=[c for c in changes if c['kind']=='map_entry']
     from vxace_transfers import has_transfers
     transfers=[c for c in structural if has_transfers(c['ruby_spec']['mutation'])]
@@ -557,7 +584,7 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         for c in map_labels:
             label_data=Index(index);indexed_snapshot(label_data,project,c['locator']['map_id']);label_data.unchanged()
             validate_label(load(unlinked(project/c['target']))[0],c['mutation'],project)
-    post_required=bool(reload_required or entries or slots or map_entries or map_labels)
+    post_required=bool(reload_required or entries or slots or map_entries or map_labels or common_events)
     if map_entries:
         if len(changes)!=1:raise ValueError('Map append requires its own single-change transaction')
         if no_reindex or mutator.resolve()!=(Path(__file__).resolve().parent/'vxace_python_mutator.py'):
@@ -568,6 +595,16 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         for c in map_entries:
             map_data=Index(index);map_snapshot(map_data,project,c['mutation']['template_map_id']);map_data.unchanged()
             map_candidates(load(unlinked(project/c['target']))[0],c['mutation'],project)
+    if common_events:
+        if len(common_events)!=1 or len(changes)!=1:raise ValueError('Common event append requires its own single-change transaction')
+        if no_reindex or mutator.resolve()!=(Path(__file__).resolve().parent/'vxace_python_mutator.py'):
+            raise ValueError('Common event append requires the explicit Python backend and mandatory post-copy re-indexing')
+        from vxace_common_event_append import indexed_snapshot as common_event_snapshot,new_common_event
+        from vxace_index_query import Index,unlinked
+        from vxace_python_mutator import load
+        for c in common_events:
+            common_data=Index(index);common_event_snapshot(common_data,project);common_data.unchanged()
+            new_common_event(load(unlinked(project/c['target']))[0],c['mutation'],project)
     if map_events:
         if len({c['target'] for c in map_events})!=len(map_events) or any(sum(other['target']==c['target'] for other in changes)!=1 for c in map_events):
             raise ValueError('Append one dialogue event per map without other edits to that map')
@@ -689,6 +726,10 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         if map_names:
             name_inventory={**source_before,**{record['target']:record['after_sha256'] for record in applied}}
             if current_inventory(copy_root)!=name_inventory:raise RuntimeError('Display-name edit changed unapproved copied files')
+        common_event_inventory=None
+        if common_events:
+            common_event_inventory={**source_before,**{record['target']:record['after_sha256'] for record in applied}}
+            if current_inventory(copy_root)!=common_event_inventory:raise RuntimeError('Common event append changed unapproved copied files')
         shop_inventory=None
         if shops:
             shop_inventory={**source_before,**{record['target']:record['after_sha256'] for record in applied}}
@@ -752,6 +793,7 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
             from vxace_map_shops import final_context as shop_final_context
             for c in shops:shop_final_context(c['ruby_spec']['mutation'],copy_root)
             if current_inventory(copy_root)!=shop_inventory:raise RuntimeError('Shop final copied-file preservation check failed')
+        if common_events and current_inventory(copy_root)!=common_event_inventory:raise RuntimeError('Common event append final copied-file preservation check failed')
         if map_labels and current_inventory(copy_root)!=label_inventory:raise RuntimeError('Map-tree name final copied-file preservation check failed')
         if map_names and current_inventory(copy_root)!=name_inventory:raise RuntimeError('Display-name final copied-file preservation check failed')
         if current_inventory(project)!=source_before: raise RuntimeError('SOURCE_CHANGED: source changed during final verification')

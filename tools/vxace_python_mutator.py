@@ -167,6 +167,13 @@ def apply(root, spec, *, source_path=None):
             if source_file.parent.name!='Data' or not re.fullmatch(r'Map\d{3,6}\.rvdata2',source_file.name):raise ValueError('Staged event native path is unsupported')
             project=source_file.parent.parent
         append_dialogue_event(root,mutation,project,rtp)
+    elif kind == 'common_event':
+        from vxace_index_query import unlinked
+        from vxace_common_event_append import apply as append_common_event
+        if source_path is None:raise ValueError('Common event appends require an actual native project source path')
+        source_file=unlinked(source_path)
+        if source_file.parent.name!='Data' or source_file.name!='CommonEvents.rvdata2':raise ValueError('Common event append native path is unsupported')
+        append_common_event(root,mutation,source_file.parent.parent)
     elif kind == 'map_tile':
         from vxace_index_query import unlinked
         if source_path is None:raise ValueError('Upper tile writes require an actual native project source path')

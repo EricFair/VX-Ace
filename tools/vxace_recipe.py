@@ -17,7 +17,7 @@ from vxace_copy_patcher import current_inventory
 from vxace_database_append import LIST_TABLES, ref_field, required_refs
 from vxace_index_query import unlinked
 
-VERSION = '1.20.0'
+VERSION = '1.21.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -29,6 +29,7 @@ STEP_KEYS = {
     'append_encounter': ({'type', 'map_id', 'troop_id', 'weight'}, {'type', 'map_id', 'troop_id', 'weight', 'region_ids', 'encounter_step'}),
     'append_dialogue_event': ({'type', 'map_id', 'template_event', 'x', 'y', 'name', 'lines'}, {'type', 'map_id', 'template_event', 'x', 'y', 'name', 'lines'}),
     'append_staged_event': ({'type', 'map_id', 'template_event', 'x', 'y', 'name', 'pages'}, {'type', 'map_id', 'template_event', 'x', 'y', 'name', 'pages'}),
+    'append_common_event': ({'type', 'name', 'trigger', 'commands'}, {'type', 'name', 'trigger', 'commands', 'switch_id'}),
     'append_blank_event': ({'type', 'map_id', 'donor_event', 'x', 'y'}, {'type', 'map_id', 'donor_event', 'x', 'y', 'name'}),
     'add_shop': ({'type', 'map_id', 'event_id', 'goods', 'purchase_only'}, {'type', 'map_id', 'event_id', 'goods', 'purchase_only'}),
     'insert_script': ({'type', 'name', 'source_file'}, {'type', 'name', 'source_file'}),
@@ -63,13 +64,17 @@ def check_ref(value, number, steps, want_table, where):
     if not 1 <= k < number:
         raise RecipeError(f'step {number}: {where} from_step {k} must refer to an earlier step')
     earlier = steps[k - 1]
+    if want_table == 'common_events':
+        if earlier.get('type') != 'append_common_event':
+            raise RecipeError(f'step {number}: {where} from_step {k} must be an append_common_event step')
+        return
     if earlier.get('type') != 'append_entry' or earlier.get('table') != want_table:
         raise RecipeError(f'step {number}: {where} from_step {k} must be an append_entry step on table {want_table}')
 
 
 GOODS_TABLE = {'weapon': ('append_entry', 'weapons'), 'armor': ('append_entry', 'armors'), 'item': ('append_key_item', None)}
 # Database ids inside an effects / features override may be {"from_step": k}: code -> table the referenced step must have appended to.
-EFFECT_REF_TABLE = {21: 'states', 22: 'states', 43: 'skills'}
+EFFECT_REF_TABLE = {21: 'states', 22: 'states', 43: 'skills', 44: 'common_events'}
 FEATURE_REF_TABLE = {13: 'states', 14: 'states', 32: 'states', 43: 'skills'}
 
 
@@ -133,6 +138,21 @@ def contains_ref_key(value):
     if isinstance(value, list):
         return any(contains_ref_key(v) for v in value)
     return False
+
+
+def shadow_command_refs(ops, number, steps):
+    """Check every allowed {"from_step": k} in staged commands (battle troop, item / has_item id, common_event id) and replace it with 0."""
+    for op in ops:
+        if is_ref(op.get('battle')):
+            check_ref(op['battle'], number, steps, 'troops', 'battle troop_id')
+            op['battle'] = 0
+        if is_ref(op.get('common_event')):
+            check_ref(op['common_event'], number, steps, 'common_events', 'common_event id')
+            op['common_event'] = 0
+        for holder, key in ((op, 'item'), (op['if'] if isinstance(op.get('if'), dict) else {}, 'has_item')):
+            if is_ref(holder.get(key)):
+                check_goods_ref(holder[key], number, steps, 'item')
+                holder[key] = 0
 
 
 def validate_recipe(recipe):
@@ -242,16 +262,25 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: pages must be a list of 1..8 page objects')
             from vxace_staged_commands import page_ops
             shadow = copymod.deepcopy(step['pages'])
-            for op in page_ops(shadow):
-                if is_ref(op.get('battle')):
-                    check_ref(op['battle'], number, steps, 'troops', 'battle troop_id')
-                    op['battle'] = 0
-                for holder, key in ((op, 'item'), (op['if'] if isinstance(op.get('if'), dict) else {}, 'has_item')):
-                    if is_ref(holder.get(key)):
-                        check_goods_ref(holder[key], number, steps, 'item')
-                        holder[key] = 0
+            shadow_command_refs(page_ops(shadow), number, steps)
             if contains_ref_key({**{k: v for k, v in step.items() if k not in ('template_event', 'pages')}, 'pages': shadow}):
-                raise RecipeError(f'step {number}: from_step is only allowed for template_event, battle troop ids and item ids in pages')
+                raise RecipeError(f'step {number}: from_step is only allowed for template_event, battle troop ids, item ids and common event ids in pages')
+        elif kind == 'append_common_event':
+            if not isinstance(step['name'], str) or not 1 <= len(step['name']) <= 100:
+                raise RecipeError(f'step {number}: name must be a string of 1..100 characters')
+            if not isinstance(step['trigger'], str) or step['trigger'] not in ('none', 'parallel'):
+                raise RecipeError(f'step {number}: trigger must be "none" or "parallel"')
+            if (step['trigger'] == 'parallel') != ('switch_id' in step):
+                raise RecipeError(f'step {number}: switch_id is required for a parallel common event and not allowed otherwise')
+            if 'switch_id' in step and (not is_int(step['switch_id']) or step['switch_id'] < 1):
+                raise RecipeError(f'step {number}: switch_id must be a positive integer')
+            if not isinstance(step['commands'], list) or not 1 <= len(step['commands']) <= 40:
+                raise RecipeError(f'step {number}: commands must be a list of 1..40 operations')
+            from vxace_staged_commands import iter_ops
+            shadow = copymod.deepcopy(step['commands'])
+            shadow_command_refs(iter_ops(shadow), number, steps)
+            if contains_ref_key({**{k: v for k, v in step.items() if k != 'commands'}, 'commands': shadow}):
+                raise RecipeError(f'step {number}: from_step is only allowed for battle troop ids, item ids and common event ids in commands')
         elif kind == 'append_blank_event':
             if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
                 raise RecipeError(f'step {number}: map_id must be an integer 1..999')
@@ -310,7 +339,7 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: csv must be a non-empty string')
             if 'allow_shorter' in step and type(step['allow_shorter']) is not bool:
                 raise RecipeError(f'step {number}: allow_shorter must be a boolean')
-        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event') and contains_ref_key(step):
+        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event', 'append_common_event') and contains_ref_key(step):
             raise RecipeError(f'step {number}: from_step is not allowed in a {kind} step')
         if kind == 'append_encounter' and contains_ref_key({k: v for k, v in step.items() if k != 'troop_id'}):
             raise RecipeError(f'step {number}: from_step is only allowed for troop_id')
@@ -404,6 +433,20 @@ def build_spec(title, number, step, snapshot, source=None):
             change['mutation'].update(bind_fields(step['pages'], snapshot))
         except ValueError as error:
             raise RecipeError(str(error))
+    elif kind == 'append_common_event':
+        if not snapshot.get('append_slot_supported'):
+            raise RecipeError('CommonEvents has no supported append slot')
+        mutation = {'action': 'append_common_event', 'new_id': snapshot['next_id'], 'name': step['name'], 'trigger': step['trigger'],
+                    **({'switch_id': step['switch_id']} if step['trigger'] == 'parallel' else {}), 'commands': step['commands'],
+                    'expected_common_events_sha256': snapshot['common_events_sha256'], 'expected_system_sha256': snapshot['system_sha256']}
+        change = {'kind': 'common_event', 'locator': {'table': 'common_events'},
+                  'proposal': f'Recipe step {number}: append {step["trigger"]} common event "{step["name"]}" (id {snapshot["next_id"]}).',
+                  'mutation': mutation}
+        from vxace_staged_commands import bind_fields
+        try:
+            mutation.update(bind_fields([{'condition': {}, 'commands': step['commands']}], snapshot))
+        except ValueError as error:
+            raise RecipeError(str(error))
     elif kind == 'append_blank_event':
         change = {'kind': 'map_event', 'locator': {'map_id': step['map_id']},
                   'proposal': f'Recipe step {number}: append one blank event "{step.get("name", snapshot["default_name"])}" to map {step["map_id"]} using donor event {step["donor_event"]} for schema only.',
@@ -442,6 +485,8 @@ def created_id(step, snapshot):
         return snapshot['next_item_id']
     if step['type'] in ('append_dialogue_event', 'append_blank_event', 'append_staged_event'):
         return snapshot['next_event_id']
+    if step['type'] == 'append_common_event':
+        return snapshot['next_id']
     return None
 
 
@@ -558,6 +603,10 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
                 script, args, name = ('vxace_map_events.py', [index, '--project', source, '--map', resolved['map_id'],
                                                               '--template-event', resolved['template_event'], '--staged',
                                                               *[arg for m in sorted(staged_refs(resolved['pages'])['maps']) for arg in ('--transfer-map', m)]], 'map-event-snapshot')
+            elif kind == 'append_common_event':
+                script, args, name = ('vxace_common_event_append.py', [index, '--project', source,
+                                                                       *[arg for m in sorted(staged_refs([{'condition': {}, 'commands': resolved['commands']}])['maps']) for arg in ('--transfer-map', m)]],
+                                      'common-event-snapshot')
             elif kind == 'append_blank_event':
                 script, args, name = ('vxace_map_events.py', [index, '--project', source, '--map', resolved['map_id'],
                                                               '--donor-event', resolved['donor_event']], 'map-event-snapshot')
@@ -596,7 +645,8 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
         if record['created_id'] is not None:
             try:
                 audit_change = read_json(audit / 'audit.json')['changes'][0]
-                audited = audit_change['map_event']['new_id'] if kind in ('append_dialogue_event', 'append_blank_event', 'append_staged_event') else audit_change['entry']['created_id']
+                audited = (audit_change['map_event']['new_id'] if kind in ('append_dialogue_event', 'append_blank_event', 'append_staged_event')
+                           else audit_change['common_event']['new_id'] if kind == 'append_common_event' else audit_change['entry']['created_id'])
             except (OSError, KeyError, IndexError, ValueError):
                 audited = None
             if audited != record['created_id']:

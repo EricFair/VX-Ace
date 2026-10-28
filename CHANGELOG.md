@@ -2,6 +2,10 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.21.0 — Common events
+
+- `append_common_event` adds one call-only or switch-gated parallel common event using the staged-event command language (autorun and self switches refused; parallel needs a wait). Referenced databases are bound by their own hashes; recipes can call it from staged events and from item/skill effect 44. Verified in the real engine: an inn charged 50 gold or took its else branch, a parallel timer ticked only while its switch was ON, and an item's effect 44 ran a common event. See [common events](references/common-event-append.md).
+
 ## 1.20.0 — Usable items, effects and features
 
 - Database append gains usable items (template clone; key items stay with `append_key_item`) and bounded full-list overrides of skill/item **effects** and weapon/armor/state **features**, with editor-matching Integer/Float encodings. Every referenced States/Skills/CommonEvents/System file is bound by its own hash; recipes can point effects and features at a state or skill appended earlier. Verified in the real engine: a Hi-Potion healed 50% and cured a new state, an Ether restored 30 MP, and a Poison Dagger carried its attack state, attack element, hit bonus and element rate. See [database append](references/database-append.md).

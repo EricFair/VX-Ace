@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v1.20.0
+# VX Ace Masterfile — v1.21.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -29,6 +29,8 @@ v1.18 adds guarded [quest-stage events](references/staged-events.md): one new ev
 v1.19 lets quest-stage pages nest [choices, if/else conditions and battles](references/staged-events.md) (depth 4) and adds party, common-event, gold, item, transfer and wait commands; every referenced Troops/Actors/CommonEvents/Items/MapInfos file and destination map is bound by its own hash.
 
 v1.20 adds usable [items](references/database-append.md) to the database append and bounded overrides for skill/item **effects** (recover, states, buffs, grow, learn skill, common event) and weapon/armor/state **features** (element/state rates, param rates, attack element/state, add skill); each referenced States/Skills/CommonEvents/System file is bound by its own hash.
+
+v1.21 adds a guarded [common event append](references/common-event-append.md): one call-only or switch-gated parallel common event using the staged-event command language, callable from staged events and item/skill effect 44.
 
 v1.4.1 corrects static passage observations in the [ordinary upper-tile snapshot](references/upper-tile-painting.md). Recreate previous snapshots; the native uppermost non-star tile now takes priority over lower flags. Mutation capabilities and copy safety gates remain as documented.
 
