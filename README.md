@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v1.12
+# RPG Maker VX Ace Developer — v1.13
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -49,6 +49,8 @@ Each operation is a narrow, separately evidenced subset with exact native guards
 | Blank-map append | [blank map](references/blank-map-append.md) |
 | One direct map transfer | [transfer](references/direct-map-transfer.md) |
 | Map display name and editor/tree name | [display names](references/map-display-names.md), [tree names](references/map-tree-names.md) |
+
+[Recipes](references/recipes.md) chain several of these operations as separate guarded transactions on successive disposable copies, optionally ending with a smoke run.
 
 Anything outside these subsets — for example ground/autotile painting, event deletion, general database or map-property authoring — is refused. See each reference for exact refusal rules.
 
@@ -184,7 +186,7 @@ Uses a pinned MIT-declared codec subset from `azureknight63/rpgvxace-mcp`, needs
 
 ## Automated validation
 
-The suite has **613 tests** (see [CHANGELOG.md](CHANGELOG.md) for per-release counts). CI runs on Ubuntu and Windows with Python 3.11 and Ruby 3.2; consult the latest Actions run for actual status. Ruby-dependent tests skip when Ruby is not installed.
+The suite has **630 tests** (see [CHANGELOG.md](CHANGELOG.md) for per-release counts). CI runs on Ubuntu and Windows with Python 3.11 and Ruby 3.2; consult the latest Actions run for actual status. Ruby-dependent tests skip when Ruby is not installed.
 
 ```bash
 python tools/run_tests.py

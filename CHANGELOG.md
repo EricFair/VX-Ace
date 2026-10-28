@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.13.0 — Recipes
+
+- Add `vxace_recipe.py` (`validate`, `run`): a strictly validated JSON recipe of `append_entry`, `append_key_item`, `append_encounter`, `insert_script`, `set_map_display_name` and `text_import` steps. Each step re-indexes the current source, takes the operation's read-only snapshot, builds the spec from it (recipes cannot carry hashes), and runs planner, impact and the Python copy patcher into its own `step-NN` folder; the next step uses that copy. `{"from_step": N}` resolves ids created by earlier enemy/troop steps.
+- The validator runs once on the original first; a failing step stops the chain and keeps earlier outputs; the original's files are hash-compared before and after. Optional `--smoke-mode` stages and runs a smoke test on the final copy.
+- Native evidence: the bundled `example_cave.json` (enemy, skill, troop, encounter) ran against an editor-created project and its smoke run started a random battle against the new troop. See [recipes](references/recipes.md).
+- Add `tests/recipes` (17 tests).
+
 ## 1.12.0 — Map encounter append
 
 - Add the `map_encounter` / `append_encounter` operation and the read-only `vxace_map_encounters.py` snapshot: append one `RPG::Map::Encounter` (existing static troop bound by `expected_troops_sha256`, weight 1..100, 0..32 sorted unique region ids, optional `encounter_step` 1..999) to an existing map. Existing entries must have the exact native schema; duplicates refuse; every other map byte is verified unchanged. One per transaction, not combinable with other changes to that map or Troops; Python backend and postgates only; advances `System.version_id` once.

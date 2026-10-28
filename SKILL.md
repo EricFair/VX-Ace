@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.12.0
+Version: 1.13.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -88,6 +88,7 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Schema drift vs a baseline | [references/schema-comparison.md](references/schema-comparison.md) |
 | Impact before a patch, diff after | [workflows/impact-review.md](workflows/impact-review.md) |
 | Plan and stage a change | [workflows/project-aware-patching.md](workflows/project-aware-patching.md), [workflows/verified-copy-mutation.md](workflows/verified-copy-mutation.md) |
+| Chain several guarded additions (enemy -> skill -> troop -> encounter -> smoke run) | `tools/vxace_recipe.py run` ([references/recipes.md](references/recipes.md)) |
 | Make a troop appear as a random encounter | [references/map-encounters.md](references/map-encounters.md) |
 | Add an enemy, skill, state, weapon, armor or troop | [references/database-append.md](references/database-append.md) |
 | Ship a build | [workflows/release-checklist.md](workflows/release-checklist.md) |

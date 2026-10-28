@@ -39,6 +39,7 @@ Use the smallest relevant reference first.
 ## Planning and copy mutation
 
 - `patch-planning.md` — freshness-protected proposal plans.
+- `recipes.md` — chained single-change transactions on successive disposable copies.
 - `copy-mutation.md` — disposable-copy mutation foundation.
 - `event-structure.md` — guarded command/page insertion and deletion.
 - `map-region-editing.md` — region cells on an existing map.
