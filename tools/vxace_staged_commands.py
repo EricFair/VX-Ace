@@ -5,6 +5,7 @@ Used by vxace_map_events.append_staged_event, the impact report and the recipe r
 referenced database files are only read, and each one is bound by its own expected SHA-256 in the mutation."""
 from __future__ import annotations
 import hashlib
+from collections import namedtuple
 from pathlib import Path
 
 MAX_COMMANDS = 40          # operations per command list (page or branch body)
@@ -14,7 +15,20 @@ VALUE_LIMIT = 99999999
 VARIABLE_OPS = {'set': 0, 'add': 1, 'sub': 2}
 CONDITION_OPS = {'==': 0, '>=': 1, '<=': 2, '>': 3, '<': 4, '!=': 5}
 KINDS = ('text', 'set_switch', 'set_variable', 'set_self_switch', 'choices', 'if', 'battle', 'party',
-         'common_event', 'gold', 'item', 'weapon', 'armor', 'transfer', 'wait')
+         'common_event', 'gold', 'item', 'weapon', 'armor', 'transfer', 'wait', 'erase_event', 'move_route')
+# Event page triggers (RPG::Event::Page#trigger). Autorun (3) is refused: it has no termination proof.
+PAGE_TRIGGERS = {'action': 0, 'player_touch': 1, 'event_touch': 2, 'parallel': 4}
+TOUCH_TRIGGERS = ('player_touch', 'event_touch')
+# Autonomous movement (RPG::Event::Page#move_type) and the bounded move-route language, codes as in Game_Character#process_move_command.
+MOVE_TYPES = {'fixed': 0, 'random': 1, 'approach': 2, 'custom': 3}
+ROUTE_MOVES = {'down': 1, 'left': 2, 'right': 3, 'up': 4, 'random': 9, 'toward_player': 10, 'away_from_player': 11, 'forward': 12, 'backward': 13}
+ROUTE_TURNS = {'down': 16, 'left': 17, 'right': 18, 'up': 19, 'random': 24, 'toward_player': 25, 'away_from_player': 26}
+ROUTE_WAIT_CODE = 15
+MAX_ROUTE = 40
+ROUTE_TARGETS = {'player': -1, 'this': 0}      # Game_Interpreter#get_character: negative = player, 0 = this event
+# Plain (not yet native) move route objects carried inside plain_rows parameters.
+PlainMoveCommand = namedtuple('PlainMoveCommand', 'code parameters')
+PlainMoveRoute = namedtuple('PlainMoveRoute', 'repeat skippable wait list')
 # kind -> (database file, native class, mutation hash field)
 REF_FILES = {'troops': ('Troops', 'RPG::Troop', 'expected_troops_sha256'),
              'actors': ('Actors', 'RPG::Actor', 'expected_actors_sha256'),
@@ -89,13 +103,87 @@ def condition_shape(cond):
         raise ValueError('Unsupported if condition; use switch, variable, self_switch, gold_at_least or has_item')
 
 
+def route_shape(route, label='move route'):
+    """Validate a move-route command list (1..40 commands of the bounded language). Raises ValueError."""
+    if not isinstance(route, list) or not 1 <= len(route) <= MAX_ROUTE:
+        raise ValueError(f'{label} needs 1..{MAX_ROUTE} route commands')
+    for item in route:
+        if isinstance(item, str):
+            if item not in ROUTE_MOVES:
+                raise ValueError(f'{label} command "{item}" is unsupported; use ' + ', '.join(ROUTE_MOVES) + ' or {"wait": n} / {"turn": direction}')
+        elif isinstance(item, dict) and set(item) == {'wait'}:
+            plain_int(item['wait'], label + ' wait frames', 1, 999)
+        elif isinstance(item, dict) and set(item) == {'turn'}:
+            if not isinstance(item['turn'], str) or item['turn'] not in ROUTE_TURNS:
+                raise ValueError(label + ' turn must be one of ' + ', '.join(ROUTE_TURNS))
+        else:
+            raise ValueError(f'{label} command is unsupported (jump, graphic, script, switch, speed/frequency and other route commands are refused)')
+
+
+def route_commands(route):
+    """Native (code, parameters) pairs of a validated route, without the terminator."""
+    rows = []
+    for item in route:
+        if isinstance(item, str):
+            rows.append((ROUTE_MOVES[item], []))
+        elif 'wait' in item:
+            rows.append((ROUTE_WAIT_CODE, [item['wait']]))
+        else:
+            rows.append((ROUTE_TURNS[item['turn']], []))
+    return rows
+
+
+def plain_route(route, repeat, skippable, wait):
+    """A plain move route (editor layout: repeat, skippable, wait, list ending in the code-0 terminator)."""
+    return PlainMoveRoute(repeat, skippable, wait, tuple(PlainMoveCommand(code, params) for code, params in route_commands(route) + [(0, [])]))
+
+
+def describe_route(route):
+    """One line for a validated route."""
+    parts = []
+    for item in route:
+        parts.append(item if isinstance(item, str) else f'wait {item["wait"]}' if 'wait' in item else 'turn ' + item['turn'])
+    return ', '.join(parts)
+
+
+def command_notes(op):
+    """Advisory sentences for a validated erase_event / move_route command (shared by the staged and common-event impact)."""
+    notes = []
+    if 'erase_event' in op:
+        notes.append('Erases this event; the erase is temporary and the event returns when the map is reloaded (leaving and re-entering the map). Use a self-switch page for a permanent disappearance.')
+    if 'move_route' in op:
+        spec = op['move_route'];who = 'the player' if spec['target'] == 'player' else 'this event'
+        moves = [item for item in spec['route'] if isinstance(item, str)]
+        if spec['target'] == 'player':
+            notes.append('Forces the player along a move route: the player cannot move or open the menu until it ends.')
+        if spec.get('repeat', False):
+            notes.append(f'The move route of {who} repeats and never ends on its own' + (' (a forced player route would lock the player permanently).' if spec['target'] == 'player' else '.'))
+        if moves and not spec.get('skippable', False):
+            notes.append(f'A blocked step stalls the route of {who} (it retries the same step) and' + (', with wait, the event never continues.' if spec.get('wait', True) else ' keeps it from finishing.')
+                         + ' Set skippable true if the path may be blocked.')
+    return notes
+
+
+def move_route_shape(spec):
+    if not isinstance(spec, dict) or not {'target', 'route'} <= set(spec) <= {'target', 'route', 'repeat', 'skippable', 'wait'}:
+        raise ValueError('move_route needs target and route (optional repeat, skippable, wait)')
+    if not isinstance(spec['target'], str) or spec['target'] not in ROUTE_TARGETS:
+        raise ValueError('move_route target must be player or this')
+    route_shape(spec['route'])
+    for key in ('repeat', 'skippable', 'wait'):
+        if key in spec:
+            boolean(spec[key], 'move_route ' + key)
+    if spec.get('repeat', False) and spec.get('wait', True):
+        raise ValueError('A repeating move route cannot be waited for (the event would never continue); use wait false')
+
+
 def op_shape(op, indent=0):
     """Pure validation of one staged command at block indent `indent`. Raises ValueError."""
     if not isinstance(op, dict):
         raise ValueError('Staged command must be an object')
     kinds = [kind for kind in KINDS if kind in op]
     if len(kinds) != 1:
-        raise ValueError('Unsupported staged command; use text, set_switch, set_variable, set_self_switch, choices, if, battle, party, common_event, gold, item, weapon, armor, transfer or wait with exact keys')
+        raise ValueError('Unsupported staged command; use text, set_switch, set_variable, set_self_switch, choices, if, battle, party, common_event, gold, item, weapon, armor, transfer, wait, erase_event or move_route with exact keys')
     kind = kinds[0]
     if kind == 'text':
         exact_keys(op, {'text'});lines = op['text']
@@ -169,6 +257,12 @@ def op_shape(op, indent=0):
         if type(move['direction']) is not int or move['direction'] not in (0, 2, 4, 6, 8):
             raise ValueError('transfer direction must be 0, 2, 4, 6 or 8')
         plain_int(move['fade'], 'transfer fade', 0, 2)
+    elif kind == 'erase_event':
+        exact_keys(op, {'erase_event'})
+        if op['erase_event'] is not True:
+            raise ValueError('erase_event must be true')
+    elif kind == 'move_route':
+        exact_keys(op, {'move_route'});move_route_shape(op['move_route'])
     else:
         exact_keys(op, {'wait'});plain_int(op['wait'], 'wait frames', 1, 999)
 
@@ -327,14 +421,34 @@ def plain_rows(commands, indent=0):
         elif 'armor' in op:rows.append((128, indent, [op['armor'], 0 if op['amount'] > 0 else 1, 0, abs(op['amount']), False]))
         elif 'transfer' in op:
             move = op['transfer'];rows.append((201, indent, [0, move['map_id'], move['x'], move['y'], move['direction'], move['fade']]))
+        elif 'erase_event' in op:rows.append((214, indent, []))
+        # Set Move Route: 205 [character id, RPG::MoveRoute] then one 505 [RPG::MoveCommand] per route command (the terminator has no line).
+        elif 'move_route' in op:
+            spec = op['move_route'];route = plain_route(spec['route'], spec.get('repeat', False), spec.get('skippable', False), spec.get('wait', True))
+            rows.append((205, indent, [ROUTE_TARGETS[spec['target']], route]));rows += [(505, indent, [command]) for command in route.list[:-1]]
         else:rows.append((230, indent, [op['wait']]))
     return rows
+
+
+def native_move_command(command):
+    """A fresh RPG::MoveCommand (ivars code, parameters)."""
+    from vxace_python_mutator import RubyObject
+    return RubyObject('RPG::MoveCommand', {'@code': command.code, '@parameters': list(command.parameters)})
+
+
+def native_route(route):
+    """A fresh RPG::MoveRoute (ivars repeat, skippable, wait, list; commands code, parameters) from a PlainMoveRoute, as the editor saves it."""
+    from vxace_python_mutator import RubyObject
+    return RubyObject('RPG::MoveRoute', {'@repeat': route.repeat, '@skippable': route.skippable, '@wait': route.wait,
+                                         '@list': [native_move_command(c) for c in route.list]})
 
 
 def native_rows(commands, make_command, literal):
     """RPG::EventCommand objects (including the final terminator); strings (also inside the choices array) become native strings."""
     def convert(value):
         if isinstance(value, str):return literal(value)
+        if isinstance(value, PlainMoveRoute):return native_route(value)
+        if isinstance(value, PlainMoveCommand):return native_move_command(value)
         if isinstance(value, list):return [convert(v) for v in value]
         return value
     rows = [make_command(code, indent, convert(params)) for code, indent, params in plain_rows(commands)]

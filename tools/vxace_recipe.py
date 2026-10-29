@@ -17,7 +17,7 @@ from vxace_copy_patcher import current_inventory
 from vxace_database_append import LIST_TABLES, ref_field, required_refs
 from vxace_index_query import unlinked
 
-VERSION = '1.24.0'
+VERSION = '1.25.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -33,6 +33,8 @@ STEP_KEYS = {
     'append_blank_event': ({'type', 'map_id', 'donor_event', 'x', 'y'}, {'type', 'map_id', 'donor_event', 'x', 'y', 'name'}),
     'add_treasure_chest': ({'type', 'map_id', 'x', 'y', 'name', 'contents'},
                            {'type', 'map_id', 'x', 'y', 'name', 'contents', 'graphic', 'template_event', 'donor_event', 'blank_x', 'blank_y'}),
+    'add_touch_trigger': ({'type', 'map_id', 'x', 'y', 'name', 'commands'},
+                          {'type', 'map_id', 'x', 'y', 'name', 'commands', 'repeatable', 'template_event', 'donor_event', 'blank_x', 'blank_y'}),
     'add_shop': ({'type', 'map_id', 'event_id', 'goods', 'purchase_only'}, {'type', 'map_id', 'event_id', 'goods', 'purchase_only'}),
     'insert_script': ({'type', 'name', 'source_file'}, {'type', 'name', 'source_file'}),
     'set_map_display_name': ({'type', 'map_id', 'name'}, {'type', 'map_id', 'name'}),
@@ -168,8 +170,8 @@ CHEST_OPTIONS = {'direction_fix': True, 'walk_anime': False, 'priority': 'same'}
 CHEST_TABLES = {'item': 'items', 'weapon': 'weapons', 'armor': 'armors'}
 
 
-def validate_chest(step, number, steps):
-    """Structural rules of the add_treasure_chest macro (the guarded tools re-check everything it expands to)."""
+def validate_placement(step, number, steps):
+    """Shared rules of the event macros: map, cell, unique name and exactly one template source (existing/from_step blank event, or a donor for a new one)."""
     if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
         raise RecipeError(f'step {number}: map_id must be an integer 1..999')
     for key in ('x', 'y'):
@@ -191,6 +193,11 @@ def validate_chest(step, number, steps):
             check_template_ref(step['template_event'], number, steps, step['map_id'])
         elif not is_int(step['template_event']) or not 1 <= step['template_event'] <= 999:
             raise RecipeError(f'step {number}: template_event must be an integer 1..999 or {{"from_step": N}}')
+
+
+def validate_chest(step, number, steps):
+    """Structural rules of the add_treasure_chest macro (the guarded tools re-check everything it expands to)."""
+    validate_placement(step, number, steps)
     contents = step['contents']
     if not isinstance(contents, dict):
         raise RecipeError(f'step {number}: contents must be {{"gold": n}} or {{"item"|"weapon"|"armor": id, "amount": n}}')
@@ -222,6 +229,21 @@ def validate_chest(step, number, steps):
             shadow['contents'][kind] = 0
     if contains_ref_key(shadow):
         raise RecipeError(f'step {number}: from_step is only allowed for template_event and the contents id')
+
+
+def validate_touch_trigger(step, number, steps):
+    """Structural rules of the add_touch_trigger macro: placement plus 1..40 commands (39 when the self-switch command is appended)."""
+    validate_placement(step, number, steps)
+    if 'repeatable' in step and type(step['repeatable']) is not bool:
+        raise RecipeError(f'step {number}: repeatable must be a boolean')
+    limit = 40 if step.get('repeatable') else 39
+    if not isinstance(step['commands'], list) or not 1 <= len(step['commands']) <= limit:
+        raise RecipeError(f'step {number}: commands must be a list of 1..{limit} operations' + ('' if step.get('repeatable') else ' (one more is added to turn self switch A ON)'))
+    from vxace_staged_commands import iter_ops
+    shadow = copymod.deepcopy(step['commands'])
+    shadow_command_refs(iter_ops(shadow), number, steps)
+    if contains_ref_key({**{k: v for k, v in step.items() if k not in ('template_event', 'commands')}, 'commands': shadow}):
+        raise RecipeError(f'step {number}: from_step is only allowed for template_event, battle troop ids, item/weapon/armor ids and common event ids in commands')
 
 
 def validate_recipe(recipe):
@@ -368,6 +390,8 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: name must be a string of 1..100 characters')
         elif kind == 'add_treasure_chest':
             validate_chest(step, number, steps)
+        elif kind == 'add_touch_trigger':
+            validate_touch_trigger(step, number, steps)
         elif kind == 'add_shop':
             if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
                 raise RecipeError(f'step {number}: map_id must be an integer 1..999')
@@ -430,7 +454,7 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: csv must be a non-empty string')
             if 'allow_shorter' in step and type(step['allow_shorter']) is not bool:
                 raise RecipeError(f'step {number}: allow_shorter must be a boolean')
-        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest', 'set_system_fields') and contains_ref_key(step):
+        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest', 'add_touch_trigger', 'set_system_fields') and contains_ref_key(step):
             raise RecipeError(f'step {number}: from_step is not allowed in a {kind} step')
         if kind == 'append_encounter' and contains_ref_key({k: v for k, v in step.items() if k != 'troop_id'}):
             raise RecipeError(f'step {number}: from_step is only allowed for troop_id')
@@ -649,14 +673,14 @@ def main_index(index):
     return mains[0]
 
 
-def execute_step(number, step, title, source, work, ruby, created, recipe_dir, records, tag='', rtp=None):
+def execute_step(number, step, title, source, work, ruby, created, recipe_dir, records, tag='', rtp=None, macro='add_treasure_chest'):
     """Run one step as a normal transaction. Returns its report record; raises StepFailure after filling the record.
     `tag` ('a', 'b') names the sub-steps of a macro step; `rtp` is the optional explicit RTP root for page graphics."""
     directory = work / f'step-{number:02d}{tag}'
     directory.mkdir()
     logs = directory / 'logs'
     index, copy, audit = directory / 'index', directory / 'copy', directory / 'audit'
-    record = {'step': number, 'type': step['type'], 'status': 'running', **({'macro': 'add_treasure_chest', 'part': tag} if tag else {}), 'source': str(source), 'directory': str(directory),
+    record = {'step': number, 'type': step['type'], 'status': 'running', **({'macro': macro, 'part': tag} if tag else {}), 'source': str(source), 'directory': str(directory),
               'resolved_parameters': None, 'created_id': None, 'spec': None, 'snapshot': None, 'plan': None, 'impact': None,
               'audit': None, 'copy': None, 'exit_codes': {}, 'error': None}
     records.append(record)
@@ -848,6 +872,29 @@ def expand_chest(step, project):
     return blank, staged
 
 
+TOUCH_OPTIONS = {'priority': 'below'}
+
+
+def expand_touch_trigger(step, project):
+    """Expand a resolved add_touch_trigger step into (blank-event step or None, staged-event step). Page 1 is the player-touch trigger with
+    priority below the characters (the player steps onto it); unless repeatable, it ends by turning self switch A ON and page 2 (self switch A) is empty."""
+    commands = list(step['commands'])
+    if step.get('repeatable'):
+        pages = [{'condition': {}, 'trigger': 'player_touch', 'options': dict(TOUCH_OPTIONS), 'commands': commands}]
+    else:
+        pages = [{'condition': {}, 'trigger': 'player_touch', 'options': dict(TOUCH_OPTIONS), 'commands': commands + [{'set_self_switch': 'A', 'value': True}]},
+                 {'condition': {'self_switch': 'A'}, 'options': dict(TOUCH_OPTIONS), 'commands': []}]
+    blank = None
+    if 'donor_event' in step:
+        blank = {'type': 'append_blank_event', 'map_id': step['map_id'], 'donor_event': step['donor_event'], 'x': step['blank_x'], 'y': step['blank_y']}
+    staged = {'type': 'append_staged_event', 'map_id': step['map_id'], 'template_event': step.get('template_event'), 'x': step['x'], 'y': step['y'],
+              'name': step['name'], 'pages': pages}
+    return blank, staged
+
+
+MACROS = {'add_treasure_chest': expand_chest, 'add_touch_trigger': expand_touch_trigger}
+
+
 def failed_record(number, step_type, message, records):
     record = {'step': number, 'type': step_type, 'status': 'failed', 'source': None, 'directory': None, 'resolved_parameters': None, 'created_id': None,
               'spec': None, 'snapshot': None, 'plan': None, 'impact': None, 'audit': None, 'copy': None, 'exit_codes': {}, 'error': message}
@@ -856,18 +903,19 @@ def failed_record(number, step_type, message, records):
 
 
 def execute_chest(number, step, title, source, work, ruby, created, recipe_dir, records, rtp):
-    """Run an add_treasure_chest step as its normal transactions: an optional append_blank_event, then one append_staged_event.
-    Returns the staged step's record (its created id is the chest event id and its copy the new current project)."""
+    """Run a macro step (add_treasure_chest, add_touch_trigger) as its normal transactions: an optional append_blank_event, then one append_staged_event.
+    Returns the staged step's record (its created id is the new event id and its copy the new current project)."""
+    macro = step['type']
     try:
-        blank, staged = expand_chest(resolve_refs(step, created), source)
+        blank, staged = MACROS[macro](resolve_refs(step, created), source)
     except (RecipeError, ValueError) as error:
-        failed_record(number, 'add_treasure_chest', str(error), records)
+        failed_record(number, macro, str(error), records)
     current = source
     if blank is not None:
-        record = execute_step(number, blank, title, current, work, ruby, created, recipe_dir, records, 'a', rtp)
+        record = execute_step(number, blank, title, current, work, ruby, created, recipe_dir, records, 'a', rtp, macro)
         staged['template_event'] = record['created_id']
         current = Path(record['copy'])
-    return execute_step(number, staged, title, current, work, ruby, created, recipe_dir, records, 'b' if blank is not None else 'a', rtp)
+    return execute_step(number, staged, title, current, work, ruby, created, recipe_dir, records, 'b' if blank is not None else 'a', rtp, macro)
 
 
 def markdown_report(report):
@@ -937,7 +985,7 @@ def run_recipe(recipe_path, project, work, ruby=None, smoke=None, rtp=None):
             report['status'] = 'pass'
             for number, step in enumerate(steps, 1):
                 try:
-                    if step['type'] == 'add_treasure_chest':
+                    if step['type'] in MACROS:
                         record = execute_chest(number, step, recipe.get('title'), current, work, ruby, created, recipe_path.parent, records, rtp)
                     else:
                         record = execute_step(number, step, recipe.get('title'), current, work, ruby, created, recipe_path.parent, records, rtp=rtp)

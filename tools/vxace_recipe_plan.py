@@ -18,7 +18,7 @@ import vxace_recipe as R
 from vxace_copy_patcher import current_inventory, normalize_changes
 from vxace_index_query import unlinked
 
-VERSION = '1.24.0'
+VERSION = '1.25.0'
 PREDICTED = 'predicted, verify after run'
 EXACT = 'exact'
 HASHES = 'bound at run time'
@@ -27,7 +27,7 @@ VERSION_BUMP = {'map_event', 'map_name', 'map_encounter', 'map_shop'}
 FILES = {'actors': 'Actors', 'classes': 'Classes', 'enemies': 'Enemies', 'items': 'Items', 'skills': 'Skills', 'states': 'States',
          'weapons': 'Weapons', 'armors': 'Armors', 'troops': 'Troops'}
 ID_KIND = {'item': 'items', 'weapon': 'weapons', 'armor': 'armors', 'actor': 'actors', 'troop': 'troops', 'common event': 'common_events'}
-RESTRICTED_RECOMMEND = {'append_blank_event', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest',
+RESTRICTED_RECOMMEND = {'append_blank_event', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest', 'add_touch_trigger',
                         'add_shop', 'append_encounter', 'insert_script', 'set_system_fields', 'append_learning'}
 
 
@@ -390,7 +390,8 @@ def describe_step(sim, step, snapshot, mutation, number, plan_links):
         rows, warnings = staged_page_report(step['pages'], [''] + list(snapshot['switch_names']), [''] + list(snapshot['variable_names']))
         lines = [f'Map {step["map_id"]}: append {len(step["pages"])}-page staged event {snapshot["next_event_id"]} "{step["name"]}" at ({step["x"]},{step["y"]}), template event {step["template_event"]}.']
         for row in rows:
-            lines.append(f'  page {row["page"]}: condition {json.dumps(row["condition"])}, {row["commands"]} command(s)')
+            extra = (f', trigger {row["trigger"]}' if row['trigger'] != 'action' else '') + (f', move {json.dumps(row["move"])}' if row.get('move') else '')
+            lines.append(f'  page {row["page"]}: condition {json.dumps(row["condition"])}, {row["commands"]} command(s){extra}')
         for chest in chest_summary(step['pages']):
             gives = []
             for op in chest['gives']:
@@ -447,15 +448,15 @@ def describe_step(sim, step, snapshot, mutation, number, plan_links):
 
 # ---------------------------------------------------------------- one step
 
-def new_record(number, step, tag, source):
-    return {'step': number, **({'macro': 'add_treasure_chest', 'part': tag} if tag else {}), 'type': step['type'], 'status': 'planned',
+def new_record(number, step, tag, source, macro='add_treasure_chest'):
+    return {'step': number, **({'macro': macro, 'part': tag} if tag else {}), 'type': step['type'], 'status': 'planned',
             'target_files': [], 'created_id': None, 'id_confidence': None, 'resolved_parameters': None, 'resolved_links': [],
             'hashes': HASHES, 'summary': [], 'warnings': [], 'error': None}
 
 
-def plan_step(sim, number, step, created, recipe_dir, records, tag, plan_links, workdir, ruby, original_step=None, links_step=None):
+def plan_step(sim, number, step, created, recipe_dir, records, tag, plan_links, workdir, ruby, original_step=None, links_step=None, macro='add_treasure_chest'):
     """Simulate one concrete transaction. Appends its record to `records`; raises PlanRefusal after filling the error."""
-    record = new_record(number, step, tag, sim.project)
+    record = new_record(number, step, tag, sim.project, macro)
     records.append(record)
     record['resolved_links'] = find_links(links_step if links_step is not None else step, created)
     try:
@@ -576,18 +577,19 @@ def ensure_index(sim, workdir, ruby):
 
 
 def plan_chest(sim, number, step, created, recipe_dir, records, plan_links, workdir, ruby):
-    """Expand add_treasure_chest like execute_chest: an optional append_blank_event, then one append_staged_event."""
+    """Expand a macro (add_treasure_chest, add_touch_trigger) like execute_chest: an optional append_blank_event, then one append_staged_event."""
+    macro = step['type']
     try:
-        blank, staged = R.expand_chest(R.resolve_refs(step, created), sim.project)
+        blank, staged = R.MACROS[macro](R.resolve_refs(step, created), sim.project)
     except (R.RecipeError, ValueError) as error:
-        record = new_record(number, step, '', sim.project)
+        record = new_record(number, step, '', sim.project, macro)
         record.update(status='refused', error=str(error))
         records.append(record)
         raise PlanRefusal(str(error))
     if blank is not None:
-        record = plan_step(sim, number, blank, created, recipe_dir, records, 'a', plan_links, workdir, ruby)
+        record = plan_step(sim, number, blank, created, recipe_dir, records, 'a', plan_links, workdir, ruby, macro=macro)
         staged['template_event'] = record['created_id']
-    return plan_step(sim, number, staged, created, recipe_dir, records, 'b' if blank is not None else 'a', plan_links, workdir, ruby, links_step=step)
+    return plan_step(sim, number, staged, created, recipe_dir, records, 'b' if blank is not None else 'a', plan_links, workdir, ruby, links_step=step, macro=macro)
 
 
 # ---------------------------------------------------------------- the plan
@@ -653,7 +655,7 @@ def plan_recipe(recipe_path, project, output, ruby=None, rtp=None):
             with installed(sim):
                 for number, step in enumerate(steps, 1):
                     try:
-                        if step['type'] == 'add_treasure_chest':
+                        if step['type'] in R.MACROS:
                             record = plan_chest(sim, number, step, created, recipe_path.parent, records, plan_links, output, ruby)
                         else:
                             record = plan_step(sim, number, step, created, recipe_path.parent, records, '', plan_links, output, ruby)
@@ -697,7 +699,7 @@ def summarize(plan, sim, project, steps):
 def smoke_advice(steps):
     kinds = {step['type'] for step in steps}
     reasons = sorted(kinds & RESTRICTED_RECOMMEND)
-    custom = sorted(kinds & {'append_staged_event', 'add_treasure_chest', 'append_common_event', 'insert_script'})
+    custom = sorted(kinds & {'append_staged_event', 'add_treasure_chest', 'add_touch_trigger', 'append_common_event', 'insert_script'})
     return {'recommended': bool(reasons), 'reason_steps': reasons,
             'suite_needed': bool(custom),
             'note': ('A --smoke-mode run boots the final copy; a --smoke-suite is needed to exercise the new behavior (' + ', '.join(custom) + ') in the engine.'

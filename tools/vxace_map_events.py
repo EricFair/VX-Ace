@@ -9,9 +9,10 @@ import re
 import sys
 from vxace_index_query import execute, unlinked
 from vxace_map_regions import integer, table_for
-from vxace_staged_commands import commands_shape, staged_ids as _staged_ids, ref_fields, check_references, native_rows, structure_check, reference_snapshot, graphic_names
+from vxace_staged_commands import (commands_shape, staged_ids as _staged_ids, ref_fields, check_references, native_rows, structure_check, reference_snapshot, graphic_names,
+                                   iter_ops, route_shape, plain_route, native_route, PAGE_TRIGGERS, TOUCH_TRIGGERS, MOVE_TYPES)
 
-VERSION = '1.22.0'
+VERSION = '1.25.0'
 FIELDS = {'action','template_id','new_id','name','x','y','text',
           'expected_map_sha256','expected_template_sha256'}
 BLANK_FIELDS = {'action','donor_event_id','new_id','name','x','y','expected_map_sha256','expected_donor_sha256'}
@@ -27,7 +28,7 @@ VALUE_LIMIT = 99999999
 CONDITION_KEYS = {'switch1','switch2','variable','self_switch'}
 VARIABLE_OPS = {'set':0,'add':1,'sub':2}
 GRAPHIC_FIELDS = {'tile_id','character_name','character_index','direction','pattern'}
-PAGE_KEYS = {'condition','commands','trigger','graphic','options'}
+PAGE_KEYS = {'condition','commands','trigger','graphic','options','move'}
 OPTION_FLAGS = ('walk_anime','step_anime','direction_fix','through')
 PRIORITIES = {'below':0,'same':1,'above':2}
 
@@ -59,6 +60,31 @@ def page_options_shape(options):
         raise ValueError('Page option priority must be below, same or above')
 
 
+def page_trigger_shape(page):
+    """action (default), player_touch, event_touch, or parallel (only with a wait command); autorun stays refused."""
+    trigger=page['trigger']
+    if not isinstance(trigger,str) or trigger not in PAGE_TRIGGERS:
+        raise ValueError('Page trigger must be action, player_touch, event_touch or parallel (autorun is refused: it has no termination proof)')
+    if trigger=='parallel' and not any('wait' in op for op in iter_ops(page['commands'])):
+        raise ValueError('A parallel page needs at least one wait command (it repeats every frame while its conditions hold)')
+
+
+def page_move_shape(move):
+    """{"type": fixed|random|approach|custom, "speed": 1..6, "frequency": 1..5, and for custom only route, repeat, skippable}."""
+    if not isinstance(move,dict) or 'type' not in move or not isinstance(move['type'],str) or move['type'] not in MOVE_TYPES:
+        raise ValueError('Page move needs a type of fixed, random, approach or custom')
+    custom=move['type']=='custom'
+    if set(move)-{'type','speed','frequency'}-({'route','repeat','skippable'} if custom else set()):
+        raise ValueError('Page move keys are type, speed and frequency (route, repeat and skippable only for custom)')
+    if 'speed' in move:plain_int(move['speed'],'move speed',1,6)
+    if 'frequency' in move:plain_int(move['frequency'],'move frequency',1,5)
+    if custom:
+        if 'route' not in move:raise ValueError('A custom move needs a route of 1..40 commands')
+        route_shape(move['route'],'custom move route')
+        for key in ('repeat','skippable'):
+            if key in move and type(move[key]) is not bool:raise ValueError('Page move '+key+' must be true or false')
+
+
 def staged_shape(pages):
     """Pure shape/bounds validation of staged pages (no System ranges). Raises ValueError."""
     if not isinstance(pages,list) or not 1<=len(pages)<=MAX_PAGES:raise ValueError(f'Staged event needs 1..{MAX_PAGES} pages')
@@ -68,7 +94,9 @@ def staged_shape(pages):
             raise ValueError('Each page needs condition and commands (optional trigger "action", graphic and options)')
         if 'graphic' in page:page_graphic_shape(page['graphic'])
         if 'options' in page:page_options_shape(page['options'])
-        if 'trigger' in page and page['trigger']!='action':raise ValueError('Only the "action" trigger is supported for staged pages')
+        if 'trigger' in page and isinstance(page['commands'],list):page_trigger_shape(page)
+        elif 'trigger' in page:raise ValueError('Each page commands must be a list')
+        if 'move' in page:page_move_shape(page['move'])
         condition=page['condition']
         if not isinstance(condition,dict) or set(condition)-CONDITION_KEYS:raise ValueError('Page condition keys must be a subset of switch1, switch2, variable, self_switch')
         for key in ('switch1','switch2'):
@@ -152,6 +180,15 @@ def staged_event(root,mutation,project,rtp=None):
         for key in OPTION_FLAGS:
             if key in options:page.set(key,options[key])
         if 'priority' in options:page.set('priority_type',PRIORITIES[options['priority']])
+        elif spec.get('trigger') in TOUCH_TRIGGERS:page.set('priority_type',PRIORITIES['same'])   # touch pages default to Same as Characters
+        if 'trigger' in spec:page.set('trigger',PAGE_TRIGGERS[spec['trigger']])
+        move=spec.get('move')
+        if move:
+            page.set('move_type',MOVE_TYPES[move['type']])
+            if 'speed' in move:page.set('move_speed',move['speed'])
+            if 'frequency' in move:page.set('move_frequency',move['frequency'])
+            if move['type']=='custom':   # other types keep the template's default route object, as the editor does
+                page.set('move_route',native_route(plain_route(move['route'],move.get('repeat',True),move.get('skippable',False),False)))
         rows=native_rows(spec['commands'],lambda code,indent,parameters:RubyObject('RPG::EventCommand',{'@indent':indent,'@code':code,'@parameters':parameters}),literal)   # editor-saved ivar order (Project3)
         structure_check(rows)
         page.set('list',rows)
@@ -422,10 +459,10 @@ def indexed_snapshot(data,project,map_id,template_id,graphic=None,rtp=None,donor
         result.update(system_sha256=info['system_sha256'],switch_count=len(info['switches'])-1,variable_count=len(info['variables'])-1,
                       switch_names=info['switches'][1:],variable_names=info['variables'][1:])
         result.update(reference_snapshot(project,transfer_maps))
-        result['limits']=['One blank-graphic action-button event with 1..8 condition pages built from literal text, switch/variable/self-switch, choices, if/else, battle, party, common-event, gold, item, transfer and wait commands (nesting <= 4).',
+        result['limits']=['One blank-graphic event with 1..8 condition pages built from literal text, switch/variable/self-switch, choices, if/else, battle, party, common-event, gold, item, weapon, armor, transfer, wait, erase-event and move-route commands (nesting <= 4).',
                           'Switch/variable ids must exist in the native System (bound by system_sha256); referenced Troops/Actors/CommonEvents/Items/MapInfos and transfer destination maps are bound by their own hashes. The highest valid page wins at runtime, so review page order.',
                           'Pages may carry a character graphic (bound by its own asset hash, see assets) and walk/step/direction-fix/through/priority options; every other page field comes from the blank template.',
-                          'No autorun, parallel process or item/actor conditions. Next maximum ID only.']
+                          'Pages may set a trigger (action, player_touch, event_touch, or parallel with a wait command) and autonomous movement (fixed, random, approach or a bounded custom route). No autorun or item/actor conditions. Next maximum ID only.']
         if assets:
             from vxace_character_graphics import staged_assets
             result['assets']=staged_assets(project,rtp,assets)

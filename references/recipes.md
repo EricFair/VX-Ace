@@ -30,7 +30,7 @@ python tools/vxace_recipe.py plan tools/recipes/example_cave.json --project PROJ
 What `plan` does, in order:
 
 1. Refuses an `--output` inside (or containing) the project and an existing non-empty `--output` (an empty directory is fine), then runs the same validator gate as `run` (the original must be copy-mutation ready). The project's files are hashed before and after; any change is reported as an error.
-2. Simulates the chain in memory. The native files a step touches live in an in-memory overlay that the existing loaders read instead of the disk, so step *k* sees the databases, maps and System that steps 1..*k-1* would have written. For each step it expands macros (`add_treasure_chest`), resolves every `{"from_step": k}` to the predicted id with the same table/type checks `run` performs, takes the snapshot with the operation's own snapshot functions, builds the exact spec, runs the same spec-shape validators, applies the same mutator and runs the same transition verifiers. New event ids per map, new database ids per table, new common event ids, occupied map cells, names, counts and the `System.version_id` advance are therefore tracked, not skipped.
+2. Simulates the chain in memory. The native files a step touches live in an in-memory overlay that the existing loaders read instead of the disk, so step *k* sees the databases, maps and System that steps 1..*k-1* would have written. For each step it expands macros (`add_treasure_chest`, `add_touch_trigger`), resolves every `{"from_step": k}` to the predicted id with the same table/type checks `run` performs, takes the snapshot with the operation's own snapshot functions, builds the exact spec, runs the same spec-shape validators, applies the same mutator and runs the same transition verifiers. New event ids per map, new database ids per table, new common event ids, occupied map cells, names, counts and the `System.version_id` advance are therefore tracked, not skipped.
 3. Stops at the first step `run` would refuse, naming the step and the reason. Exit codes match `run`: `0` every step planned; `3` the original is not copy-mutation ready or a step was refused; `2` bad recipe or arguments, or an internal error.
 
 Hashes depend on bytes that earlier steps write, so a plan never reports them: every step shows `Hashes: bound at run time`. Everything that does not depend on bytes is validated.
@@ -83,6 +83,7 @@ Top level: `{"title": "optional text", "steps": [ ... ]}` (1..50 steps). Unknown
 | `append_staged_event` | `map_id`, `template_event` (an existing blank event, or `{"from_step": k}` for an `append_blank_event` step on the same map), `x`, `y`, `name`, `pages` (1..8 page objects, see [staged events](staged-events.md)) | [staged quest-stage event](staged-events.md) (`append_staged_event`); the snapshot adds `--staged`; creates the next event id |
 | `append_common_event` | `name`, `trigger` (`"none"` or `"parallel"`), `switch_id` (parallel only), `commands` (1..40 operations, see [common event append](common-event-append.md)) | [guarded common event append](common-event-append.md) (`append_common_event`); creates the next common event id (v1.21) |
 | `add_treasure_chest` | `map_id`, `x`, `y`, `name`, `contents` (`{"gold": n}` or `{"item"/"weapon"/"armor": id or {"from_step": k}, "amount": n}`), exactly one of `template_event` (existing blank event or `{"from_step": k}`) or `donor_event` with `blank_x`/`blank_y`; optional `graphic` | macro, see [treasure chests](treasure-chests.md): an optional `append_blank_event` plus one two-page `append_staged_event` (v1.22) |
+| `add_touch_trigger` | `map_id`, `x`, `y`, `name`, `commands` (1..39 operations, or 1..40 with `repeatable`; the same command language as staged pages, `from_step` allowed for troop/goods/common-event ids), exactly one of `template_event` (existing blank event or `{"from_step": k}`) or `donor_event` with `blank_x`/`blank_y`; optional `repeatable` (boolean) | macro, see [touch triggers](touch-triggers.md): an optional `append_blank_event` plus one `append_staged_event` with a player-touch page (v1.25) |
 | `add_shop` | `map_id`, `event_id` (integer or `{"from_step": k}`), `goods` (1..32 of `{"type": "item"/"weapon"/"armor", "id": integer or {"from_step": k}, "price": null or 0..9999999}`), `purchase_only` (boolean) | [map shops](map-shops.md) |
 | `insert_script` | `name`, `source_file` (UTF-8 file, relative to the recipe) | [script slot insertion](script-slot-insertion.md), before canonical Main |
 | `set_map_display_name` | `map_id`, `name` | [map display names](map-display-names.md) |
@@ -162,6 +163,22 @@ An `append_common_event` step creates the next common event id, and later steps 
   {"type": "append_entry", "table": "weapons", "template_id": 1, "overrides": {"name": "Moon Blade"}},
   {"type": "add_treasure_chest", "map_id": 1, "x": 6, "y": 6, "name": "Moon Chest", "donor_event": 1, "blank_x": 2, "blank_y": 2,
    "contents": {"weapon": {"from_step": 1}, "amount": 1}}]}
+```
+
+## Touch trigger macro (v1.25)
+
+`add_touch_trigger` is a step-on trigger. Like `add_treasure_chest` it expands inside the runner and `plan` into ordinary guarded transactions: an `append_blank_event` at `blank_x`,`blank_y` when `donor_event` is given, then one `append_staged_event`. A `template_event` step runs only `step-NNa`; a `donor_event` step runs `step-NNa` (blank) and `step-NNb` (trigger), both records carry `macro` `add_touch_trigger` and `part`, and `from_step` NN afterwards refers to the trigger event id. `plan` predicts both ids exactly.
+
+Pages generated for the one-time form:
+
+1. Condition `{}`, trigger `player_touch`, no graphic, options `{"priority": "below"}`, the given `commands` followed by `{"set_self_switch": "A", "value": true}`.
+2. Condition `{"self_switch": "A"}`, no commands (it never fires again), options `{"priority": "below"}` so the empty page does not block the cell either.
+
+With `"repeatable": true` only page 1 is emitted and it has no self-switch command, so it fires every time the player steps on it. `commands` may use `{"from_step": k}` for a battle troop, an item/weapon/armor and a `common_event` id, as in an `append_staged_event` page. See [touch triggers](touch-triggers.md) for examples.
+
+```json
+{"type": "add_touch_trigger", "map_id": 1, "x": 6, "y": 6, "name": "Tripwire", "donor_event": 1, "blank_x": 2, "blank_y": 2,
+ "commands": [{"text": ["Click."]}, {"common_event": {"from_step": 1}}]}
 ```
 
 ## Actors and System fields (v1.23)

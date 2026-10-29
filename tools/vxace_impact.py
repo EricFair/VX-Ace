@@ -553,14 +553,35 @@ def upper_tile_impact(index,change):
 
 def staged_page_report(pages,switches,variables):
     """Per-page rows and advisory warnings of staged pages (shared with the recipe dry-run); switches/variables are the System name lists with slot 0."""
-    from vxace_staged_commands import iter_ops
+    from vxace_staged_commands import iter_ops,command_notes,describe_route,TOUCH_TRIGGERS
     def label(names,number):
         return names[number] if isinstance(names[number],str) and names[number] else None
     warnings=[];rows=[]
     for number,page in enumerate(pages,1):
         condition=page['condition']
-        rows.append({'page':number,'condition':condition,'commands':len(page['commands']),'trigger':'action',
-                     **({'graphic':page['graphic']} if page.get('graphic') else {}),**({'options':page['options']} if page.get('options') else {})})
+        trigger=page.get('trigger','action');move=page.get('move');priority=(page.get('options') or {}).get('priority','same' if trigger in TOUCH_TRIGGERS else None)
+        rows.append({'page':number,'condition':condition,'commands':len(page['commands']),'trigger':trigger,
+                     **({'graphic':page['graphic']} if page.get('graphic') else {}),**({'options':page['options']} if page.get('options') else {}),
+                     **({'move':move} if move else {})})
+        if trigger in TOUCH_TRIGGERS and page['commands']:
+            if priority in ('below','above'):
+                warnings.append(f'Page {number} is a {trigger.replace("_"," ")} trigger with priority {priority}: it only starts when the player steps onto its cell (it cannot be bumped into from the side).')
+            else:
+                warnings.append(f'Page {number} is a {trigger.replace("_"," ")} trigger with priority same: it starts when the player walks into it or presses the action button facing it, and it blocks movement unless the page is through.')
+            if trigger=='event_touch' and (not move or move['type']=='fixed'):
+                warnings.append(f'Page {number} event touch fixed in place behaves like a player touch: it starts only when the player touches it, because nothing moves it into the player.')
+        if trigger=='parallel':
+            warnings.append(f'Page {number} is a parallel process: it repeats from the top every frame while the page conditions hold; add a condition (for example a self switch the commands turn ON) so it can stop.')
+            if not any('wait' in op for op in page['commands'] if isinstance(op,dict)):
+                warnings.append(f'Page {number} has its only wait inside a branch, so a frame that takes another path runs with no wait; put a wait at the top level.')
+        if move:
+            speed=f', speed {move["speed"]}' if 'speed' in move else '';freq=f', frequency {move["frequency"]}' if 'frequency' in move else ''
+            if move['type']=='custom':
+                warnings.append(f'Page {number} moves along a custom route ({describe_route(move["route"])}){"" if move.get("repeat",True) else ", once"}{speed}{freq}'+('; with a non-skippable route a blocked step makes the event retry that step.' if not move.get('skippable',False) else '.'))
+            else:
+                warnings.append(f'Page {number} moves autonomously: {move["type"]}{speed}{freq}.')
+            if move['type']!='fixed' and (page.get('options') or {}).get('through') is not True and trigger=='action':
+                warnings.append(f'Page {number} moves, so the player may meet it anywhere on the map; check that it cannot block a corridor or door.')
         if not condition and number<len(pages):
             warnings.append(f'Page {number} has no conditions but is not the last page: the engine checks pages highest-number first, so it only runs when no later page condition holds.')
         for key in ('switch1','switch2'):
@@ -574,6 +595,8 @@ def staged_page_report(pages,switches,variables):
             if 'variable' in cond and not label(variables,cond['variable']):warnings.append(f'Page {number} tests unnamed variable {cond["variable"]}.')
             if 'battle' in op:warnings.append(f'Page {number} starts a battle (troop {op["battle"]}): check escape/lose branches and that the player cannot soft-lock.')
             if 'transfer' in op:warnings.append(f'Page {number} transfers the player to map {op["transfer"]["map_id"]}: check the destination cell is passable.')
+            for note in command_notes(op):warnings.append(f'Page {number}: '+note)
+            if 'move_route' in op:warnings.append(f'Page {number} sets a move route for {"the player" if op["move_route"]["target"]=="player" else "this event"}: {describe_route(op["move_route"]["route"])}.')
             if 'gold' in op and op['gold']<0:warnings.append(f'Page {number} removes gold; the engine clamps at zero without a branch, so guard it with a gold_at_least condition.')
             for goods in ('weapon','armor'):
                 if goods in op and op['amount']<0:
@@ -633,7 +656,7 @@ def map_event_impact(index,change):
                     kind=next(key for key in ('item','weapon','armor') if key in op);label=goods_name(kind,op[kind])
                     gives.append(f'{op["amount"]} x {kind} {op[kind]}'+(f' "{label}"' if label else ' (unnamed)'))
             chests.append({**chest,'description':f'Treasure chest: page {chest["page"]} gives '+', '.join(gives)+f' and turns self switch {chest["self_switch"]} ON; page {chest["opened_page"]} (self switch {chest["self_switch"]}) is the opened chest.'})
-        graphics=[{'page':number,'graphic':page['graphic'],'options':page.get('options')} for number,page in enumerate(pages,1) if page.get('graphic') or page.get('options')]
+        graphics=[{'page':number,'graphic':page.get('graphic'),'options':page.get('options')} for number,page in enumerate(pages,1) if page.get('graphic') or page.get('options')]
         staged_report={'page_count':len(pages),'pages':rows,'chests':chests,'graphic_changes':graphics,'priority_note':'The engine runs the highest-numbered page whose conditions are all met; verify the page order against the quest state machine.',
                        'warnings':warnings}
     data.unchanged()
@@ -644,7 +667,7 @@ def map_event_impact(index,change):
                           'Literal consumers miss dynamic ownership; inspect custom map/save hooks and action-button accessibility.',
                           'Stationary, one unconditional action-button page; optional character assets require independent native/header/hash checks.',
                           'Review character/object prefix semantics, native rendering, old-save reload, dialogue and restart.',
-                          *(['Staged pages: conditions use only switch/variable/self-switch; commands may nest choices, if/else and battles (depth <= 4); no autorun, parallel or item/actor page conditions. Self-switch state of the new event id may pre-exist in saves.'] if staged else [])]}
+                          *(['Staged pages: conditions use only switch/variable/self-switch; commands may nest choices, if/else and battles (depth <= 4); triggers are action, player/event touch and parallel (with a wait); movement is fixed, random, approach or a bounded custom route; no autorun or item/actor page conditions. Self-switch state of the new event id may pre-exist in saves.'] if staged else [])]}
 
 
 def common_event_impact(index,change):

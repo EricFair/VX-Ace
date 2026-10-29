@@ -11,7 +11,7 @@ from pathlib import Path
 import sys
 from vxace_index_query import execute, unlinked
 from vxace_staged_commands import (commands_shape, iter_ops, staged_ids, ref_fields, check_references, native_rows, structure_check,
-                                   reference_snapshot, check_text, sha_text, plain_int)
+                                   reference_snapshot, check_text, sha_text, plain_int, describe_route, command_notes)
 
 VERSION = '1.21.0'
 ACTION = 'append_common_event'
@@ -62,6 +62,10 @@ def schema(mutation):
             raise ValueError('set_self_switch is refused in a common event: self switches need an owning map event')
         if isinstance(op.get('if'), dict) and 'self_switch' in op['if']:
             raise ValueError('The self_switch condition is refused in a common event: self switches need an owning map event')
+        if 'erase_event' in op:
+            raise ValueError('erase_event is refused in a common event: there is no owning event to erase')
+        if isinstance(op.get('move_route'), dict) and op['move_route'].get('target') == 'this':
+            raise ValueError('A move_route targeting "this" is refused in a common event: there is no owning event (target the player instead)')
         if 'common_event' in op and op['common_event'] == mutation['new_id']:
             raise ValueError('A common event cannot call its own new id (direct recursion)')
 
@@ -253,6 +257,12 @@ def describe(commands, lookup, depth=0):
             lines.append(pad + f'Transfer the player to {named("map", move["map_id"])} at ({move["x"]},{move["y"]}), {facing}, {fade}')
         elif 'wait' in op:
             lines.append(pad + f'Wait {op["wait"]} frames')
+        elif 'erase_event' in op:
+            lines.append(pad + 'Erase this event (temporary until the map is reloaded)')
+        elif 'move_route' in op:
+            spec = op['move_route']
+            flags = [text for flag, text, default in (('repeat', 'repeating', False), ('skippable', 'skips blocked steps', False), ('wait', 'waits until it finishes', True)) if spec.get(flag, default)]
+            lines.append(pad + f'Move {"the player" if spec["target"] == "player" else "this event"}: {describe_route(spec["route"])}' + (f' ({", ".join(flags)})' if flags else ' (does not wait)'))
     return lines
 
 
@@ -296,6 +306,10 @@ def analyse(mutation, lookup):
         for kind in ('weapon', 'armor'):
             if kind in op and op['amount'] < 0:
                 warnings.append(f'Removes {kind} {op[kind]}; the engine clamps at zero, so the party may not own it. Equipped copies are not removed.')
+    for op in ops:
+        for note in command_notes(op):
+            if note not in warnings:
+                warnings.append(note)
     calls = []
     for op in ops:
         if 'common_event' in op and op['common_event'] not in [call['id'] for call in calls]:

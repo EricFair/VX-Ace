@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v1.24.0
+# VX Ace Masterfile — v1.25.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -37,6 +37,8 @@ v1.22 adds weapon/armor commands and page graphics/options to the command langua
 v1.23 adds actors to the database append (class, levels, graphics, slot-checked equipment) and a guarded [System fields](references/system-fields.md) edit for the starting party, start position, title, currency and menu terms.
 
 v1.24 adds `vxace_recipe.py plan`, a read-only [recipe dry-run](references/recipes.md): it simulates the whole chain in memory and reports each step's predicted id, resolved `from_step` links, summary and warnings without making any project copy.
+
+v1.25 adds page triggers (player/event touch, parallel with a wait), autonomous movement (random, approach, bounded custom routes), Set Move Route (205/505) and Erase Event (214) commands, and an `add_touch_trigger` [recipe macro](references/touch-triggers.md).
 
 v1.4.1 corrects static passage observations in the [ordinary upper-tile snapshot](references/upper-tile-painting.md). Recreate previous snapshots; the native uppermost non-star tile now takes priority over lower flags. Mutation capabilities and copy safety gates remain as documented.
 

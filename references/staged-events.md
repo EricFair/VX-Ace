@@ -1,6 +1,6 @@
-# Guarded quest-stage event pages — v1.18, nested commands v1.19
+# Guarded quest-stage event pages — v1.18, nested commands v1.19, triggers and movement v1.25
 
-`append_staged_event` is a third action on the existing `map_event` change kind. It creates **one new event** on an existing map from an exact blank template event (the same predicate as [`append_dialogue_event`](map-event-creation.md); `append_blank_event` can create one). The event has 1..8 action-button pages, each with an optional condition and a list of commands that can nest choices, conditions and battles (v1.19). It is meant for quest-stage NPCs that react to switches and variables set by earlier stages. See also the [quest state machine pattern](../patterns/quest-state-machine.md).
+`append_staged_event` is a third action on the existing `map_event` change kind. It creates **one new event** on an existing map from an exact blank template event (the same predicate as [`append_dialogue_event`](map-event-creation.md); `append_blank_event` can create one). The event has 1..8 pages (action-button by default; touch or parallel triggers and autonomous movement since v1.25), each with an optional condition and a list of commands that can nest choices, conditions and battles (v1.19). It is meant for quest-stage NPCs that react to switches and variables set by earlier stages. See also the [quest state machine pattern](../patterns/quest-state-machine.md).
 
 Python backend, mandatory re-indexing, one event append per map per transaction; the Ruby backend and `--no-reindex` are refused. System is read only (never written except the usual single `version_id` advance).
 
@@ -33,9 +33,10 @@ The engine runs, on action-button interaction, the **highest-numbered page whose
 ### Page fields
 
 - `condition` (required, may be `{}`): any subset of `switch1` (switch id), `switch2` (switch id), `variable` (`{"id": N, "at_least": int}`, value is greater than or equal to `at_least`, bounds -99999999..99999999) and `self_switch` (`"A"`..`"D"`). Item and actor conditions are not supported.
-- `trigger` (optional): only `"action"`. Autorun and parallel process are deliberately excluded (no termination proof).
+- `trigger` (optional, v1.25): `"action"` (default, 0), `"player_touch"` (1), `"event_touch"` (2) or `"parallel"` (4). `"parallel"` is accepted only when the page commands contain a `wait` (at any nesting depth, the same rule as a parallel [common event](common-event-append.md)). Autorun (3) is refused (no termination proof). See [Triggers](#triggers) and [touch triggers](touch-triggers.md).
+- `move` (optional, v1.25): `{"type": "fixed"|"random"|"approach"|"custom", "speed": 1..6, "frequency": 1..5, "route": [...], "repeat": bool, "skippable": bool}`. `type` is required and sets `move_type` 0..3. `speed` and `frequency` (optional) set `move_speed` and `move_frequency`; leave them out to keep the template's. `route`, `repeat` and `skippable` are allowed only for `"custom"`, which requires a `route` of 1..40 commands (`repeat` defaults to true and `skippable` to false, the editor's defaults). `fixed`, `random` and `approach` keep the template's `move_route` object (the editor stores a default route holding only the terminator even for those types). See [Move routes](#move-routes).
 - `graphic` (optional, v1.22): `{"character_name": str, "character_index": 0..7, "direction": 2/4/6/8, "pattern": 0..2}`, validated exactly like the [character graphic of a dialogue event](character-event-graphics.md) (`!`/`$` prefix rules, the sheet must exist in the project's `Graphics/Characters` or in an explicit RTP root, PNG, whole frame grid). `{}` or no key keeps the template's blank graphic. Because the sheet is a file the event depends on, the mutation also carries `expected_assets` (`{"<character_name>": binding}`, one per distinct sheet, taken from the `--staged --asset NAME [--rtp ROOT]` snapshot), present exactly when a page has a graphic; the copy patcher takes `--rtp ROOT` and rechecks the bindings at the end, and a stale or missing sheet rolls the copy back.
-- `options` (optional, v1.22): a non-empty subset of `walk_anime`, `step_anime`, `direction_fix`, `through` (booleans) and `priority` (`"below"`/`"same"`/`"above"` = priority_type 0/1/2). Every other page field (move route, speed, frequency, trigger, remaining flags) comes from the blank template page. The page graphic block is the editor's `RPG::Event::Page::Graphic` (`tile_id, character_name, character_index, direction, pattern`); `tile_id` stays 0.
+- `options` (optional, v1.22): a non-empty subset of `walk_anime`, `step_anime`, `direction_fix`, `through` (booleans) and `priority` (`"below"`/`"same"`/`"above"` = priority_type 0/1/2). Every other page field (move route, speed, frequency, trigger, remaining flags) comes from the blank template page unless `trigger` or `move` sets it. A touch-triggered page (`player_touch` / `event_touch`) with no `priority` option is stored with priority `same` (1) instead of the template's. The page graphic block is the editor's `RPG::Event::Page::Graphic` (`tile_id, character_name, character_index, direction, pattern`); `tile_id` stays 0.
 - An opened-state page (a conditional page with `"commands": []`) is allowed; it contains only the list terminator. An unconditional page still needs at least one command.
 - `commands` (required): 1..40 operations, in order (each nested body also holds at most 40):
 
@@ -56,6 +57,8 @@ The engine runs, on action-button interaction, the **highest-numbered page whose
 | `{"item": id, "amount": +/-int}` | `126 [id, 0 gain / 1 lose, 0, abs]`, nonzero, up to 99 |
 | `{"transfer": {"map_id", "x", "y", "direction": 0/2/4/6/8, "fade": 0/1/2}}` | `201 [0, map_id, x, y, direction, fade]` (direct designation; 0 keeps the facing; fade 0 black, 1 white, 2 none) |
 | `{"wait": 1..999}` | `230 [frames]` |
+| `{"erase_event": true}` (v1.25) | `214 []`. Refused in a common event (no owning event). The erase is temporary: the event returns when the map is reloaded |
+| `{"move_route": {"target": "player"/"this", "route": [...], "repeat": false, "skippable": bool, "wait": bool}}` (v1.25) | `205 [char_id, RPG::MoveRoute]` then one `505 [RPG::MoveCommand]` per route command; `char_id` is -1 for the player and 0 for this event. `this` is refused in a common event. See [Move routes](#move-routes) |
 
 `COND` is exactly one of (the first key picks the form):
 
@@ -90,6 +93,36 @@ Weapon and armor commands follow `Game_Interpreter#command_127` / `command_128`:
 ### System ids
 
 Every switch and variable id used in a condition or command must be `1..len-1` of the native `System.switches` / `System.variables` (the project's own count), read from `Data/System.rvdata2` and bound by `expected_system_sha256` (Marshal dump SHA-256). Raise the counts in the editor first if you need more ids.
+
+## Move routes
+
+The route language is shared by the page `move` field (`custom`) and the `move_route` command. Each entry is one of:
+
+| Entry | `RPG::MoveCommand` |
+| --- | --- |
+| `"down"`, `"left"`, `"right"`, `"up"` | code 1, 2, 3, 4 (`move_straight`) |
+| `"random"`, `"toward_player"`, `"away_from_player"` | 9, 10, 11 |
+| `"forward"`, `"backward"` | 12, 13 (one step forward / backward) |
+| `{"wait": 1..999}` | 15 `[frames]` |
+| `{"turn": "down"/"left"/"right"/"up"}` | 16, 17, 18, 19 |
+| `{"turn": "random"/"toward_player"/"away_from_player"}` | 24, 25, 26 |
+
+Jump, diagonal moves, graphic/opacity/blending changes, speed and frequency changes, switches, through/transparent/animation flags, play SE and script commands are refused. The codes are those of `Game_Character#process_move_command` in the project's own scripts (the `ROUTE_*` constants, checked in Project3). The route is always stored with the editor's terminator (`RPG::MoveCommand`, code 0, parameters `[]`). `RPG::MoveRoute` has the ivars `@repeat, @skippable, @wait, @list` in that order and `RPG::MoveCommand` has `@code, @parameters`, as in the editor-saved default route of every Project3 event page. A page route is stored with `wait` false.
+
+`move_route` command keys: `target` and `route` are required; `repeat` (default false), `skippable` (default false) and `wait` (default true, the editor's default for Set Move Route) are optional booleans. `repeat: true` together with `wait: true` is refused for **any** target: `Game_Interpreter#command_205` waits `while character.move_route_forcing`, and a repeating forced route never clears that flag, so the interpreter would stall forever (for a player route the player could never move again either). Other hazards are impact warnings: a player route locks the player until it ends, and a non-skippable route retries a blocked step forever (set `skippable` true when the path may be blocked).
+
+The 505 lines carry the route's commands without the terminator. Project3 holds no editor-saved Set Move Route, so the 205/505 layout is checked against `Game_Interpreter#command_205` (it reads `@params[0]` as the character and `@params[1]` as the `RPG::MoveRoute`, and the 505 lines are display continuations) rather than against editor data; the 505 convention follows the editor's one-line-per-command display. Verify one in the editor after the first use.
+
+## Triggers
+
+`Game_Event` and `Game_Player` in the project's scripts (Project3) decide how a trigger starts:
+
+- Action button (0): `check_action_event` starts events on the player's own cell whose priority is not "same", then the faced cell (and across a counter) whose priority is "same".
+- Player touch (1) and event touch (2): `check_touch_event` (the player overlaps the cell) starts triggers 1 and 2 of events with priority **below or above** the characters, so such a page only starts when the player steps onto its cell. For priority **same**, the player walking into the event starts it (`Game_Player#check_event_trigger_touch` also uses triggers 1 and 2), and the action button starts it when facing it. A priority-same event-touch page also starts when the event itself walks into the player (`Game_Event#check_event_trigger_touch`), which needs a move type other than fixed.
+- Parallel (4): `Game_Event#setup_page` creates an interpreter for the page, which runs every frame while the page's conditions hold.
+- Autorun (3): refused.
+
+Impact warns about each touch page according to its priority, about parallel pages (they repeat until a condition changes) and about a wait that exists only inside a branch.
 
 ## Examples (v1.19)
 
@@ -143,7 +176,7 @@ The impact report lists every page's condition and command count (`staged.pages`
 
 ## Limits
 
-- No loops, labels, jumps, move routes, shops, scripts, autorun, parallel process, item/actor page conditions or faces; page graphics are limited to character sheets (no tile graphics). No cancel branch (`403`) for choices, no variable operands, and no variable (indirect) transfer destinations.
+- No loops, labels, jumps, shops, scripts, autorun, item/actor page conditions or faces; move routes are limited to the bounded language above (no jump, graphic, script, switch, speed or frequency changes); page graphics are limited to character sheets (no tile graphics). No cancel branch (`403`) for choices, no variable operands, and no variable (indirect) transfer destinations.
 - `battle` uses a fixed troop (no random encounter); a battle without `can_lose` and a `lose` branch ends in Game Over on defeat, as in the editor.
 - The page text is plain literal text; variable and switch semantics are not simulated. Check runtime behavior in the game.
 - Self-switch state of the new event id may pre-exist in old saves; an appended static id can collide with runtime-created events.

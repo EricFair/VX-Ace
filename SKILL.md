@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.24.0
+Version: 1.25.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -92,6 +92,7 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Quest NPC whose dialogue changes with progress | [references/staged-events.md](references/staged-events.md), [patterns/quest-state-machine.md](patterns/quest-state-machine.md) |
 | Shared logic: inn, reward chain, timer (common event) | [references/common-event-append.md](references/common-event-append.md) |
 | Starting party, start position, title, currency or menu terms | [references/system-fields.md](references/system-fields.md) |
+| Wandering or pacing NPC, step-on trap or cutscene trigger | [references/touch-triggers.md](references/touch-triggers.md) |
 | Treasure chest | recipe step `add_treasure_chest` ([references/treasure-chests.md](references/treasure-chests.md)) |
 | Sell items/weapons/armors from a shopkeeper | [references/map-shops.md](references/map-shops.md) |
 | Make a troop appear as a random encounter | [references/map-encounters.md](references/map-encounters.md) |
@@ -130,7 +131,7 @@ Only these structural writes exist; everything else is proposal/manual-only. Eac
 - ordinary upper-layer B-E tile painting ([upper-tile-painting.md](references/upper-tile-painting.md));
 - one blank event from an existing schema donor, or one stationary literal-dialogue event, per map ([map-event-creation.md](references/map-event-creation.md)) with optional character graphic ([character-event-graphics.md](references/character-event-graphics.md));
 - one-time constant gold/item map rewards ([one-time-event-rewards.md](references/one-time-event-rewards.md));
-- one quest-stage event: 1..8 action-button pages with switch/variable/self-switch conditions, literal dialogue, Control Switch/Variable/Self Switch, nested choices, if/else and battles, plus party, common event, gold, item, weapon, armor, transfer and wait commands and optional page graphics ([staged-events.md](references/staged-events.md));
+- one quest-stage event: 1..8 action-button pages with switch/variable/self-switch conditions, literal dialogue, Control Switch/Variable/Self Switch, nested choices, if/else and battles, plus party, common event, gold, item, weapon, armor, transfer, wait, Set Move Route and Erase Event commands, optional page graphics, touch/parallel triggers and autonomous movement ([staged-events.md](references/staged-events.md));
 - one System fields edit: starting party, start position, game title, currency unit and menu terms ([system-fields.md](references/system-fields.md));
 - one common event (call-only or switch-gated parallel process with a wait) using the same command language ([common-event-append.md](references/common-event-append.md));
 - Shop Processing (1..32 existing goods) on a blank or single-dialogue action-button event ([map-shops.md](references/map-shops.md));
