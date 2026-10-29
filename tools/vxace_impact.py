@@ -551,6 +551,36 @@ def upper_tile_impact(index,change):
                           'Review native editor rendering, actor passage, old-save map reload and restart-based persistence.']}
 
 
+def staged_page_report(pages,switches,variables):
+    """Per-page rows and advisory warnings of staged pages (shared with the recipe dry-run); switches/variables are the System name lists with slot 0."""
+    from vxace_staged_commands import iter_ops
+    def label(names,number):
+        return names[number] if isinstance(names[number],str) and names[number] else None
+    warnings=[];rows=[]
+    for number,page in enumerate(pages,1):
+        condition=page['condition']
+        rows.append({'page':number,'condition':condition,'commands':len(page['commands']),'trigger':'action',
+                     **({'graphic':page['graphic']} if page.get('graphic') else {}),**({'options':page['options']} if page.get('options') else {})})
+        if not condition and number<len(pages):
+            warnings.append(f'Page {number} has no conditions but is not the last page: the engine checks pages highest-number first, so it only runs when no later page condition holds.')
+        for key in ('switch1','switch2'):
+            if key in condition and not label(switches,condition[key]):warnings.append(f'Page {number} condition {key} {condition[key]} is an unnamed switch.')
+        if 'variable' in condition and not label(variables,condition['variable']['id']):warnings.append(f'Page {number} condition variable {condition["variable"]["id"]} is an unnamed variable.')
+        for op in iter_ops(page['commands']):
+            if 'set_switch' in op and not label(switches,op['set_switch']):warnings.append(f'Page {number} sets unnamed switch {op["set_switch"]}.')
+            if 'set_variable' in op and not label(variables,op['set_variable']):warnings.append(f'Page {number} sets unnamed variable {op["set_variable"]}.')
+            cond=op.get('if') if isinstance(op.get('if'),dict) else {}
+            if 'switch' in cond and not label(switches,cond['switch']):warnings.append(f'Page {number} tests unnamed switch {cond["switch"]}.')
+            if 'variable' in cond and not label(variables,cond['variable']):warnings.append(f'Page {number} tests unnamed variable {cond["variable"]}.')
+            if 'battle' in op:warnings.append(f'Page {number} starts a battle (troop {op["battle"]}): check escape/lose branches and that the player cannot soft-lock.')
+            if 'transfer' in op:warnings.append(f'Page {number} transfers the player to map {op["transfer"]["map_id"]}: check the destination cell is passable.')
+            if 'gold' in op and op['gold']<0:warnings.append(f'Page {number} removes gold; the engine clamps at zero without a branch, so guard it with a gold_at_least condition.')
+            for goods in ('weapon','armor'):
+                if goods in op and op['amount']<0:
+                    warnings.append(f'Page {number} removes {goods} {op[goods]}; the engine clamps at zero, so the party may not own it (equipped copies are not removed).')
+    return rows,warnings
+
+
 def map_event_impact(index,change):
     from vxace_index_query import Index
     from vxace_map_events import schema,integer,text
@@ -587,30 +617,7 @@ def map_event_impact(index,change):
         if not isinstance(system,dict) or not isinstance(system.get('switches'),list) or not isinstance(system.get('variables'),list) or len(system['switches'])<2 or len(system['variables'])<2:
             raise ValueError('Indexed native System switches/variables required')
         pages=mutation['pages'];staged_ids(pages,len(system['switches']),len(system['variables']));index_check(data.json,pages)
-        def label(names,number):
-            return names[number] if isinstance(names[number],str) and names[number] else None
-        warnings=[];rows=[]
-        for number,page in enumerate(pages,1):
-            condition=page['condition']
-            rows.append({'page':number,'condition':condition,'commands':len(page['commands']),'trigger':'action',
-                         **({'graphic':page['graphic']} if page.get('graphic') else {}),**({'options':page['options']} if page.get('options') else {})})
-            if not condition and number<len(pages):
-                warnings.append(f'Page {number} has no conditions but is not the last page: the engine checks pages highest-number first, so it only runs when no later page condition holds.')
-            for key in ('switch1','switch2'):
-                if key in condition and not label(system['switches'],condition[key]):warnings.append(f'Page {number} condition {key} {condition[key]} is an unnamed switch.')
-            if 'variable' in condition and not label(system['variables'],condition['variable']['id']):warnings.append(f'Page {number} condition variable {condition["variable"]["id"]} is an unnamed variable.')
-            for op in iter_ops(page['commands']):
-                if 'set_switch' in op and not label(system['switches'],op['set_switch']):warnings.append(f'Page {number} sets unnamed switch {op["set_switch"]}.')
-                if 'set_variable' in op and not label(system['variables'],op['set_variable']):warnings.append(f'Page {number} sets unnamed variable {op["set_variable"]}.')
-                cond=op.get('if') if isinstance(op.get('if'),dict) else {}
-                if 'switch' in cond and not label(system['switches'],cond['switch']):warnings.append(f'Page {number} tests unnamed switch {cond["switch"]}.')
-                if 'variable' in cond and not label(system['variables'],cond['variable']):warnings.append(f'Page {number} tests unnamed variable {cond["variable"]}.')
-                if 'battle' in op:warnings.append(f'Page {number} starts a battle (troop {op["battle"]}): check escape/lose branches and that the player cannot soft-lock.')
-                if 'transfer' in op:warnings.append(f'Page {number} transfers the player to map {op["transfer"]["map_id"]}: check the destination cell is passable.')
-                if 'gold' in op and op['gold']<0:warnings.append(f'Page {number} removes gold; the engine clamps at zero without a branch, so guard it with a gold_at_least condition.')
-                for goods in ('weapon','armor'):
-                    if goods in op and op['amount']<0:
-                        warnings.append(f'Page {number} removes {goods} {op[goods]}; the engine clamps at zero, so the party may not own it (equipped copies are not removed).')
+        rows,warnings=staged_page_report(pages,system['switches'],system['variables'])
         def goods_name(kind,number):
             table={'item':'items','weapon':'weapons','armor':'armors'}[kind]
             try:rows_=data.json('database/'+table+'.json')

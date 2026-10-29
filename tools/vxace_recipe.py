@@ -17,7 +17,7 @@ from vxace_copy_patcher import current_inventory
 from vxace_database_append import LIST_TABLES, ref_field, required_refs
 from vxace_index_query import unlinked
 
-VERSION = '1.23.0'
+VERSION = '1.24.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -1006,6 +1006,12 @@ def main(argv=None):
     commands = parser.add_subparsers(dest='command', required=True)
     item = commands.add_parser('validate', help='validate a recipe file without touching any project')
     item.add_argument('recipe')
+    item = commands.add_parser('plan', help='dry-run: predict what run would do, without creating any project copy')
+    item.add_argument('recipe')
+    item.add_argument('--project', required=True)
+    item.add_argument('--output', required=True)
+    item.add_argument('--ruby', default=shutil.which('ruby'))
+    item.add_argument('--rtp', help='explicit read-only RTP root, used only to bind page character graphics that are not in the project')
     item = commands.add_parser('run')
     item.add_argument('recipe')
     item.add_argument('--project', required=True)
@@ -1022,6 +1028,20 @@ def main(argv=None):
         if args.command == 'validate':
             steps = load_recipe(args.recipe)['steps']
             print(json.dumps({'status': 'ok', 'steps': len(steps)}))
+            return 0
+        if args.command == 'plan':
+            import vxace_recipe_plan
+            plan = vxace_recipe_plan.plan_recipe(args.recipe, args.project, args.output, args.ruby, args.rtp)
+            summary = plan['summary']
+            print(json.dumps({'version': vxace_recipe_plan.VERSION, 'status': plan['status'], 'steps_planned': summary['steps_planned'], 'refused_step': plan['refused_step'],
+                              'transactions': summary['transactions'], 'files_changed': summary['files_changed'], 'original_unchanged': plan['original_unchanged'],
+                              'plan': str(Path(plan['output']) / 'recipe-plan.json')}))
+            if plan['status'] == 'error':
+                print('Plan error: ' + str(plan['error']), file=sys.stderr)
+                return 2
+            if plan['status'] != 'ok':
+                print('Plan stopped: ' + str(plan['error']), file=sys.stderr)
+                return 3
             return 0
         if (args.smoke_suite or args.smoke_launcher) and not args.smoke_mode:
             raise RecipeError('--smoke-suite requires --smoke-mode')

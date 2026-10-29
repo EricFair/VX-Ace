@@ -6,9 +6,67 @@
 python tools/vxace_recipe.py run tools/recipes/example_cave.json --project PROJECT --work NEW_WORK_DIR [--ruby RUBY] `
   [--smoke-mode test --smoke-suite SUITE.rb --smoke-frames 600 --smoke-auto-confirm 0]
 python tools/vxace_recipe.py validate RECIPE.json
+python tools/vxace_recipe.py plan RECIPE.json --project PROJECT --output NEW_PLAN_DIR [--rtp RTP_ROOT]
 ```
 
+`validate` checks the recipe's shape only and never looks at a project. `plan` checks the recipe against your project and predicts the result without making any copy (see [Dry-run (plan)](#dry-run-plan-v124)). `run` makes the copies.
+
 `--work` must be a new directory outside the project. Exit codes: `0` all steps (and the optional smoke run) passed; `3` the original is not copy-mutation ready, a step was refused/failed, or the smoke run did not pass (earlier outputs and the report are kept); `2` bad recipe/arguments or an internal error.
+
+## Dry-run (plan) (v1.24)
+
+`plan` answers "what will this recipe do?" in seconds, before `run` spends minutes and N+1 project copies on it.
+
+```powershell
+python tools/vxace_recipe.py plan tools/recipes/example_cave.json --project PROJECT --output NEW_PLAN_DIR [--rtp RTP_ROOT]
+```
+
+| Command | Looks at | Writes |
+| --- | --- | --- |
+| `validate RECIPE` | the recipe only (shape, types, `from_step` placement) | nothing |
+| `plan RECIPE --project P --output O` | the recipe **and** the project: ids, references, cells, names, counts, every operation's own validators | `O/recipe-plan.json` and `.md` (plus validator logs); never the project, never a copy |
+| `run RECIPE --project P --work W` | everything, for real | the chain of copies, plans, impacts, audits and the report |
+
+What `plan` does, in order:
+
+1. Refuses an `--output` inside (or containing) the project and an existing non-empty `--output` (an empty directory is fine), then runs the same validator gate as `run` (the original must be copy-mutation ready). The project's files are hashed before and after; any change is reported as an error.
+2. Simulates the chain in memory. The native files a step touches live in an in-memory overlay that the existing loaders read instead of the disk, so step *k* sees the databases, maps and System that steps 1..*k-1* would have written. For each step it expands macros (`add_treasure_chest`), resolves every `{"from_step": k}` to the predicted id with the same table/type checks `run` performs, takes the snapshot with the operation's own snapshot functions, builds the exact spec, runs the same spec-shape validators, applies the same mutator and runs the same transition verifiers. New event ids per map, new database ids per table, new common event ids, occupied map cells, names, counts and the `System.version_id` advance are therefore tracked, not skipped.
+3. Stops at the first step `run` would refuse, naming the step and the reason. Exit codes match `run`: `0` every step planned; `3` the original is not copy-mutation ready or a step was refused; `2` bad recipe or arguments, or an internal error.
+
+Hashes depend on bytes that earlier steps write, so a plan never reports them: every step shows `Hashes: bound at run time`. Everything that does not depend on bytes is validated.
+
+Output:
+
+- `recipe-plan.json` / `recipe-plan.md`: a top summary (steps planned, number of transactions, **Data files that will change overall**, estimated disk use for `run` = project size x (transactions + 1), and whether `--smoke-suite` is needed or recommended), then per transaction the type (and macro part `a`/`b` of a chest), target files, the predicted new id with its confidence, the resolved `from_step` links, a short summary (dialogue lines, goods and prices, effects and features, chest contents, System old -> new, common event commands) and the advisory warnings impact would give where they can be computed without a copy.
+- A short JSON status line on stdout (`status`, `steps_planned`, `refused_step`, `transactions`, `files_changed`, `plan`).
+
+Confidence: every id a plan reports is `exact` (the same code that `run` uses, on the same simulated bytes) except `text_import`, which re-derives its spec from the previous copy; its entry says `predicted, verify after run`. A plan is not a promise: `run` additionally runs the patch planner and impact report on the real index, the per-step project-wide validation and round-trip preflight, the post-copy re-index and the selected-map tile audit, and any of those can still refuse a step the plan accepted. Treat `run`'s report as the evidence and the plan as the forecast.
+
+Example excerpt (`example_cave.json` on a small project):
+
+```text
+Status: ok
+- Steps planned: 4 of 4
+- Transactions: 4
+- Data files that will change: Data/Enemies.rvdata2, Data/Skills.rvdata2, Data/Troops.rvdata2, Data/Map001.rvdata2, Data/System.rvdata2
+- Estimated disk use for run: 0.1 MiB (0.02 MiB x (4 + 1))
+- Smoke: recommended.
+
+### Step 3: append_entry (planned)
+- Target files: Data/Troops.rvdata2
+- Predicted new id: 3 (exact)
+- from_step 1 at overrides.members[0].enemy_id resolves to id 3
+- Hashes: bound at run time
+- Append troops entry 3 "Cave Bat Pair" cloned from template 1 "Blank".
+- Members: 3 "Cave Bat", 3 "Cave Bat"
+
+### Step 4: append_encounter (planned)
+- Target files: Data/Map001.rvdata2, Data/System.rvdata2
+- from_step 3 at troop_id resolves to id 3
+- Map 1: append a random encounter of troop 3 "Cave Bat Pair", weight 10, whole map, encounter step 5.
+```
+
+A refused step is reported the same way (`Status: step_refused`, `Error: step 2 (append_blank_event): mutation refused: ...`) and the steps after it are not planned.
 
 ## Recipe schema
 

@@ -2,6 +2,10 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.24.0 — Recipe dry-run
+
+- `vxace_recipe.py plan` runs the validator gate and then simulates a whole recipe in memory, without making any copy. For every step it reports the predicted id, resolved `from_step` links, a summary and warnings, plus the files that will change, the transaction count and a disk estimate. All id-creating steps are predicted exactly; `text_import` is marked "predicted, verify after run". On an editor-saved project, the plans for an actor/System recipe and a chest recipe matched the real runs' ids and parameters exactly, in 10–16 s each, with the project unchanged. See [recipes](references/recipes.md).
+
 ## 1.23.0 — Actors and System fields
 
 - Database append gains actors: class, levels, nickname, character and face graphics (asset-bound), and equipment checked against slot, equip type and class rules. A new guarded `set_system_fields` edit sets the starting party, start position, game title, currency unit and menu terms. Recipes can put an actor appended earlier into the starting party or a party command. Verified in the real engine: a new game started at the new position, with the new actor leading the party in her own graphics and equipped weapon, and with the new title and terms; an old save kept its own party but showed the new terms. See [database append](references/database-append.md) and [system fields](references/system-fields.md).

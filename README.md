@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v1.23
+# RPG Maker VX Ace Developer — v1.24
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -56,7 +56,7 @@ Each operation is a narrow, separately evidenced subset with exact native guards
 | Starting party, start position, game title, currency and menu terms | [system fields](references/system-fields.md) |
 | Map display name and editor/tree name | [display names](references/map-display-names.md), [tree names](references/map-tree-names.md) |
 
-[Recipes](references/recipes.md) chain several of these operations as separate guarded transactions on successive disposable copies, optionally ending with a smoke run.
+[Recipes](references/recipes.md) chain several of these operations as separate guarded transactions on successive disposable copies, optionally ending with a smoke run; `vxace_recipe.py plan` dry-runs a recipe first (predicted ids, links and warnings, no copies).
 
 Reviewed copies enter the real project only through [adopt](references/adopt.md): an explicit, confirmed, backed-up copy of exactly the declared files, with undo.
 

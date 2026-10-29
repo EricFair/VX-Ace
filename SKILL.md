@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.23.0
+Version: 1.24.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -88,7 +88,7 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Schema drift vs a baseline | [references/schema-comparison.md](references/schema-comparison.md) |
 | Impact before a patch, diff after | [workflows/impact-review.md](workflows/impact-review.md) |
 | Plan and stage a change | [workflows/project-aware-patching.md](workflows/project-aware-patching.md), [workflows/verified-copy-mutation.md](workflows/verified-copy-mutation.md) |
-| Chain several guarded additions (enemy -> skill -> troop -> encounter -> smoke run) | `tools/vxace_recipe.py run` ([references/recipes.md](references/recipes.md)) |
+| Chain several guarded additions (enemy -> skill -> troop -> encounter -> smoke run) | `tools/vxace_recipe.py plan` (dry-run, no copies), then `run` ([references/recipes.md](references/recipes.md)) |
 | Quest NPC whose dialogue changes with progress | [references/staged-events.md](references/staged-events.md), [patterns/quest-state-machine.md](patterns/quest-state-machine.md) |
 | Shared logic: inn, reward chain, timer (common event) | [references/common-event-append.md](references/common-event-append.md) |
 | Starting party, start position, title, currency or menu terms | [references/system-fields.md](references/system-fields.md) |
