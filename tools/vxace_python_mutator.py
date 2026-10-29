@@ -172,6 +172,12 @@ def apply(root, spec, *, source_path=None):
                 if not isinstance(context,dict) or set(context)!={'rtp'} or (context['rtp'] is not None and not isinstance(context['rtp'],str)):
                     raise ValueError('Staged page graphics need the explicit asset context')
                 rtp=context['rtp']
+        if mutation.get('action')=='append_blank_event' and 'donor_map_id' in mutation:
+            from vxace_index_query import unlinked
+            if source_path is None:raise ValueError('A donor on another map needs an actual native project source path')
+            source_file=unlinked(source_path)
+            if source_file.parent.name!='Data' or not re.fullmatch(r'Map\d{3,6}\.rvdata2',source_file.name):raise ValueError('Donor-map event native path is unsupported')
+            project=source_file.parent.parent
         append_dialogue_event(root,mutation,project,rtp)
     elif kind == 'system_fields':
         from vxace_index_query import unlinked

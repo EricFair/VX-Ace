@@ -18,7 +18,7 @@ import vxace_recipe as R
 from vxace_copy_patcher import current_inventory, normalize_changes
 from vxace_index_query import unlinked
 
-VERSION = '1.25.0'
+VERSION = '1.26.0'
 PREDICTED = 'predicted, verify after run'
 EXACT = 'exact'
 HASHES = 'bound at run time'
@@ -27,7 +27,7 @@ VERSION_BUMP = {'map_event', 'map_name', 'map_encounter', 'map_shop'}
 FILES = {'actors': 'Actors', 'classes': 'Classes', 'enemies': 'Enemies', 'items': 'Items', 'skills': 'Skills', 'states': 'States',
          'weapons': 'Weapons', 'armors': 'Armors', 'troops': 'Troops'}
 ID_KIND = {'item': 'items', 'weapon': 'weapons', 'armor': 'armors', 'actor': 'actors', 'troop': 'troops', 'common event': 'common_events'}
-RESTRICTED_RECOMMEND = {'append_blank_event', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest', 'add_touch_trigger',
+RESTRICTED_RECOMMEND = {'append_blank_map', 'add_area', 'append_blank_event', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest', 'add_touch_trigger',
                         'add_shop', 'append_encounter', 'insert_script', 'set_system_fields', 'append_learning'}
 
 
@@ -64,6 +64,28 @@ class Sim:
             return marshal_rb.load(raw), raw
         return self.original_load(path)
 
+    def fake_load_native(self, project, relative):
+        """vxace_staged_commands.load_native over the overlay (a map created by an earlier step has no file on disk yet)."""
+        from vxace_python_mutator import marshal_rb
+        key = self.key(Path(project) / 'Data' / relative)
+        if key in self.roots:
+            return marshal_rb.load(marshal_rb.dump(self.roots[key]))
+        return self.original_load_native(project, relative)
+
+    def fake_inventory(self, project):
+        """vxace_maps.inventory over the overlay: edited maps hash their simulated bytes and new maps are listed (the files do not exist on disk)."""
+        import hashlib
+        from vxace_python_mutator import marshal_rb
+        rows, _ = self.original_inventory(project)
+        by_id = {row['id']: row for row in rows}
+        folder = os.path.normcase(str((self.project / 'Data').resolve()))
+        for key, root in self.roots.items():
+            match = re.fullmatch(r'map([0-9]{3})\.rvdata2', os.path.basename(key), re.IGNORECASE)
+            if match and os.path.dirname(key) == folder:
+                by_id[int(match[1])] = {'id': int(match[1]), 'sha256': hashlib.sha256(marshal_rb.dump(root)).hexdigest()}
+        rows = [by_id[number] for number in sorted(by_id)]
+        return rows, hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
     def get(self, rel):
         import vxace_python_mutator as backend
         return backend.load(self.path(rel))[0]
@@ -83,13 +105,15 @@ class Sim:
 @contextlib.contextmanager
 def installed(sim):
     """Route vxace_python_mutator.load (used lazily by every snapshot/validator module) through the overlay."""
+    import vxace_maps
     import vxace_python_mutator as backend
-    sim.original_load = backend.load
-    backend.load = sim.fake_load
+    import vxace_staged_commands
+    sim.original_load, sim.original_load_native, sim.original_inventory = backend.load, vxace_staged_commands.load_native, vxace_maps.inventory
+    backend.load, vxace_staged_commands.load_native, vxace_maps.inventory = sim.fake_load, sim.fake_load_native, sim.fake_inventory
     try:
         yield sim
     finally:
-        backend.load = sim.original_load
+        backend.load, vxace_staged_commands.load_native, vxace_maps.inventory = sim.original_load, sim.original_load_native, sim.original_inventory
 
 
 def text_of(value):
@@ -147,7 +171,8 @@ def take_snapshot(sim, step, recipe_dir, source_text):
         import vxace_map_events as events
         root = sim.get(f'Data/Map{step["map_id"]:03d}.rvdata2')
         if kind == 'append_blank_event':
-            return {'map_id': step['map_id'], **events.blank_snapshot(root, step['donor_event'])}
+            donor_root = sim.get(f'Data/Map{step["donor_map_id"]:03d}.rvdata2') if 'donor_map_id' in step else None
+            return {'map_id': step['map_id'], **events.blank_snapshot(root, step['donor_event'], donor_root)}
         result = {'map_id': step['map_id'], **events.snapshot(root, step['template_event'])}
         if kind == 'append_staged_event':
             info = events.system_info(project)
@@ -159,6 +184,9 @@ def take_snapshot(sim, step, recipe_dir, source_text):
                 from vxace_character_graphics import staged_assets
                 result['assets'] = staged_assets(project, rtp, tuple(sorted(names)))
         return result
+    if kind == 'append_blank_map':
+        import vxace_maps
+        return vxace_maps.native_snapshot(project, step['template_map_id'], {key: step[key] for key in vxace_maps.OPTIONS if key in step})[2]
     if kind == 'append_common_event':
         from vxace_common_event_append import snapshot
         maps = tuple(sorted(staged_refs([{'condition': {}, 'commands': step['commands']}])['maps']))
@@ -282,6 +310,23 @@ def apply_changes(sim, spec, index_dir=None):
     targets = []
     for change in changes:
         mutation = change['ruby_spec'].get('mutation', {})
+        if change['kind'] == 'map_entry':
+            # the copy patcher's apply_map_append: two native files together, existing entries and maps preserved
+            import vxace_maps
+            infos = backend.load(sim.path('Data/MapInfos.rvdata2'))[0]
+            before_raw = marshal_rb.dump(infos)
+            proposed_info, proposed_map = vxace_maps.candidates(infos, mutation, sim.project)
+            retained = marshal_rb.load(marshal_rb.dump(proposed_info))
+            retained.pairs.pop()
+            if marshal_rb.dump(retained) != before_raw:
+                raise PlanRefusal('Map append changed existing map-info entries or aliases')
+            new_rel = f"Data/Map{mutation['new_id']:03d}.rvdata2"
+            if sim.key(sim.path(new_rel)) in sim.roots or sim.path(new_rel).exists():
+                raise PlanRefusal('New map file already exists; never overwrite maps')
+            sim.store('Data/MapInfos.rvdata2', proposed_info)
+            sim.store(new_rel, proposed_map)
+            targets += ['Data/MapInfos.rvdata2', new_rel]
+            continue
         graphics = isinstance(mutation, dict) and ('graphic' in mutation or graphic_names(mutation.get('pages')))
         if graphics or (isinstance(mutation, dict) and 'expected_assets' in mutation):
             change['ruby_spec']['context'] = {'rtp': str(sim.rtp) if sim.rtp else None}
@@ -380,8 +425,20 @@ def describe_step(sim, step, snapshot, mutation, number, plan_links):
             warnings.append(f'Region(s) {unpainted} have no painted cells on map {step["map_id"]}: the encounter would never fire there.')
         return [f'Map {step["map_id"]}: append a random encounter of troop {step["troop_id"]} "{snapshot["troops"].get(step["troop_id"])}", weight {step["weight"]}'
                 + (f', regions {regions}' if regions else ', whole map') + (f', encounter step {step["encounter_step"]}' if step.get('encounter_step') is not None else '') + '.'], warnings
+    if kind == 'append_blank_map':
+        planned = snapshot['planned_map']
+        lines = [f'Append map {snapshot["new_id"]} "{step["name"]}" from ' + (f'map {step["template_map_id"]} (fresh map: schema only, none of its content is copied)' if planned['fresh'] else f'inert template map {step["template_map_id"]}')
+                 + f': {planned["width"]}x{planned["height"]}, tileset {planned["tileset_id"]}, '
+                 + (f'child of map {planned["parent_id"]}' if planned['parent_id'] else 'root level') + ', no events.']
+        if planned['floor_tile_id'] is not None:
+            lines.append(f'  Floor: A5 tile index {planned["fill_floor"]} (tile id {planned["floor_tile_id"]}) on layer 0 of every cell; the other layers, regions and shadows stay 0.')
+            warnings.append('fill_floor only makes a walkable placeholder room; real level design stays manual in the editor.')
+        elif planned['tiles_rebuilt']:
+            warnings.append('The new map has a different size or tileset than its template, so its tile Table starts empty (all 0); paint it in the editor.')
+        return lines, warnings
     if kind == 'append_blank_event':
-        return [f'Map {step["map_id"]}: append blank event {snapshot["next_event_id"]} "{step.get("name", snapshot["default_name"])}" at ({step["x"]},{step["y"]}) (donor event {step["donor_event"]} for schema only).'], warnings
+        donor = f'donor event {step["donor_event"]}' + (f' of map {step["donor_map_id"]}' if 'donor_map_id' in step else '')
+        return [f'Map {step["map_id"]}: append blank event {snapshot["next_event_id"]} "{step.get("name", snapshot["default_name"])}" at ({step["x"]},{step["y"]}) ({donor} for schema only).'], warnings
     if kind == 'append_dialogue_event':
         return [f'Map {step["map_id"]}: append dialogue event {snapshot["next_event_id"]} "{step["name"]}" at ({step["x"]},{step["y"]}), template event {step["template_event"]}.'] + [f'  "{line}"' for line in step['lines']], warnings
     if kind == 'append_staged_event':
@@ -576,9 +633,29 @@ def ensure_index(sim, workdir, ruby):
     return index
 
 
+def plan_area(sim, number, step, created, recipe_dir, records, plan_links, workdir, ruby):
+    """Expand add_area like execute_area (R.expand_area); the sub-steps refer to each other by local numbers. Returns a record whose created_id is the new map id."""
+    try:
+        sub_steps = R.expand_area(R.resolve_refs(step, created), sim.project)
+    except (R.RecipeError, ValueError) as error:
+        record = new_record(number, step, '', sim.project, 'add_area')
+        record.update(status='refused', error=str(error))
+        records.append(record)
+        raise PlanRefusal(str(error))
+    local = {}
+    for position, sub in enumerate(sub_steps, 1):
+        record = plan_step(sim, number, sub, local, recipe_dir, records, 'abcdefgh'[position - 1], plan_links, workdir, ruby, links_step={}, macro='add_area')
+        if position == 1:
+            record['resolved_links'] = find_links(step, created)
+        local[position] = record['created_id']
+    return {'created_id': local[1]}
+
+
 def plan_chest(sim, number, step, created, recipe_dir, records, plan_links, workdir, ruby):
     """Expand a macro (add_treasure_chest, add_touch_trigger) like execute_chest: an optional append_blank_event, then one append_staged_event."""
     macro = step['type']
+    if macro == 'add_area':
+        return plan_area(sim, number, step, created, recipe_dir, records, plan_links, workdir, ruby)
     try:
         blank, staged = R.MACROS[macro](R.resolve_refs(step, created), sim.project)
     except (R.RecipeError, ValueError) as error:
@@ -699,7 +776,7 @@ def summarize(plan, sim, project, steps):
 def smoke_advice(steps):
     kinds = {step['type'] for step in steps}
     reasons = sorted(kinds & RESTRICTED_RECOMMEND)
-    custom = sorted(kinds & {'append_staged_event', 'add_treasure_chest', 'add_touch_trigger', 'append_common_event', 'insert_script'})
+    custom = sorted(kinds & {'append_staged_event', 'add_treasure_chest', 'add_touch_trigger', 'add_area', 'append_common_event', 'insert_script'})
     return {'recommended': bool(reasons), 'reason_steps': reasons,
             'suite_needed': bool(custom),
             'note': ('A --smoke-mode run boots the final copy; a --smoke-suite is needed to exercise the new behavior (' + ', '.join(custom) + ') in the engine.'

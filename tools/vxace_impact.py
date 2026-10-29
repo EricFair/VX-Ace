@@ -619,7 +619,14 @@ def map_event_impact(index,change):
     old=native['events'];identifier=integer(mutation['new_id'],'new event ID',1,999)
     if any(not key.isdigit() or str(int(key))!=key for key in old) or identifier!=max((int(key) for key in old),default=0)+1:raise ValueError('New event must append after existing IDs')
     template_id=integer(mutation['donor_event_id' if blank else 'template_id'],'donor event ID' if blank else 'template event ID',1,999)
-    if str(template_id) not in old:raise ValueError('Template event absent from index')
+    donor_events=old
+    if blank and 'donor_map_id' in mutation:
+        donor_id=integer(mutation['donor_map_id'],'donor map ID',1,999)
+        if donor_id==mid:raise ValueError('A donor map must be a different map')
+        donor_native=data.json(f'maps/map-{donor_id:03d}.json')
+        if not isinstance(donor_native,dict) or not isinstance(donor_native.get('events'),dict):raise ValueError('Indexed native donor map events required')
+        donor_events=donor_native['events']
+    if str(template_id) not in donor_events:raise ValueError('Template event absent from index')
     width=integer(native.get('width'),'map width',1,500);height=integer(native.get('height'),'map height',1,500)
     x=integer(mutation['x'],'new event x',0,width-1);y=integer(mutation['y'],'new event y',0,height-1)
     if any(not isinstance(event,dict) or (event.get('x'),event.get('y'))==(x,y) for event in old.values()):raise ValueError('Occupied or opaque event position')
@@ -748,12 +755,12 @@ def common_event_impact(index,change):
 
 
 def map_entry_impact(index,change):
-    from vxace_maps import FIELDS,integer
+    from vxace_maps import FIELDS,OPTIONS,integer,schema_ok
     from vxace_index_query import Index
     from vxace_search import search
     import re
     loc=change.get('locator');mutation=change.get('mutation')
-    if not isinstance(loc,dict) or set(loc)!={'template_map_id'} or not isinstance(mutation,dict) or set(mutation)!=FIELDS-{'template_map_id'} or mutation.get('action')!='append_blank_map':raise ValueError('Exact map append proposal required')
+    if not isinstance(loc,dict) or set(loc)!={'template_map_id'} or not isinstance(mutation,dict) or not schema_ok(mutation,False) or mutation.get('action')!='append_blank_map':raise ValueError('Exact map append proposal required')
     tid=integer(loc['template_map_id'],'template map ID',1,999);identifier=integer(mutation['new_id'],'new map ID',1,999)
     data=Index(index);infos=data.json('database/map-infos.json')
     if not isinstance(infos,dict) or str(tid) not in infos or identifier!=max(int(key) for key in infos)+1:raise ValueError('Indexed next map ID/template disagree')
@@ -764,10 +771,10 @@ def map_entry_impact(index,change):
         found=search(data,query=query,scopes=('scripts','events'),limit=10)
         evidence.append({'literal':query,'matches':found['matches'],'evidence':found['hits'],'truncated':found['truncated']})
     data.unchanged()
-    return {'kind':'map_entry','severity':'high','target':{'template_map_id':tid,'new_id':identifier,'name':mutation['name']},'consumer_mentions':evidence,
+    return {'kind':'map_entry','severity':'high','target':{'template_map_id':tid,'new_id':identifier,'name':mutation['name'],**{key:mutation[key] for key in OPTIONS if key in mutation}},'consumer_mentions':evidence,
             'limitations':['Actual native tree/file inventory/tileset/template hashes and empty-map construction run separately in the Python copy chain.',
                           'Next static ID can collide with runtime-created maps, custom loaders or old save state; literal search cannot establish absence.',
-                          'Adds one root map with inherited dimensions/tiles and no events; no transfers are authored and existing maps/System remain unchanged.',
+                          'Adds one map (root-level unless parent_id is given) with inherited dimensions/tiles/tileset and no events, or a rebuilt empty Table when width, height, tileset_id or fill_floor is given (only an optional single A5 tile on layer 0); no transfers are authored and existing maps/System remain unchanged.',
                           'Review native editor tree/map, real transfer/render/passability, old save and native save/process restart.']}
 
 

@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v1.25
+# RPG Maker VX Ace Developer — v1.26
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -47,7 +47,7 @@ Each operation is a narrow, separately evidenced subset with exact native guards
 | One script slot before canonical Main | [script slots](references/script-slot-insertion.md) |
 | Blank events (schema donor) and stationary dialogue events, optionally with character graphics | [map events](references/map-event-creation.md), [graphics](references/character-event-graphics.md) |
 | One-time gold/item rewards | [rewards](references/one-time-event-rewards.md) |
-| Blank-map append | [blank map](references/blank-map-append.md) |
+| Blank-map append; new areas (fresh map from any template, optional A5 floor fill, two-way door) | [blank map](references/blank-map-append.md) |
 | One direct map transfer | [transfer](references/direct-map-transfer.md) |
 | Shop Processing on a blank or single-dialogue event | [shops](references/map-shops.md) |
 | Quest-stage NPCs: 1..8 conditional pages with dialogue, switch/variable/self-switch changes and nested choices, if/else, battles, party, gold, item, transfer and wait commands | [staged events](references/staged-events.md) |

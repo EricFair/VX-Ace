@@ -47,6 +47,14 @@ python tools/vxace_copy_patcher.py EXTERNAL_INDEX --project PROJECT --spec revie
 
 Keep mandatory re-indexing enabled. The copy chain requires project-wide validation plus immediate byte-identical MapInfos/template gates. It constructs the two native candidates together, creates the new map exclusively, preserves old entries/aliases and checks the entire copied-file inventory. Impact, re-indexing, semantic diff, project post-validation and new-map tile audit are mandatory. A failure deletes the entire staged copy and retains the audit. No standalone map writer or writable MCP is added.
 
+## Optional size, tileset, parent and floor fill (v1.26)
+
+The `append_blank_map` mutation also accepts optional `width`, `height` (17..500, 13..500), `tileset_id`, `parent_id` and `fill_floor`; the snapshot CLI takes `--width --height --tileset-id --parent-id --fill-floor` and reports `planned_map`. A size or tileset change, or `fill_floor`, rebuilds the tile Table (all zero; `fill_floor` puts the A5 tile `1536 + index` on layer 0 of every cell and is refused unless the tileset's A5 sheet is set and the tile is passable). Without these keys the operation is unchanged. Details, the A5 id range and examples are in [new areas](new-areas.md); it makes a walkable placeholder room and is not a level-design tool.
+
+### Fresh-map mode (v1.26)
+
+If `width`, `height` and `tileset_id` are all given, the template need not be inert: it is used only for the native field set, ivar order and audio-object shape, and the new map gets the editor's new-map defaults (no events, no encounters, `encounter_step` 30, no automatic audio, empty names/notes/backgrounds, scroll 0). Nothing from the template's content is copied, so a map with events, encounters, regions, notes or audio can be the template. The defaults were verified against the editor-created map in `Projects/project2.zip`; the table is in [new areas](new-areas.md#fresh-map-mode-any-map-can-be-the-template). Without all three keys, the strict inert-template rules of this document apply unchanged.
+
 ## Native verification and saves
 
 Open the staged copy in VX Ace and inspect its new root tree entry, dimensions, tiles and empty events. Exercise an actual native transfer and ordinary collision-aware movement, old-save loading, native saving and a full process restart. Transfers are not authored by this operation; arrange a separate reviewed test/transfer on disposable copies.
@@ -57,4 +65,4 @@ On 16 October 2026, a private editor-produced default seed passed the full copy/
 
 All 420 automated tests passed locally, including 11 map candidate/copy/planner/refusal/rollback cases. Check the release commit's actual CI before claiming online success. Proprietary defaults, project data, saves, test drivers and raw reports are not distributed.
 
-No resizing, deletion, reparenting, ID reuse, arbitrary dimensions, template logic cloning, transfer authoring, ground/autotile painting or general save migration is enabled. This limited default-project evidence does not establish compatibility with arbitrary customized games.
+No deletion, reparenting of existing maps, ID reuse, template logic cloning, transfer authoring in this operation, autotile painting (v1.26 allows only the single-tile A5 floor fill) or general save migration is enabled; v1.26 adds the optional new-map size within the editor's limits. This limited default-project evidence does not establish compatibility with arbitrary customized games.

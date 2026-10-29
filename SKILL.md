@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.25.0
+Version: 1.26.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -93,6 +93,7 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Shared logic: inn, reward chain, timer (common event) | [references/common-event-append.md](references/common-event-append.md) |
 | Starting party, start position, title, currency or menu terms | [references/system-fields.md](references/system-fields.md) |
 | Wandering or pacing NPC, step-on trap or cutscene trigger | [references/touch-triggers.md](references/touch-triggers.md) |
+| New area (map) with a door in and out | `add_area` ([references/new-areas.md](references/new-areas.md)) |
 | Treasure chest | recipe step `add_treasure_chest` ([references/treasure-chests.md](references/treasure-chests.md)) |
 | Sell items/weapons/armors from a shopkeeper | [references/map-shops.md](references/map-shops.md) |
 | Make a troop appear as a random encounter | [references/map-encounters.md](references/map-encounters.md) |

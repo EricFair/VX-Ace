@@ -63,6 +63,8 @@ spec = {"changes": [{"kind": "map_event", "locator": {"map_id": 1}, "proposal": 
 
 Rules: `new_id` is the next maximum ID (no holes, at most 999); `x`/`y` are in bounds and unoccupied; `name` is 1..100 characters and unique. Candidate verification requires all other map bytes and existing events to be identical and the new event to equal the factory result exactly; `System.version_id` advances once, as in v0.26. The Ruby backend, `--no-reindex`, stale hashes, a donor with a different schema (for example a hand-built event missing Condition/Graphic fields) and combined changes to the same map are refused. The audit records `action`, `donor_event_id` and `blank_template_predicate_ok`. A blank event has no commands and does nothing by itself; add dialogue with a following `append_dialogue_event` step.
 
+A donor on another map (v1.26): the mutation may carry an optional `donor_map_id` (an integer `1..999`, a different map). The donor event is then read from that map's native file (same schema rules, read-only), `donor_event_id` names an event of that map and `expected_donor_sha256` binds it. This is how an empty new map from [new areas](new-areas.md) gets its first event; snapshot with `vxace_map_events.py ... --donor-event ID --donor-map MAP`.
+
 ## Native evidence (v1.16 blank events)
 
 On an editor-created project whose only map event was a scripted dialogue event, a four-step [recipe](recipes.md) appended a weapon, a blank event using that event only as schema donor, a Smith dialogue event from the new blank template and a shop. A smoke run of the final copy found the Smith commands `[101, 401, 302, 605, 0]`, opened `Scene_Shop` with the expected goods, and the original project was unchanged.

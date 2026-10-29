@@ -342,7 +342,7 @@ def build_plan(index: Path, project: Path, spec_path: Path, output: Path) -> dic
             from vxace_python_mutator import load
             from vxace_copy_patcher import normalize_changes
             proposed=normalize_changes(index,{'changes':[change]})[0]
-            data=Index(index);map_snapshot(data,project,proposed['mutation']['template_map_id']);data.unchanged()
+            data=Index(index);map_snapshot(data,project,proposed['mutation']['template_map_id'],{k:proposed['mutation'][k] for k in ('width','height','tileset_id','parent_id','fill_floor') if k in proposed['mutation']});data.unchanged()
             map_candidates(load(project/'Data/MapInfos.rvdata2')[0],proposed['mutation'],project)
             changes.append(structural_change(change))
         else:changes.append(structural_change(change))

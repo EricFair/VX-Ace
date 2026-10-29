@@ -2,6 +2,21 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.26.0 — New areas
+
+- **Fresh-map mode for blank-map append:** when width, height and tileset are given, any existing map serves as the schema template. The new map gets the editor's new-map defaults (checked against an unedited editor project) and an optional passable A5 floor fill.
+- **Blank events:** they can take their schema from another map's event.
+- **Recipes:** they can pass a new map's id to later steps.
+- **`add_area` macro:** builds a new map with a door in and a return door out, refusing door/arrival bounces.
+- **Verified in the real engine:**
+  - On the user's 100x100 map, a touch door led into a new 25x20 cave arriving at the set tile and facing.
+  - The cave had a walkable A5 floor and no encounters or music.
+  - A chest placed in the cave through `from_step` worked.
+  - The return door led back.
+  - The dry-run predicted every id.
+
+  See [new areas](references/new-areas.md).
+
 ## 1.25.0 — NPC movement and touch triggers
 
 - Staged pages get player-touch, event-touch and parallel triggers (autorun stays refused), plus autonomous movement: random, approach, or a bounded custom route. The command language gains Set Move Route for the player or this event, with deadlock-prone combinations refused, and Erase Event. A new `add_touch_trigger` macro builds a one-time or repeatable step-on trigger. Verified in the real engine: a villager wandered, a guard paced exactly between three tiles, a step-on cutscene moved the player two tiles up once, a trap took gold once, and an event erased itself. The dry-run predicted every id. See [touch triggers](references/touch-triggers.md).

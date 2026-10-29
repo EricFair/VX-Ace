@@ -119,10 +119,10 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             out.append({'kind':'system_fields','target':'Data/System.rvdata2','ruby_spec':{'type':'system_fields','mutation':mut},
                         'description':c.get('description',''),'locator':loc,'mutation':mut})
         elif kind=='map_entry':
-            from vxace_maps import FIELDS,integer
+            from vxace_maps import FIELDS,integer,schema_ok
             if not isinstance(loc,dict) or set(loc)!={'template_map_id'}:raise ValueError('Map append requires exactly template_map_id locator')
             tid=integer(loc['template_map_id'],'template map ID',1,999)
-            if not isinstance(mut,dict) or set(mut)!=FIELDS-{'template_map_id'} or mut.get('action')!='append_blank_map':raise ValueError('Exact append_blank_map mutation required')
+            if not isinstance(mut,dict) or not schema_ok(mut,False) or mut.get('action')!='append_blank_map':raise ValueError('Exact append_blank_map mutation required')
             native_mutation={'template_map_id':tid,**mut}
             out.append({'kind':'map_entry','target':'Data/MapInfos.rvdata2','ruby_spec':{'type':'map_entry','mutation':native_mutation},
                         'description':c.get('description',''),'locator':loc,'mutation':native_mutation})
@@ -327,9 +327,9 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     before_event_root=None
     if change['kind']=='map_event':
         from vxace_python_mutator import load
-        from vxace_map_events import snapshot as event_snapshot,blank_snapshot
+        from vxace_map_events import snapshot as event_snapshot,blank_snapshot,donor_root_of
         before_event_root=load(target)[0]
-        before_event=blank_snapshot(before_event_root,mutation['donor_event_id']) if mutation['action']=='append_blank_event' else event_snapshot(before_event_root,mutation['template_id'])
+        before_event=blank_snapshot(before_event_root,mutation['donor_event_id'],donor_root_of(mutation,copy_root)) if mutation['action']=='append_blank_event' else event_snapshot(before_event_root,mutation['template_id'])
     before_tile_root=None
     if change['kind']=='map_tile':
         from vxace_python_mutator import load
@@ -435,10 +435,10 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         rec['diff']=''.join(difflib.unified_diff([],[json.dumps(row)+chr(10) for row in rec['shop']['inserted_rows']],fromfile='source-shop-rows',tofile='staged-shop-rows'))
     if change['kind']=='map_event':
         blank=mutation['action']=='append_blank_event'
-        rec['map_event']={'before':before_event,'after':blank_snapshot(load(target)[0],mutation['donor_event_id']) if blank else event_snapshot(load(target)[0],mutation['template_id']),
+        rec['map_event']={'before':before_event,'after':blank_snapshot(load(target)[0],mutation['donor_event_id'],donor_root_of(mutation,copy_root)) if blank else event_snapshot(load(target)[0],mutation['template_id']),
                           'new_id':mutation['new_id'],'name':mutation['name'],'x':mutation['x'],'y':mutation['y'],
                           'old_events_and_other_map_fields_preserved':True}
-        if blank:rec['map_event'].update(action='append_blank_event',donor_event_id=mutation['donor_event_id'],blank_template_predicate_ok=True)
+        if blank:rec['map_event'].update(action='append_blank_event',donor_event_id=mutation['donor_event_id'],blank_template_predicate_ok=True,**({'donor_map_id':mutation['donor_map_id']} if 'donor_map_id' in mutation else {}))
         elif mutation['action']=='append_staged_event':
             rec['map_event'].update(action='append_staged_event',template_id=mutation['template_id'],page_count=len(mutation['pages']),pages=mutation['pages'],
                                     expected_system_sha256=mutation['expected_system_sha256'],system_read_only_hash_bound=True,
@@ -631,7 +631,7 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         from vxace_index_query import Index,unlinked
         from vxace_python_mutator import load
         for c in map_entries:
-            map_data=Index(index);map_snapshot(map_data,project,c['mutation']['template_map_id']);map_data.unchanged()
+            map_data=Index(index);map_snapshot(map_data,project,c['mutation']['template_map_id'],{k:c['mutation'][k] for k in ('width','height','tileset_id','parent_id','fill_floor') if k in c['mutation']});map_data.unchanged()
             map_candidates(load(unlinked(project/c['target']))[0],c['mutation'],project)
     if common_events:
         if len(common_events)!=1 or len(changes)!=1:raise ValueError('Common event append requires its own single-change transaction')
@@ -655,7 +655,7 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         for c in map_events:
             event_data=Index(index)
             blank=c['mutation']['action']=='append_blank_event'
-            event_indexed_snapshot(event_data,project,c['locator']['map_id'],c['mutation']['donor_event_id'] if blank else c['mutation']['template_id'],c['mutation'].get('graphic'),rtp,blank)
+            event_indexed_snapshot(event_data,project,c['locator']['map_id'],c['mutation']['donor_event_id'] if blank else c['mutation']['template_id'],c['mutation'].get('graphic'),rtp,blank,donor_map=c['mutation'].get('donor_map_id'))
             event_data.unchanged()
             new_event(load(unlinked(project/c['target']))[0],c['mutation'],project,rtp)
             if 'graphic' in c['mutation'] or graphic_names(c['mutation'].get('pages')):c['ruby_spec']['context']={'rtp':str(rtp) if rtp else None}

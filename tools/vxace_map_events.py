@@ -12,10 +12,11 @@ from vxace_map_regions import integer, table_for
 from vxace_staged_commands import (commands_shape, staged_ids as _staged_ids, ref_fields, check_references, native_rows, structure_check, reference_snapshot, graphic_names,
                                    iter_ops, route_shape, plain_route, native_route, PAGE_TRIGGERS, TOUCH_TRIGGERS, MOVE_TYPES)
 
-VERSION = '1.25.0'
+VERSION = '1.26.0'
 FIELDS = {'action','template_id','new_id','name','x','y','text',
           'expected_map_sha256','expected_template_sha256'}
 BLANK_FIELDS = {'action','donor_event_id','new_id','name','x','y','expected_map_sha256','expected_donor_sha256'}
+BLANK_OPTIONAL = {'donor_map_id'}   # v1.26: the schema donor may live on another map (a new map has no events of its own)
 EVENT_FIELDS = {'id','name','x','y','pages'}
 PAGE_FIELDS = {'condition','graphic','move_type','move_speed','move_frequency','move_route',
                'walk_anime','step_anime','direction_fix','through','priority_type','trigger','list'}
@@ -208,7 +209,8 @@ def schema(mutation):
             raise ValueError('expected_assets must hold exactly one asset binding per page graphic character sheet')
         return
     if isinstance(mutation,dict) and mutation.get('action')=='append_blank_event':
-        if set(mutation)!=BLANK_FIELDS:raise ValueError('Exact append_blank_event schema required')
+        if not BLANK_FIELDS<=set(mutation)<=BLANK_FIELDS|BLANK_OPTIONAL:raise ValueError('Exact append_blank_event schema required')
+        if 'donor_map_id' in mutation:integer(mutation['donor_map_id'],'donor map ID',1,999)
         return
     if not isinstance(mutation,dict) or set(mutation) not in (FIELDS,FIELDS|{'graphic','expected_asset'}) or mutation.get('action')!='append_dialogue_event':
         raise ValueError('Exact append_dialogue_event schema required; optional graphic and expected_asset must appear together')
@@ -324,8 +326,18 @@ def donor_event(root,donor_id):
     return event
 
 
-def blank_snapshot(root,donor_id):
-    events=events_for(root);selected=donor_event(root,donor_id)
+def donor_root_of(mutation,project,target_root=None):
+    """Map that holds the schema donor: the target map itself, or (v1.26 donor_map_id) another native map of the same project."""
+    from vxace_staged_commands import load_native
+    if 'donor_map_id' not in mutation:return target_root
+    if project is None:raise ValueError('A donor on another map needs the native project')
+    root=load_native(project,f'Map{integer(mutation["donor_map_id"],"donor map ID",1,999):03d}.rvdata2')
+    table_for(root)
+    return root
+
+
+def blank_snapshot(root,donor_id,donor_root=None):
+    events=events_for(root);selected=donor_event(root if donor_root is None else donor_root,donor_id)
     next_id=max((key for key,_ in events.pairs),default=0)+1
     return {'version':VERSION,'map_sha256':digest(root),'donor_sha256':digest(selected),'donor_event_id':donor_id,'donor_schema_ok':True,
             'next_event_id':next_id,'default_name':'EV%03d'%next_id,'event_count':len(events.pairs),
@@ -347,12 +359,12 @@ def snapshot(root,template_id):
                       'Next maximum ID only; review runtime-created IDs, coordinate consumers and native action-button access.']}
 
 
-def blank_event(root,mutation):
+def blank_event(root,mutation,project=None):
     from vxace_python_mutator import convert, marshal_rb
     schema(mutation)
     for field in ('expected_map_sha256','expected_donor_sha256'):
         if not isinstance(mutation[field],str) or not re.fullmatch('[a-f0-9]{64}',mutation[field]):raise ValueError('Exact native map/donor SHA required')
-    donor=donor_event(root,mutation['donor_event_id']);events=events_for(root)
+    donor=donor_event(donor_root_of(mutation,project,root),mutation['donor_event_id']);events=events_for(root)
     identifier=integer(mutation['new_id'],'new event ID',1,999)
     if identifier!=max((key for key,_ in events.pairs),default=0)+1:raise ValueError('Append at the next maximum event ID; never reuse holes')
     if mutation['expected_map_sha256']!=digest(root) or mutation['expected_donor_sha256']!=digest(donor):raise ValueError('Native map/donor is stale')
@@ -385,7 +397,7 @@ def blank_event(root,mutation):
 def new_event(root,mutation,project=None,rtp=None):
     from vxace_python_mutator import RubyString, RubyObject, convert, marshal_rb
     schema(mutation)
-    if mutation['action']=='append_blank_event':return blank_event(root,mutation)
+    if mutation['action']=='append_blank_event':return blank_event(root,mutation,project)
     if mutation['action']=='append_staged_event':return staged_event(root,mutation,project,rtp)
     for field in ('expected_map_sha256','expected_template_sha256'):
         if not isinstance(mutation[field],str) or not re.fullmatch('[a-f0-9]{64}',mutation[field]):raise ValueError('Exact native map/template SHA required')
@@ -429,12 +441,16 @@ def verify_transition(before,after,mutation,project=None,rtp=None):
     if unrelated(before)!=unrelated(after):raise ValueError('Candidate changed unrelated map fields or unknown aliases')
 
 
-def indexed_snapshot(data,project,map_id,template_id,graphic=None,rtp=None,donor=False,staged=False,transfer_maps=(),assets=()):
+def indexed_snapshot(data,project,map_id,template_id,graphic=None,rtp=None,donor=False,staged=False,transfer_maps=(),assets=(),donor_map=None):
     from vxace_python_mutator import load, RubyObject, RubyString
     integer(map_id,'map ID',1,999999)
     root,_=load(unlinked(Path(project)/f'Data/Map{map_id:03d}.rvdata2'))
     indexed=data.json(f'maps/map-{map_id:03d}.json')
-    events=events_for(root);selected=donor_event(root,template_id) if donor else template(root,template_id)
+    donor_root=None
+    if donor_map is not None:
+        if not donor or donor_map==map_id:raise ValueError('A donor map must be a different map and only applies to a blank-event donor')
+        donor_root,_=load(unlinked(Path(project)/f'Data/Map{integer(donor_map,"donor map ID",1,999):03d}.rvdata2'))
+    events=events_for(root);selected=donor_event(root if donor_root is None else donor_root,template_id) if donor else template(root,template_id)
     def plain(value):
         if isinstance(value,RubyString):return value.data.decode('utf-8','strict')
         if isinstance(value,RubyObject):return {'__class__':value.cls,**{key[1:]:plain(item) for key,item in value.ivars.items()}}
@@ -449,11 +465,16 @@ def indexed_snapshot(data,project,map_id,template_id,graphic=None,rtp=None,donor
     indexed_events=indexed.get('events')
     if not isinstance(indexed_events,dict) or set(indexed_events)!={str(key) for key,_ in events.pairs} or (not donor and indexed_events.get(str(template_id))!=plain(selected)):
         raise ValueError('Native/indexed event identities or selected template disagree')
+    if donor_root is not None:
+        indexed_donor=data.json(f'maps/map-{donor_map:03d}.json')
+        if not isinstance(indexed_donor,dict) or not isinstance(indexed_donor.get('events'),dict) or indexed_donor['events'].get(str(template_id))!=plain(selected):
+            raise ValueError('Native/indexed donor event on the donor map disagrees')
     for key,event in events.pairs:
         observed=indexed_events[str(key)]
         if not isinstance(observed,dict) or any(observed.get(field)!=plain(event.get(field)) for field in ('id','name','x','y')):
             raise ValueError('Native/indexed existing event identity/position disagrees')
-    result={'map_id':map_id,**(blank_snapshot(root,template_id) if donor else snapshot(root,template_id))}
+    result={'map_id':map_id,**(blank_snapshot(root,template_id,donor_root) if donor else snapshot(root,template_id))}
+    if donor_root is not None:result['donor_map_id']=donor_map
     if staged:
         info=system_info(project)
         result.update(system_sha256=info['system_sha256'],switch_count=len(info['switches'])-1,variable_count=len(info['variables'])-1,
@@ -476,6 +497,7 @@ def indexed_snapshot(data,project,map_id,template_id,graphic=None,rtp=None,donor
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('index');parser.add_argument('--project',required=True)
     parser.add_argument('--map',dest='map_id',type=int,required=True);group=parser.add_mutually_exclusive_group(required=True);group.add_argument('--template-event',type=int);group.add_argument('--donor-event',type=int)
+    parser.add_argument('--donor-map',type=int,help='With --donor-event: the schema donor lives on this other map (v1.26)')
     parser.add_argument('--staged',action='store_true',help='With --template-event: also report the native System hash, switch/variable counts and names')
     parser.add_argument('--transfer-map',type=int,action='append',default=[],help='With --staged: also report the hash and size of a transfer destination map')
     parser.add_argument('--output',required=True)
@@ -492,10 +514,11 @@ def main(argv=None):
         graphic={'character_name':args.character,'character_index':args.character_index,'direction':args.direction,'pattern':args.pattern} if args.character is not None else None
         if args.donor_event is not None and (graphic is not None or args.rtp):raise ValueError('Donor snapshots take no graphic options')
         if args.staged and (args.template_event is None or graphic is not None):raise ValueError('--staged needs --template-event and takes no graphic options')
+        if args.donor_map is not None and args.donor_event is None:raise ValueError('--donor-map needs --donor-event')
         if args.transfer_map and not args.staged:raise ValueError('--transfer-map needs --staged')
         if args.asset and not args.staged:raise ValueError('--asset needs --staged')
         if graphic is None and ((args.rtp and not args.asset) or args.direction!=2 or args.pattern!=1):raise ValueError('Graphic-only options require a selected character')
-        result=execute(args.index,project,output,lambda data:indexed_snapshot(data,project,args.map_id,args.template_event if args.donor_event is None else args.donor_event,graphic,rtp,args.donor_event is not None,args.staged,tuple(args.transfer_map),tuple(args.asset)),'map-event-snapshot')
+        result=execute(args.index,project,output,lambda data:indexed_snapshot(data,project,args.map_id,args.template_event if args.donor_event is None else args.donor_event,graphic,rtp,args.donor_event is not None,args.staged,tuple(args.transfer_map),tuple(args.asset),args.donor_map),'map-event-snapshot')
     except Exception as error:print('Event snapshot refused: '+str(error),file=sys.stderr);return 2
     print(json.dumps({'version':VERSION,'next_event_id':result['next_event_id']}));return 0
 

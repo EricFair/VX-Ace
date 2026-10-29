@@ -17,7 +17,7 @@ from vxace_copy_patcher import current_inventory
 from vxace_database_append import LIST_TABLES, ref_field, required_refs
 from vxace_index_query import unlinked
 
-VERSION = '1.25.0'
+VERSION = '1.26.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -30,7 +30,10 @@ STEP_KEYS = {
     'append_dialogue_event': ({'type', 'map_id', 'template_event', 'x', 'y', 'name', 'lines'}, {'type', 'map_id', 'template_event', 'x', 'y', 'name', 'lines'}),
     'append_staged_event': ({'type', 'map_id', 'template_event', 'x', 'y', 'name', 'pages'}, {'type', 'map_id', 'template_event', 'x', 'y', 'name', 'pages'}),
     'append_common_event': ({'type', 'name', 'trigger', 'commands'}, {'type', 'name', 'trigger', 'commands', 'switch_id'}),
-    'append_blank_event': ({'type', 'map_id', 'donor_event', 'x', 'y'}, {'type', 'map_id', 'donor_event', 'x', 'y', 'name'}),
+    'append_blank_event': ({'type', 'map_id', 'donor_event', 'x', 'y'}, {'type', 'map_id', 'donor_event', 'x', 'y', 'name', 'donor_map_id'}),
+    'append_blank_map': ({'type', 'template_map_id', 'name'}, {'type', 'template_map_id', 'name', 'width', 'height', 'tileset_id', 'parent_id', 'fill_floor'}),
+    'add_area': ({'type', 'template_map_id', 'name', 'door', 'arrival', 'return_door', 'back_to'},
+                 {'type', 'template_map_id', 'name', 'door', 'arrival', 'return_door', 'back_to', 'width', 'height', 'tileset_id', 'parent_id', 'fill_floor', 'donor_event'}),
     'add_treasure_chest': ({'type', 'map_id', 'x', 'y', 'name', 'contents'},
                            {'type', 'map_id', 'x', 'y', 'name', 'contents', 'graphic', 'template_event', 'donor_event', 'blank_x', 'blank_y'}),
     'add_touch_trigger': ({'type', 'map_id', 'x', 'y', 'name', 'commands'},
@@ -69,6 +72,10 @@ def check_ref(value, number, steps, want_table, where):
     if not 1 <= k < number:
         raise RecipeError(f'step {number}: {where} from_step {k} must refer to an earlier step')
     earlier = steps[k - 1]
+    if want_table == 'maps':
+        if earlier.get('type') not in MAP_STEPS:
+            raise RecipeError(f'step {number}: {where} from_step {k} must be an append_blank_map or add_area step')
+        return
     if want_table == 'common_events':
         if earlier.get('type') != 'append_common_event':
             raise RecipeError(f'step {number}: {where} from_step {k} must be an append_common_event step')
@@ -81,6 +88,22 @@ GOODS_TABLE = {'weapon': ('append_entry', 'weapons'), 'armor': ('append_entry', 
 # Database ids inside an effects / features override may be {"from_step": k}: code -> table the referenced step must have appended to.
 EFFECT_REF_TABLE = {21: 'states', 22: 'states', 43: 'skills', 44: 'common_events'}
 FEATURE_REF_TABLE = {13: 'states', 14: 'states', 32: 'states', 43: 'skills'}
+
+
+MAP_STEPS = ('append_blank_map', 'add_area')
+
+
+def check_map_id(value, number, steps, where='map_id'):
+    """A map id is an integer 1..999 or {"from_step": k} naming an earlier append_blank_map / add_area step (the id that step will create)."""
+    if is_ref(value):
+        check_ref(value, number, steps, 'maps', where)
+    elif not is_int(value) or not 1 <= value <= 999:
+        raise RecipeError(f'step {number}: {where} must be an integer 1..999 or {{"from_step": N}} of an append_blank_map / add_area step')
+
+
+def strip_map_ref(step):
+    """Shallow copy with a map_id reference replaced by 0 (map references are validated by check_map_id)."""
+    return {**step, 'map_id': 0} if is_ref(step.get('map_id')) else step
 
 
 def check_goods_ref(value, number, steps, goods_type):
@@ -151,6 +174,9 @@ def shadow_command_refs(ops, number, steps):
         if is_ref(op.get('battle')):
             check_ref(op['battle'], number, steps, 'troops', 'battle troop_id')
             op['battle'] = 0
+        if isinstance(op.get('transfer'), dict) and is_ref(op['transfer'].get('map_id')):
+            check_ref(op['transfer']['map_id'], number, steps, 'maps', 'transfer map_id')
+            op['transfer']['map_id'] = 0
         if is_ref(op.get('common_event')):
             check_ref(op['common_event'], number, steps, 'common_events', 'common_event id')
             op['common_event'] = 0
@@ -172,8 +198,7 @@ CHEST_TABLES = {'item': 'items', 'weapon': 'weapons', 'armor': 'armors'}
 
 def validate_placement(step, number, steps):
     """Shared rules of the event macros: map, cell, unique name and exactly one template source (existing/from_step blank event, or a donor for a new one)."""
-    if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
-        raise RecipeError(f'step {number}: map_id must be an integer 1..999')
+    check_map_id(step['map_id'], number, steps)
     for key in ('x', 'y'):
         if not is_int(step[key]) or not 0 <= step[key] <= 9999:
             raise RecipeError(f'step {number}: {key} must be a non-negative integer')
@@ -221,7 +246,7 @@ def validate_chest(step, number, steps):
             graphic_schema(step['graphic'])
         except ValueError as error:
             raise RecipeError(f'step {number}: graphic: {error}')
-    shadow = copymod.deepcopy(step)
+    shadow = strip_map_ref(copymod.deepcopy(step))
     if is_ref(shadow.get('template_event')):
         shadow['template_event'] = 0
     for kind in CHEST_KINDS:
@@ -242,8 +267,97 @@ def validate_touch_trigger(step, number, steps):
     from vxace_staged_commands import iter_ops
     shadow = copymod.deepcopy(step['commands'])
     shadow_command_refs(iter_ops(shadow), number, steps)
-    if contains_ref_key({**{k: v for k, v in step.items() if k not in ('template_event', 'commands')}, 'commands': shadow}):
-        raise RecipeError(f'step {number}: from_step is only allowed for template_event, battle troop ids, item/weapon/armor ids and common event ids in commands')
+    if contains_ref_key({**{k: v for k, v in step.items() if k not in ('template_event', 'commands', 'map_id')}, 'commands': shadow}):
+        raise RecipeError(f'step {number}: from_step is only allowed for map_id, template_event, battle troop ids, item/weapon/armor ids, transfer maps and common event ids in commands')
+
+
+BLANK_MAP_LIMITS = {'width': (17, 500), 'height': (13, 500), 'tileset_id': (1, 999), 'parent_id': (0, 999), 'fill_floor': (0, 127)}
+AREA_TRIGGERS = ('player_touch', 'action')
+DIRECTIONS = (0, 2, 4, 6, 8)
+
+
+def validate_blank_map(step, number):
+    """Structural rules of append_blank_map (the guarded map tool re-checks everything against the native files)."""
+    if not is_int(step['template_map_id']) or not 1 <= step['template_map_id'] <= 999:
+        raise RecipeError(f'step {number}: template_map_id must be an integer 1..999')
+    if not isinstance(step['name'], str) or not 1 <= len(step['name']) <= 100:
+        raise RecipeError(f'step {number}: name must be a string of 1..100 characters')
+    for key, (low, high) in BLANK_MAP_LIMITS.items():
+        if key in step and (not is_int(step[key]) or not low <= step[key] <= high):
+            raise RecipeError(f'step {number}: {key} must be an integer {low}..{high}')
+
+
+def cell_of(value, number, where, extra=()):
+    if not isinstance(value, dict) or not {'x', 'y'} <= set(value):
+        raise RecipeError(f'step {number}: {where} must be an object with x and y')
+    for key in ('x', 'y'):
+        if not is_int(value[key]) or not 0 <= value[key] <= 9999:
+            raise RecipeError(f'step {number}: {where} {key} must be a non-negative integer')
+    return value
+
+
+def facing_of(value, number, where):
+    cell_of(value, number, where)
+    if set(value) != {'x', 'y', 'direction'} or not is_int(value['direction']) or value['direction'] not in DIRECTIONS:
+        raise RecipeError(f'step {number}: {where} must be exactly x, y and direction (0 keep, 2 down, 4 left, 6 right, 8 up)')
+
+
+def validate_door(value, number, where, allowed):
+    cell_of(value, number, where)
+    unknown = set(value) - allowed
+    if unknown:
+        raise RecipeError(f'step {number}: {where} has unknown keys {sorted(unknown)}')
+    if 'trigger' in value and (not isinstance(value['trigger'], str) or value['trigger'] not in AREA_TRIGGERS):
+        raise RecipeError(f'step {number}: {where} trigger must be "player_touch" (default) or "action"')
+    if 'name' in value and (not isinstance(value['name'], str) or not 1 <= len(value['name']) <= 100):
+        raise RecipeError(f'step {number}: {where} name must be a string of 1..100 characters')
+    if 'graphic' in value:
+        from vxace_character_graphics import graphic_schema
+        try:
+            graphic_schema(value['graphic'])
+        except ValueError as error:
+            raise RecipeError(f'step {number}: {where} graphic: {error}')
+    if ('blank_x' in value) != ('blank_y' in value):
+        raise RecipeError(f'step {number}: {where} needs blank_x and blank_y together')
+    for key in ('blank_x', 'blank_y'):
+        if key in value and (not is_int(value[key]) or not 0 <= value[key] <= 9999):
+            raise RecipeError(f'step {number}: {where} {key} must be a non-negative integer')
+
+
+def validate_area(step, number, steps):
+    """Structural rules of the add_area macro: a new blank map, a door on a source map and a return door on the new map."""
+    validate_blank_map({**step, 'template_map_id': step['template_map_id']}, number)
+    door, ret = step['door'], step['return_door']
+    if not isinstance(door, dict) or 'map_id' not in door:
+        raise RecipeError(f'step {number}: door must be an object with map_id, x and y')
+    check_map_id(door['map_id'], number, steps, 'door map_id')
+    validate_door(door, number, 'door', {'map_id', 'x', 'y', 'template_event', 'blank_x', 'blank_y', 'trigger', 'graphic', 'name'})
+    validate_door(ret, number, 'return_door', {'x', 'y', 'blank_x', 'blank_y', 'trigger', 'graphic', 'name'})
+    facing_of(step['arrival'], number, 'arrival')
+    facing_of(step['back_to'], number, 'back_to')
+    if 'donor_event' in step and (not is_int(step['donor_event']) or not 1 <= step['donor_event'] <= 999):
+        raise RecipeError(f'step {number}: donor_event must be an integer 1..999')
+    if 'template_event' in door:
+        if 'blank_x' in door:
+            raise RecipeError(f'step {number}: door blank_x / blank_y are only for a door built from donor_event, not with template_event')
+        if is_ref(door['template_event']):
+            check_template_ref(door['template_event'], number, steps, door['map_id'])
+        elif not is_int(door['template_event']) or not 1 <= door['template_event'] <= 999:
+            raise RecipeError(f'step {number}: door template_event must be an integer 1..999 or {{"from_step": N}}')
+    elif 'donor_event' not in step or 'blank_x' not in door:
+        raise RecipeError(f'step {number}: give door template_event (an existing blank event), or donor_event with door blank_x and blank_y (the free cell for the blank template event that stays on the door map)')
+    # A touch door that sends the player back onto its own cell (or a touch return door that receives the player on its cell) would bounce forever.
+    if door.get('trigger', 'player_touch') == 'player_touch' and (step['back_to']['x'], step['back_to']['y']) == (door['x'], door['y']):
+        raise RecipeError(f'step {number}: back_to is the door cell: a player_touch door would bounce the player straight back into the new area')
+    if ret.get('trigger', 'player_touch') == 'player_touch' and (step['arrival']['x'], step['arrival']['y']) == (ret['x'], ret['y']):
+        raise RecipeError(f'step {number}: arrival is the return_door cell: a player_touch return door would bounce the player straight back out')
+    for key, (cx, cy) in (('arrival', (step['arrival']['x'], step['arrival']['y'])), ('return_door', (ret['x'], ret['y']))):
+        for axis, size in (('x', cx), ('y', cy)):
+            limit = step.get('width' if axis == 'x' else 'height')
+            if limit is not None and size >= limit:
+                raise RecipeError(f'step {number}: {key} {axis} {size} lies outside the new {limit}-wide/high map')
+    if contains_ref_key({**step, 'door': {k: v for k, v in door.items() if k not in ('map_id', 'template_event')}}):
+        raise RecipeError(f'step {number}: from_step is only allowed for door map_id and door template_event')
 
 
 def validate_recipe(recipe):
@@ -314,8 +428,7 @@ def validate_recipe(recipe):
             if not is_int(step['level']):
                 raise RecipeError(f'step {number}: level must be an integer')
         elif kind == 'append_encounter':
-            if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
-                raise RecipeError(f'step {number}: map_id must be an integer 1..999')
+            check_map_id(step['map_id'], number, steps)
             if is_ref(step['troop_id']):
                 check_ref(step['troop_id'], number, steps, 'troops', 'troop_id')
             elif not is_int(step['troop_id']) or step['troop_id'] < 1:
@@ -328,8 +441,7 @@ def validate_recipe(recipe):
             if step.get('encounter_step') is not None and not is_int(step['encounter_step']):
                 raise RecipeError(f'step {number}: encounter_step must be an integer or null')
         elif kind == 'append_dialogue_event':
-            if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
-                raise RecipeError(f'step {number}: map_id must be an integer 1..999')
+            check_map_id(step['map_id'], number, steps)
             if is_ref(step['template_event']):
                 check_template_ref(step['template_event'], number, steps, step['map_id'])
             elif not is_int(step['template_event']) or not 1 <= step['template_event'] <= 999:
@@ -341,11 +453,10 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: name must be a string of 1..100 characters')
             if not isinstance(step['lines'], list) or not 1 <= len(step['lines']) <= 4 or not all(isinstance(line, str) for line in step['lines']):
                 raise RecipeError(f'step {number}: lines must be a list of 1..4 strings')
-            if contains_ref_key({k: v for k, v in step.items() if k != 'template_event'}):
-                raise RecipeError(f'step {number}: from_step is only allowed for template_event')
+            if contains_ref_key({k: v for k, v in step.items() if k not in ('template_event', 'map_id')}):
+                raise RecipeError(f'step {number}: from_step is only allowed for map_id and template_event')
         elif kind == 'append_staged_event':
-            if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
-                raise RecipeError(f'step {number}: map_id must be an integer 1..999')
+            check_map_id(step['map_id'], number, steps)
             if is_ref(step['template_event']):
                 check_template_ref(step['template_event'], number, steps, step['map_id'])
             elif not is_int(step['template_event']) or not 1 <= step['template_event'] <= 999:
@@ -360,8 +471,8 @@ def validate_recipe(recipe):
             from vxace_staged_commands import page_ops
             shadow = copymod.deepcopy(step['pages'])
             shadow_command_refs(page_ops(shadow), number, steps)
-            if contains_ref_key({**{k: v for k, v in step.items() if k not in ('template_event', 'pages')}, 'pages': shadow}):
-                raise RecipeError(f'step {number}: from_step is only allowed for template_event, battle troop ids, item/weapon/armor ids and common event ids in pages')
+            if contains_ref_key({**{k: v for k, v in step.items() if k not in ('template_event', 'pages', 'map_id')}, 'pages': shadow}):
+                raise RecipeError(f'step {number}: from_step is only allowed for map_id, template_event, battle troop ids, item/weapon/armor ids, transfer maps and common event ids in pages')
         elif kind == 'append_common_event':
             if not isinstance(step['name'], str) or not 1 <= len(step['name']) <= 100:
                 raise RecipeError(f'step {number}: name must be a string of 1..100 characters')
@@ -379,8 +490,7 @@ def validate_recipe(recipe):
             if contains_ref_key({**{k: v for k, v in step.items() if k != 'commands'}, 'commands': shadow}):
                 raise RecipeError(f'step {number}: from_step is only allowed for battle troop ids, item/weapon/armor ids and common event ids in commands')
         elif kind == 'append_blank_event':
-            if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
-                raise RecipeError(f'step {number}: map_id must be an integer 1..999')
+            check_map_id(step['map_id'], number, steps)
             if not is_int(step['donor_event']) or not 1 <= step['donor_event'] <= 999:
                 raise RecipeError(f'step {number}: donor_event must be an integer 1..999')
             for key in ('x', 'y'):
@@ -388,13 +498,18 @@ def validate_recipe(recipe):
                     raise RecipeError(f'step {number}: {key} must be a non-negative integer')
             if 'name' in step and (not isinstance(step['name'], str) or not 1 <= len(step['name']) <= 100):
                 raise RecipeError(f'step {number}: name must be a string of 1..100 characters')
+            if 'donor_map_id' in step and (not is_int(step['donor_map_id']) or not 1 <= step['donor_map_id'] <= 999 or step['donor_map_id'] == step['map_id']):
+                raise RecipeError(f'step {number}: donor_map_id must be an integer 1..999 naming a different map than map_id')
+        elif kind == 'append_blank_map':
+            validate_blank_map(step, number)
+        elif kind == 'add_area':
+            validate_area(step, number, steps)
         elif kind == 'add_treasure_chest':
             validate_chest(step, number, steps)
         elif kind == 'add_touch_trigger':
             validate_touch_trigger(step, number, steps)
         elif kind == 'add_shop':
-            if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
-                raise RecipeError(f'step {number}: map_id must be an integer 1..999')
+            check_map_id(step['map_id'], number, steps)
             if is_ref(step['event_id']):
                 check_event_ref(step['event_id'], number, steps, step['map_id'])
             elif not is_int(step['event_id']) or not 1 <= step['event_id'] <= 999:
@@ -418,7 +533,7 @@ def validate_recipe(recipe):
                     literal.add((good['type'], good['id']))
                 if good['price'] is not None and (not is_int(good['price']) or not 0 <= good['price'] <= 9999999):
                     raise RecipeError(f'step {number}: goods price must be null or an integer 0..9999999')
-            shadow = copymod.deepcopy(step)
+            shadow = strip_map_ref(copymod.deepcopy(step))
             if is_ref(shadow['event_id']):
                 shadow['event_id'] = 0
             for good in shadow['goods']:
@@ -431,8 +546,7 @@ def validate_recipe(recipe):
                 if not isinstance(step[key], str) or not step[key]:
                     raise RecipeError(f'step {number}: {key} must be a non-empty string')
         elif kind == 'set_map_display_name':
-            if not is_int(step['map_id']) or not 1 <= step['map_id'] <= 999:
-                raise RecipeError(f'step {number}: map_id must be an integer 1..999')
+            check_map_id(step['map_id'], number, steps)
             if not isinstance(step['name'], str):
                 raise RecipeError(f'step {number}: name must be a string')
         elif kind == 'set_system_fields':
@@ -447,17 +561,23 @@ def validate_recipe(recipe):
                         check_ref(member, number, steps, 'actors', 'party_members actor')
                     elif not is_int(member) or member < 1:
                         raise RecipeError(f'step {number}: party_members entries must be positive integers or {{"from_step": N}}')
-            if contains_ref_key({key: value for key, value in step.items() if key != 'party_members'}):
-                raise RecipeError(f'step {number}: from_step is only allowed for party_members')
+            start = step.get('start')
+            shadow = {key: value for key, value in step.items() if key != 'party_members'}
+            if isinstance(start, dict) and is_ref(start.get('map_id')):
+                check_ref(start['map_id'], number, steps, 'maps', 'start map_id')
+                shadow['start'] = {**start, 'map_id': 0}
+            if contains_ref_key(shadow):
+                raise RecipeError(f'step {number}: from_step is only allowed for party_members and start map_id')
         elif kind == 'text_import':
             if not isinstance(step['csv'], str) or not step['csv']:
                 raise RecipeError(f'step {number}: csv must be a non-empty string')
             if 'allow_shorter' in step and type(step['allow_shorter']) is not bool:
                 raise RecipeError(f'step {number}: allow_shorter must be a boolean')
-        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest', 'add_touch_trigger', 'set_system_fields') and contains_ref_key(step):
+        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest', 'add_touch_trigger', 'set_system_fields', 'add_area') \
+                and contains_ref_key(strip_map_ref(step)):
             raise RecipeError(f'step {number}: from_step is not allowed in a {kind} step')
-        if kind == 'append_encounter' and contains_ref_key({k: v for k, v in step.items() if k != 'troop_id'}):
-            raise RecipeError(f'step {number}: from_step is only allowed for troop_id')
+        if kind == 'append_encounter' and contains_ref_key({k: v for k, v in step.items() if k not in ('troop_id', 'map_id')}):
+            raise RecipeError(f'step {number}: from_step is only allowed for map_id and troop_id')
         if kind == 'append_learning' and contains_ref_key({k: v for k, v in step.items() if k != 'skill_id'}):
             raise RecipeError(f'step {number}: from_step is only allowed for skill_id')
     return steps
@@ -591,12 +711,21 @@ def build_spec(title, number, step, snapshot, source=None):
             mutation.update(bind_fields([{'condition': {}, 'commands': step['commands']}], snapshot))
         except ValueError as error:
             raise RecipeError(str(error))
+    elif kind == 'append_blank_map':
+        mutation = {'action': 'append_blank_map', 'new_id': snapshot['new_id'], 'name': step['name'],
+                    **{field: snapshot['guard'][field] for field in sorted(snapshot['guard'])},
+                    **{key: step[key] for key in ('width', 'height', 'tileset_id', 'parent_id', 'fill_floor') if key in step}}
+        change = {'kind': 'map_entry', 'locator': {'template_map_id': step['template_map_id']},
+                  'proposal': f'Recipe step {number}: append map {snapshot["new_id"]} "{step["name"]}" from the inert template map {step["template_map_id"]}'
+                              + (f' with an A5 floor fill (tile {snapshot["planned_map"]["floor_tile_id"]})' if step.get('fill_floor') is not None else '') + '.',
+                  'mutation': mutation}
     elif kind == 'append_blank_event':
         change = {'kind': 'map_event', 'locator': {'map_id': step['map_id']},
                   'proposal': f'Recipe step {number}: append one blank event "{step.get("name", snapshot["default_name"])}" to map {step["map_id"]} using donor event {step["donor_event"]} for schema only.',
                   'mutation': {'action': 'append_blank_event', 'donor_event_id': step['donor_event'], 'new_id': snapshot['next_event_id'],
                                'name': step.get('name', snapshot['default_name']), 'x': step['x'], 'y': step['y'],
-                               'expected_map_sha256': snapshot['map_sha256'], 'expected_donor_sha256': snapshot['donor_sha256']}}
+                               'expected_map_sha256': snapshot['map_sha256'], 'expected_donor_sha256': snapshot['donor_sha256'],
+                               **({'donor_map_id': step['donor_map_id']} if 'donor_map_id' in step else {})}}
     elif kind == 'add_shop':
         if not snapshot.get('append_supported'):
             raise RecipeError('event has no supported shop slot: ' + str(snapshot.get('unsupported_reason')))
@@ -631,6 +760,8 @@ def created_id(step, snapshot):
         return snapshot['next_event_id']
     if step['type'] == 'append_common_event':
         return snapshot['next_id']
+    if step['type'] == 'append_blank_map':
+        return snapshot['new_id']
     return None
 
 
@@ -770,7 +901,13 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
                                       'common-event-snapshot')
             elif kind == 'append_blank_event':
                 script, args, name = ('vxace_map_events.py', [index, '--project', source, '--map', resolved['map_id'],
-                                                              '--donor-event', resolved['donor_event']], 'map-event-snapshot')
+                                                              '--donor-event', resolved['donor_event'],
+                                                              *(['--donor-map', resolved['donor_map_id']] if 'donor_map_id' in resolved else [])], 'map-event-snapshot')
+            elif kind == 'append_blank_map':
+                script, args, name = ('vxace_maps.py', [index, '--project', source, '--template-map', resolved['template_map_id'],
+                                                        *[arg for key, flag in (('width', '--width'), ('height', '--height'), ('tileset_id', '--tileset-id'),
+                                                                                ('parent_id', '--parent-id'), ('fill_floor', '--fill-floor')) if key in resolved
+                                                          for arg in (flag, resolved[key])]], 'map-append-snapshot')
             elif kind == 'add_shop':
                 script, args, name = ('vxace_map_shops.py', [index, '--project', source, '--map', resolved['map_id'],
                                                              '--event', resolved['event_id']], 'map-shop-snapshot')
@@ -809,7 +946,8 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
             try:
                 audit_change = read_json(audit / 'audit.json')['changes'][0]
                 audited = (audit_change['map_event']['new_id'] if kind in ('append_dialogue_event', 'append_blank_event', 'append_staged_event')
-                           else audit_change['common_event']['new_id'] if kind == 'append_common_event' else audit_change['entry']['created_id'])
+                           else audit_change['common_event']['new_id'] if kind == 'append_common_event'
+                           else audit_change['new_map']['new_id'] if kind == 'append_blank_map' else audit_change['entry']['created_id'])
             except (OSError, KeyError, IndexError, ValueError):
                 audited = None
             if audited != record['created_id']:
@@ -892,7 +1030,54 @@ def expand_touch_trigger(step, project):
     return blank, staged
 
 
-MACROS = {'add_treasure_chest': expand_chest, 'add_touch_trigger': expand_touch_trigger}
+def door_page(trigger, graphic, target):
+    """One page, no self switch (a door works every time): a transfer to `target` {map_id, x, y, direction}. Touch doors sit below the characters so the
+    player steps onto them; action doors are solid (same as characters) so the player faces them and presses the action button."""
+    page = {'condition': {}, 'trigger': trigger, 'options': {'priority': 'below' if trigger == 'player_touch' else 'same'},
+            'commands': [{'transfer': {**target, 'fade': 0}}]}
+    if graphic:
+        page['graphic'] = dict(graphic)
+    return page
+
+
+def free_cell(taken):
+    """First cells of the minimum 17x13 map (always inside any map) that are not in `taken`."""
+    return next((x, y) for y in range(13) for x in range(17) if (x, y) not in taken)
+
+
+def expand_area(step, project=None):
+    """Expand a resolved add_area step into its ordinary transactions as a list of concrete steps. They reference each other with local
+    {"from_step": k} numbers (1 = the new map), resolved against the macro's own created ids. Order: new map, [door blank event], door, blank event
+    on the new map (schema donor from the door map), return door."""
+    door, ret, arrival, back = step['door'], step['return_door'], step['arrival'], step['back_to']
+    trigger, ret_trigger = door.get('trigger', 'player_touch'), ret.get('trigger', 'player_touch')
+    if trigger == 'player_touch' and (back['x'], back['y']) == (door['x'], door['y']):
+        raise RecipeError('back_to is the door cell: a player_touch door would bounce the player straight back into the new area')
+    if ret_trigger == 'player_touch' and (arrival['x'], arrival['y']) == (ret['x'], ret['y']):
+        raise RecipeError('arrival is the return_door cell: a player_touch return door would bounce the player straight back out')
+    blank_map = {'type': 'append_blank_map', 'template_map_id': step['template_map_id'], 'name': step['name'],
+                 **{key: step[key] for key in ('width', 'height', 'tileset_id', 'parent_id', 'fill_floor') if key in step}}
+    steps = [blank_map]
+    donor = step.get('donor_event', door.get('template_event'))
+    if donor is None:
+        raise RecipeError('add_area needs donor_event or door template_event')
+    if 'template_event' in door:
+        template = door['template_event']
+    else:
+        steps.append({'type': 'append_blank_event', 'map_id': door['map_id'], 'donor_event': donor, 'x': door['blank_x'], 'y': door['blank_y']})
+        template = {'from_step': len(steps)}
+    steps.append({'type': 'append_staged_event', 'map_id': door['map_id'], 'template_event': template, 'x': door['x'], 'y': door['y'],
+                  'name': door.get('name', f'{step["name"]} Door'[:100]),
+                  'pages': [door_page(trigger, door.get('graphic'), {'map_id': {'from_step': 1}, 'x': arrival['x'], 'y': arrival['y'], 'direction': arrival['direction']})]})
+    bx, by = (ret['blank_x'], ret['blank_y']) if 'blank_x' in ret else free_cell({(ret['x'], ret['y']), (arrival['x'], arrival['y'])})
+    steps.append({'type': 'append_blank_event', 'map_id': {'from_step': 1}, 'donor_event': donor, 'donor_map_id': door['map_id'], 'x': bx, 'y': by})
+    steps.append({'type': 'append_staged_event', 'map_id': {'from_step': 1}, 'template_event': {'from_step': len(steps)}, 'x': ret['x'], 'y': ret['y'],
+                  'name': ret.get('name', f'{step["name"]} Exit'[:100]),
+                  'pages': [door_page(ret_trigger, ret.get('graphic'), {'map_id': door['map_id'], 'x': back['x'], 'y': back['y'], 'direction': back['direction']})]})
+    return steps
+
+
+MACROS = {'add_treasure_chest': expand_chest, 'add_touch_trigger': expand_touch_trigger, 'add_area': expand_area}
 
 
 def failed_record(number, step_type, message, records):
@@ -902,10 +1087,27 @@ def failed_record(number, step_type, message, records):
     raise StepFailure(message)
 
 
+def execute_area(number, step, title, source, work, ruby, created, recipe_dir, records, rtp):
+    """Run add_area as its ordinary transactions (new map, door, return door; see expand_area). Sub-steps refer to each other by local numbers.
+    Returns a record whose created_id is the new map id and whose copy is the new current project."""
+    try:
+        sub_steps = expand_area(resolve_refs(step, created), source)
+    except (RecipeError, ValueError) as error:
+        failed_record(number, 'add_area', str(error), records)
+    local, current, record = {}, source, None
+    for position, sub in enumerate(sub_steps, 1):
+        record = execute_step(number, sub, title, current, work, ruby, local, recipe_dir, records, 'abcdefgh'[position - 1], rtp, 'add_area')
+        local[position] = record['created_id']
+        current = Path(record['copy'])
+    return {'copy': str(current), 'created_id': local[1]}
+
+
 def execute_chest(number, step, title, source, work, ruby, created, recipe_dir, records, rtp):
     """Run a macro step (add_treasure_chest, add_touch_trigger) as its normal transactions: an optional append_blank_event, then one append_staged_event.
     Returns the staged step's record (its created id is the new event id and its copy the new current project)."""
     macro = step['type']
+    if macro == 'add_area':
+        return execute_area(number, step, title, source, work, ruby, created, recipe_dir, records, rtp)
     try:
         blank, staged = MACROS[macro](resolve_refs(step, created), source)
     except (RecipeError, ValueError) as error:
