@@ -18,7 +18,7 @@ import vxace_recipe as R
 from vxace_copy_patcher import current_inventory, normalize_changes
 from vxace_index_query import unlinked
 
-VERSION = '1.26.0'
+VERSION = '1.27.0'
 PREDICTED = 'predicted, verify after run'
 EXACT = 'exact'
 HASHES = 'bound at run time'
@@ -375,11 +375,11 @@ def describe_entry(sim, step, snapshot, spec_mutation):
     table, overrides = step['table'], step['overrides']
     new_id = snapshot['next_id']
     lines = [f'Append {table} entry {new_id} "{overrides.get("name", snapshot["template_name"])}" cloned from template {step["template_id"]} "{snapshot["template_name"]}".']
-    others = sorted(set(overrides) - {'name', 'effects', 'features', 'members'})
+    others = sorted(set(overrides) - {'name', 'effects', 'features', 'members', 'actions', 'drop_items'})
     if others:
         lines.append('Overrides: ' + ', '.join(f'{key}={json.dumps(overrides[key], ensure_ascii=False)[:60]}' for key in others))
     warnings = []
-    from vxace_database_append import effect_rows, feature_rows, describe_effects, describe_features, mutation_refs
+    from vxace_database_append import effect_rows, feature_rows, describe_effects, describe_features, mutation_refs, action_rows, drop_rows, describe_actions, describe_drops
     try:
         roots = mutation_refs(sim.path(entry_target(step)), table, spec_mutation)
         roots[table] = sim.get(entry_target(step))
@@ -389,7 +389,11 @@ def describe_entry(sim, step, snapshot, spec_mutation):
                 system = roots.get('system')
                 elements = system.get('elements') if system is not None else None
                 return text_of(elements[number]) if elements and 0 <= number < len(elements) else None
-            source = roots.get({'state': 'states', 'skill': 'skills', 'common event': 'common_events'}.get(kind))
+            if kind == 'switch':
+                system = roots.get('system')
+                names = system.get('switches') if system is not None else None
+                return text_of(names[number]) or None if names and 0 <= number < len(names) and names[number] is not None else None
+            source = roots.get({'state': 'states', 'skill': 'skills', 'common event': 'common_events', 'item': 'items', 'weapon': 'weapons', 'armor': 'armors'}.get(kind))
             row = source[number] if source is not None and 0 <= number < len(source) else None
             return text_of(row.get('name')) if row is not None else None
         for key, rows, describe in (('effects', effect_rows, describe_effects), ('features', feature_rows, describe_features)):
@@ -397,6 +401,16 @@ def describe_entry(sim, step, snapshot, spec_mutation):
                 text, warns = describe(rows(overrides[key], roots), name_of)
                 lines += [f'{key[:-1].title()}: {item}' for item in text] or [f'{key.title()}: none']
                 warnings += warns
+        if 'actions' in overrides:
+            def skill_info(number):
+                row = roots['skills'][number] if 0 < number < len(roots['skills']) else None
+                return {k: row.get(k) for k in ('scope', 'mp_cost', 'tp_cost')} if row is not None else None
+            params = overrides.get('params') if isinstance(overrides.get('params'), list) and len(overrides['params']) == 8 else roots[table][step['template_id']].get('params')
+            text, warns = describe_actions(action_rows(overrides['actions'], roots), name_of, skill_info, params[1] if params else None)
+            lines += [f'Action: {item}' for item in text]
+            warnings += warns
+        if 'drop_items' in overrides:
+            lines += [f'Drop: {item}' for item in describe_drops(drop_rows(overrides['drop_items'], roots), name_of)]
     except Exception as error:
         lines.append(f'(effects/features not described: {error})')
     if table == 'troops':

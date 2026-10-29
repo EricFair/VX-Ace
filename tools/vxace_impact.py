@@ -264,7 +264,7 @@ def append_entry_impact(index, change):
     """Impact for append_database_entry; lists what the clone inherits and where the template is referenced."""
     from vxace_index_query import Index
     from vxace_search import search
-    from vxace_database_append import integer, table_spec, OVERRIDES, ACTION, required_refs, effect_rows, feature_rows, describe_effects, describe_features, ref_field, OPTIONAL_FIELDS
+    from vxace_database_append import integer, table_spec, OVERRIDES, ACTION, required_refs, effect_rows, feature_rows, describe_effects, describe_features, ref_field, OPTIONAL_FIELDS, action_rows, drop_rows, describe_actions, describe_drops
     table=change['locator'].get('table')
     cls,fields=table_spec(table)
     mutation=change.get('mutation')
@@ -295,8 +295,8 @@ def append_entry_impact(index, change):
     references={}
     # effects / features replacement: re-run the native validators against the freshly indexed referenced databases and describe the result
     listed={}
-    if 'effects' in overrides or 'features' in overrides:
-        index_files={'states':'states','skills':'skills','common_events':'common-events','system':'system','classes':'classes','weapons':'weapons','armors':'armors'}
+    if any(k in overrides for k in ('effects','features','actions','drop_items')):
+        index_files={'states':'states','skills':'skills','common_events':'common-events','system':'system','classes':'classes','weapons':'weapons','armors':'armors','items':'items'}
         roots={}
         for name in sorted(required_refs(table,overrides)):
             try:roots[name]=rows if name==table else data.json('database/'+index_files[name]+'.json')
@@ -304,7 +304,10 @@ def append_entry_impact(index, change):
         missing=sorted(ref_field(name) for name in roots if ref_field(name) not in mutation)
         if missing:raise ValueError('Mutation lacks the referenced-database hashes: '+', '.join(missing))
         def name_of(kind,number):
-            source={'state':roots.get('states'),'skill':roots.get('skills'),'common event':roots.get('common_events')}.get(kind)
+            if kind=='switch':
+                names=(roots.get('system') or {}).get('switches') if isinstance(roots.get('system'),dict) else None
+                return names[number] if isinstance(names,list) and 0<=number<len(names) and names[number] else None
+            source={'state':roots.get('states'),'skill':roots.get('skills'),'common event':roots.get('common_events'),'item':roots.get('items'),'weapon':roots.get('weapons'),'armor':roots.get('armors')}.get(kind)
             if kind=='element':
                 source=(roots.get('system') or {}).get('elements') if isinstance(roots.get('system'),dict) else None
                 return source[number] if isinstance(source,list) and 0<=number<len(source) else None
@@ -316,6 +319,15 @@ def append_entry_impact(index, change):
         if 'features' in overrides:
             text,warns=describe_features(feature_rows(overrides['features'],roots),name_of)
             listed['new_features']=text;listed['feature_warnings']=warns
+        if 'actions' in overrides:
+            def skill_info(number):
+                row=roots['skills'][number] if 0<number<len(roots['skills']) else None
+                return {k:row.get(k) for k in ('scope','mp_cost','tp_cost')} if isinstance(row,dict) else None
+            max_mp=overrides['params'][1] if isinstance(overrides.get('params'),list) and len(overrides['params'])==8 else (selected.get('params') or [None,None])[1]
+            text,warns=describe_actions(action_rows(overrides['actions'],roots),name_of,skill_info,max_mp if type(max_mp) is int else None)
+            listed['new_actions']=text;listed['action_warnings']=warns
+        if 'drop_items' in overrides:
+            listed['new_drop_items']=describe_drops(drop_rows(overrides['drop_items'],roots),name_of)
         listed['referenced_hashes_required']={ref_field(name):mutation.get(ref_field(name)) for name in sorted(roots)}
     actor_info={}
     if table=='actors':
@@ -353,13 +365,13 @@ def append_entry_impact(index, change):
             **({'troop':troop_info} if table=='troops' else {}),
             **({'actor':actor_info} if table=='actors' else {}),
             **listed,
-            **({'warnings':[*listed.get('effect_warnings',[]),*listed.get('feature_warnings',[]),*actor_info.get('warnings',[])]}
-               if listed.get('effect_warnings') or listed.get('feature_warnings') or actor_info.get('warnings') else {}),
+            **({'warnings':[*listed.get('effect_warnings',[]),*listed.get('feature_warnings',[]),*listed.get('action_warnings',[]),*actor_info.get('warnings',[])]}
+               if listed.get('effect_warnings') or listed.get('feature_warnings') or listed.get('action_warnings') or actor_info.get('warnings') else {}),
             'limitations':['Every inherited field above is copied as-is; features/effects/drops/actions/damage type and element need reviewer approval.',
                           'The template note is not copied; notetag-driven behavior of the template will not exist on the new entry.',
                           'An appended static ID can collide with runtime-created IDs; literal mentions do not prove freedom from dynamic consumers.',
                           'New entries are not added to troops, shops, drop tables, class learnings or encounters automatically.',
-                          *(['The effects/features override replaces the whole list; the template list shown under inherited_from_template is not kept. Ids are checked against the indexed databases here and against the hash-bound native files by the copy backend.'] if listed else []),
+                          *(['The effects/features/actions/drop_items override replaces the whole list; the template list shown under inherited_from_template is not kept. Ids are checked against the indexed databases here and against the hash-bound native files by the copy backend.'] if listed else []),
                           *(['A new troop is only reachable via Battle Processing events or encounter-list edits done separately; encounter lists and battle-processing events are not wired. Troops have no note field, and the template battle page is blank so no battle-event logic is copied.'] if table=='troops' else []),
                           'battler_name is only charset/length checked; run the asset audit for missing Graphics/Battlers files.',
                           'Exact native array/template hashes and schema are enforced separately by the snapshot/copy backend.']}

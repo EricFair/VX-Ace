@@ -48,7 +48,7 @@ DROP_FIELDS = {'kind','data_id','denominator'}
 ACTION_FIELDS = {'condition_type','condition_param1','condition_param2','skill_id','rating'}
 # Whitelisted overrides per table (note is deliberately never overridable).
 OVERRIDES = {
-    'enemies': ('name','params','exp','gold','battler_name','battler_hue'),
+    'enemies': ('name','params','exp','gold','battler_name','battler_hue','actions','drop_items','features'),
     'items': ('name','description','icon_index','price','consumable','damage_formula','damage_variance','damage_critical','effects'),
     'skills': ('name','description','icon_index','mp_cost','tp_cost','message1','message2','damage_formula','damage_variance','damage_critical','effects'),
     'states': ('name','icon_index','message1','message2','message3','message4','priority','min_turns','max_turns','auto_removal_timing','features'),
@@ -78,17 +78,27 @@ def digest(value):
 
 # Referenced databases (read-only, same snapshot/copy). Each one a mutation needs is bound by its own expected_<name>_sha256.
 REF_FILES = {'enemies': 'Enemies', 'states': 'States', 'skills': 'Skills', 'common_events': 'CommonEvents', 'system': 'System',
-             'classes': 'Classes', 'weapons': 'Weapons', 'armors': 'Armors'}
+             'classes': 'Classes', 'weapons': 'Weapons', 'armors': 'Armors', 'items': 'Items'}
 # Which referenced database each effect / feature code needs (codes absent here carry no database id).
 EFFECT_REFS = {21: 'states', 22: 'states', 43: 'skills', 44: 'common_events'}
 FEATURE_REFS = {11: 'system', 31: 'system', 13: 'states', 14: 'states', 32: 'states', 43: 'skills'}
-LIST_TABLES = {'effects': ('items', 'skills'), 'features': ('actors', 'armors', 'states', 'weapons')}
+LIST_TABLES = {'effects': ('items', 'skills'), 'features': ('actors', 'armors', 'enemies', 'states', 'weapons')}
 # Referenced databases a snapshot reports (hashes/counts) per table; the table's own array is always reported.
-SNAPSHOT_REFS = {'enemies': (), 'troops': ('enemies',), 'items': ('states', 'skills', 'common_events'),
+SNAPSHOT_REFS = {'enemies': ('system', 'states', 'skills', 'items', 'weapons', 'armors'), 'troops': ('enemies',), 'items': ('states', 'skills', 'common_events'),
                  'skills': ('states', 'skills', 'common_events'), 'weapons': ('system', 'states', 'skills'),
                  'armors': ('system', 'states', 'skills'), 'states': ('system', 'states', 'skills'),
                  'actors': ('classes', 'weapons', 'armors', 'system', 'states', 'skills')}
 MAX_ROWS = 16
+MAX_ACTIONS = 16
+DROP_SLOTS = 3
+DROP_KINDS = {'none': 0, 'item': 1, 'weapon': 2, 'armor': 3}
+DROP_TABLES = {'item': 'items', 'weapon': 'weapons', 'armor': 'armors'}
+# Row order of the built tuples, and the editor-saved ivar order of RPG::Enemy::Action / DropItem (Project3 and a stock editor project);
+# the latter is used only when no enemy in the file has an object to copy.
+ACTION_ORDER = ('condition_type', 'condition_param1', 'condition_param2', 'skill_id', 'rating')
+DROP_ORDER = ('kind', 'data_id', 'denominator')
+ACTION_SHAPE = ('condition_type', 'rating', 'skill_id', 'condition_param2', 'condition_param1')
+DROP_SHAPE = ('denominator', 'kind', 'data_id')
 EFFECT_CODES = (11, 12, 13, 21, 22, 31, 32, 33, 34, 41, 42, 43, 44)
 FEATURE_CODES = (11, 13, 14, 21, 22, 23, 31, 32, 43)
 # Editor-saved Effect value1/value2 are always Floats; Feature values are Floats except the value-less attack-element/add-skill
@@ -113,11 +123,30 @@ def required_refs(table, overrides):
             names.add('weapons')
         if isinstance(equips, list) and any(type(value) is int and value != 0 for value in equips[1:]):
             names.add('armors')
+    if table == 'enemies' and isinstance(overrides, dict):
+        names |= enemy_refs(overrides)
     if isinstance(overrides, dict):
         for key, rules in (('effects', EFFECT_REFS), ('features', FEATURE_REFS)):
             rows = overrides.get(key)
             if table in LIST_TABLES[key] and isinstance(rows, list):
                 names |= {rules[r['code']] for r in rows if isinstance(r, dict) and type(r.get('code')) is int and r['code'] in rules}
+    return names
+
+
+def enemy_refs(overrides):
+    """Referenced databases the actions / drop_items overrides need; tolerant of malformed input (validation refuses it later)."""
+    names = set()
+    actions = overrides.get('actions')
+    for action in actions if isinstance(actions, list) else []:
+        if isinstance(action, dict):
+            names.add('skills')
+            condition = action.get('condition')
+            if isinstance(condition, dict):
+                names |= {'states' for key in condition if key == 'state'} | {'system' for key in condition if key == 'switch'}
+    drops = overrides.get('drop_items')
+    for slot in drops if isinstance(drops, list) else []:
+        if isinstance(slot, dict) and isinstance(slot.get('kind'), str) and slot['kind'] in DROP_TABLES:
+            names.add(DROP_TABLES[slot['kind']])
     return names
 
 
@@ -144,7 +173,7 @@ def refs_dict(refs):
 def checked_reference(name, root):
     """Validated referenced database root: dense arrays for enemies/states/skills, a slot-id array for common events, RPG::System."""
     from vxace_python_mutator import RubyObject
-    if name in ('enemies', 'states', 'skills', 'weapons', 'armors'):
+    if name in ('enemies', 'states', 'skills', 'weapons', 'armors', 'items'):
         return database_array(root, name)
     if name == 'classes':
         if not isinstance(root, list) or not 2 <= len(root) <= 1000 or root[0] is not None:
@@ -340,8 +369,10 @@ def template(root, table, template_id):
     if 'drop_items' in fields:
         check_objects(entry, entry.get('drop_items'), 'RPG::Enemy::DropItem', DROP_FIELDS, 'drop items')
         check_objects(entry, entry.get('actions'), 'RPG::Enemy::Action', ACTION_FIELDS, 'actions')
+        # condition params may be Floats (HP/MP percent conditions are stored as 0.0..1.0 rates by the editor)
         if any(type(o.get(k)) is not int for o in entry.get('drop_items') for k in DROP_FIELDS) or \
-           any(type(o.get(k)) is not int for o in entry.get('actions') for k in ACTION_FIELDS):
+           any(type(o.get(k)) is not int for o in entry.get('actions') for k in ACTION_FIELDS if k not in ('condition_param1', 'condition_param2')) or \
+           any(not finite_number(o.get(k)) for o in entry.get('actions') for k in ('condition_param1', 'condition_param2')):
             raise ValueError('Selected enemy drop/action field types are unsupported')
     return entry
 
@@ -477,6 +508,102 @@ def feature_rows(rows, roots):
     return out
 
 
+def percent_range(value, label):
+    if not isinstance(value, list) or len(value) != 2:
+        raise ValueError(label + ' must be [min, max] percentages')
+    low, high = number(value[0], label + ' min', 0, 100), number(value[1], label + ' max', 0, 100)
+    if low > high:
+        raise ValueError(label + ' min must not exceed max')
+    return low, high
+
+
+def rate_value(percent):
+    """HP/MP percent as the editor stores it: a Float rate 0.0..1.0, except 0, which the editor leaves as Integer 0."""
+    return round(percent / 100.0, 6) if percent else 0
+
+
+def switch_id(roots, value, label):
+    switches = roots['system'].get('switches')
+    count = len(switches) - 1 if isinstance(switches, list) else 0
+    if type(value) is not int or not 1 <= value <= count:
+        raise ValueError(label + ' must be a switch id 1..' + str(count) + ' of the fingerprinted System')
+    return value
+
+
+def action_condition(condition, roots, label):
+    """(condition_type, param1, param2) of an enemy action condition; the codes and params follow Game_Enemy#conditions_met_*."""
+    if not isinstance(condition, dict) or len(condition) != 1:
+        raise ValueError(label + ' must have exactly one of: always, turn, hp_percent, mp_percent, state, party_level_at_least, switch')
+    (kind, value), = condition.items()
+    if kind == 'always':
+        if value is not True:
+            raise ValueError(label + '.always must be true')
+        return 0, 0, 0
+    if kind == 'turn':
+        if not isinstance(value, list) or len(value) != 2:
+            raise ValueError(label + '.turn must be [a, b]')
+        return 1, integer(value[0], label + '.turn a', 0, 999), integer(value[1], label + '.turn b', 0, 999)
+    if kind in ('hp_percent', 'mp_percent'):
+        low, high = percent_range(value, label + '.' + kind)
+        return (2 if kind == 'hp_percent' else 3), rate_value(low), rate_value(high)
+    if kind == 'state':
+        return 4, database_id(roots, 'states', value, label + '.state'), 0
+    if kind == 'party_level_at_least':
+        return 5, integer(value, label + '.party_level_at_least', 1, 99), 0
+    if kind == 'switch':
+        return 6, switch_id(roots, value, label + '.switch'), 0
+    raise ValueError(label + ' has an unknown condition: ' + str(kind))
+
+
+def condition_state(ctype, p1, p2):
+    """'always' (certainly true), 'never' (certainly false) or 'maybe' for a validated condition."""
+    if ctype == 0 or (ctype in (2, 3) and p1 <= 0 and p2 >= 1) or (ctype == 5 and p1 <= 1):
+        return 'always'
+    if ctype == 1 and p1 == 0 and p2 == 0:
+        return 'never'      # the troop turn count is already 1 when actions are made, so "turn 0" never matches
+    return 'maybe'
+
+
+def action_rows(rows, roots):
+    """Full replacement actions list as (condition_type, param1, param2, skill_id, rating) tuples."""
+    if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_ACTIONS:
+        raise ValueError('actions must be a list of 1..' + str(MAX_ACTIONS) + ' entries')
+    out = []
+    for n, row in enumerate(rows):
+        label = 'actions[' + str(n) + ']'
+        if not isinstance(row, dict) or set(row) != {'skill_id', 'rating', 'condition'}:
+            raise ValueError(label + ' must have exactly skill_id, rating and condition')
+        skill = database_id(roots, 'skills', row['skill_id'], label + '.skill_id')
+        rating = integer(row['rating'], label + '.rating', 1, 9)
+        ctype, p1, p2 = action_condition(row['condition'], roots, label + '.condition')
+        out.append((ctype, p1, p2, skill, rating))
+    if all(condition_state(*row[:3]) == 'never' for row in out):
+        raise ValueError('No action can ever be selected: every condition is false (turn [0, 0] never matches)')
+    return out
+
+
+def drop_rows(rows, roots):
+    """Exactly three drop slots as (kind, data_id, denominator); an empty slot is the editor's kind 0, data_id 1, denominator 1."""
+    if not isinstance(rows, list) or len(rows) != DROP_SLOTS:
+        raise ValueError('drop_items must be a list of exactly ' + str(DROP_SLOTS) + ' slots')
+    out = []
+    for n, row in enumerate(rows):
+        label = 'drop_items[' + str(n) + ']'
+        if not isinstance(row, dict) or set(row) != {'kind', 'id', 'denominator'}:
+            raise ValueError(label + ' must have exactly kind, id and denominator')
+        kind = row['kind']
+        if not isinstance(kind, str) or kind not in DROP_KINDS:
+            raise ValueError(label + '.kind must be one of ' + ', '.join(DROP_KINDS))
+        if kind == 'none':
+            integer(row['id'], label + '.id (must be 0 for a none slot)', 0, 0)
+            integer(row['denominator'], label + '.denominator (must be 1 for a none slot)', 1, 1)
+            out.append((0, 1, 1))
+        else:
+            data = database_id(roots, DROP_TABLES[kind], row['id'], label + '.id')
+            out.append((DROP_KINDS[kind], data, integer(row['denominator'], label + '.denominator', 1, 1000)))
+    return out
+
+
 PARAMS = ('Max HP', 'Max MP', 'Attack', 'Defense', 'M.Attack', 'M.Defense', 'Agility', 'Luck')
 XPARAMS = ('Hit', 'Evasion', 'Critical', 'Critical evasion', 'Magic evasion', 'Magic reflection', 'Counter', 'HP regen', 'MP regen', 'TP regen')
 SPARAMS = ('Target rate', 'Guard effect', 'Recovery effect', 'Pharmacology', 'MP cost rate', 'TP charge rate', 'Physical damage', 'Magical damage', 'Floor damage', 'EXP gain')
@@ -542,6 +669,73 @@ def describe_features(rows, name_of=lambda kind, number: None):
         else:
             text.append('Add skill: ' + named('skill', data));warnings.append('Feature 43 (add skill) grants ' + named('skill', data) + ' while this is equipped or active.')
     return text, warnings
+
+
+def ordinal(n):
+    return str(n) + ('th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th'))
+
+
+def condition_text(ctype, p1, p2, name_of=lambda kind, number: None):
+    def named(kind, number):
+        label = name_of(kind, number)
+        return kind + ' ' + str(number) + (' "' + str(label) + '"' if label else '')
+    if ctype == 0:
+        return 'always'
+    if ctype == 1:
+        if p2 == 0:
+            return 'on turn ' + str(p1)
+        first = p1 if p1 > 0 else p2
+        if p2 == 1:
+            return 'every turn' + (' from turn ' + str(first) if first > 1 else '')
+        return 'every ' + ordinal(p2) + ' turn (turns ' + ', '.join(str(first + p2 * k) for k in range(3)) + '...)'
+    if ctype in (2, 3):
+        return ('HP ' if ctype == 2 else 'MP ') + ('%g' % round(p1 * 100, 4)) + '–' + ('%g' % round(p2 * 100, 4)) + '%'
+    if ctype == 4:
+        return 'affected by ' + named('state', p1)
+    if ctype == 5:
+        return 'party level at least ' + str(p1)
+    return named('switch', p1) + ' is ON'
+
+
+def describe_actions(rows, name_of=lambda kind, number: None, skill_info=lambda number: None, max_mp=None):
+    """Human description and warnings for validated action tuples (ctype, p1, p2, skill_id, rating).
+
+    `skill_info(id)` may return {'scope','mp_cost','tp_cost'}; `max_mp` is the enemy's final MP parameter (None = unknown)."""
+    text, warnings = [], []
+    top = max(row[4] for row in rows)
+    for ctype, p1, p2, skill, rating in rows:
+        label = name_of('skill', skill) or 'skill ' + str(skill)
+        text.append(label + ' (rating ' + str(rating) + ') when ' + condition_text(ctype, p1, p2, name_of))
+        if condition_state(ctype, p1, p2) == 'never':
+            warnings.append(label + ': the condition "' + condition_text(ctype, p1, p2, name_of) + '" is never true.')
+        if rating <= top - 3:
+            warnings.append(label + ' (rating ' + str(rating) + ') is 3 or more below the highest rating (' + str(top) + '): it is never picked while a higher-rated action is usable.')
+        info = skill_info(skill)
+        if info:
+            if info.get('scope') in (7, 8, 9, 10):
+                warnings.append(label + ' has scope ' + str(info['scope']) + ' (allies only): as an enemy action it can only affect other enemies of the troop.')
+            elif info.get('scope') == 0:
+                warnings.append(label + ' has scope 0 (none): it has no target.')
+            mp, tp = info.get('mp_cost') or 0, info.get('tp_cost') or 0
+            if mp > 0 and max_mp is not None and mp > max_mp:
+                warnings.append(label + ' costs ' + str(mp) + ' MP but the enemy has ' + str(max_mp) + ' max MP: it can never be used.')
+            if tp > 0:
+                warnings.append(label + ' costs ' + str(tp) + ' TP; enemies start battle with under 25 TP and gain it only from damage, so it may rarely be usable.')
+    if not any(condition_state(*row[:3]) == 'always' for row in rows):
+        warnings.append('Every action has a condition that can be false: on a turn where none holds the enemy has no usable action.')
+    return text, warnings
+
+
+def describe_drops(rows, name_of=lambda kind, number: None):
+    """One line per validated drop slot (kind, data_id, denominator): `Potion 1/3` or `none`."""
+    text = []
+    for number, (kind, data, denominator) in enumerate(rows, 1):
+        if kind == 0:
+            text.append('Slot ' + str(number) + ': none')
+        else:
+            what = {1: 'item', 2: 'weapon', 3: 'armor'}[kind]
+            text.append('Slot ' + str(number) + ': ' + (name_of(what, data) or what + ' ' + str(data)) + ' 1/' + str(denominator))
+    return text
 
 
 def feature_pairs(features):
@@ -659,6 +853,10 @@ def validated_overrides(table, selected, overrides, refs=None):
             out[key] = effect_rows(value, roots)
         elif key == 'features':
             out[key] = feature_rows(value, roots)
+        elif key == 'actions':
+            out[key] = action_rows(value, roots)
+        elif key == 'drop_items':
+            out[key] = drop_rows(value, roots)
         elif key == 'damage_critical':
             if type(value) is not bool:
                 raise ValueError('damage_critical must be boolean')
@@ -789,7 +987,16 @@ def object_shape(root, selected, key, cls, fields, what):
         # Editor-saved actors usually have no features to copy from; Project3 Classes/Weapons/Armors/States all store a Feature as ivars code, data_id, value.
         from vxace_python_mutator import RubyObject
         return RubyObject(cls, {'@code': 0, '@data_id': 0, '@value': 0.0})
+    if cls in ('RPG::Enemy::Action', 'RPG::Enemy::DropItem'):
+        from vxace_python_mutator import RubyObject
+        return RubyObject(cls, {'@' + f: 0 for f in (ACTION_SHAPE if cls == 'RPG::Enemy::Action' else DROP_SHAPE)})
     raise ValueError('No existing ' + what + ' in this file to copy the native object shape from')
+
+
+ROW_OBJECTS = {'effects': ('RPG::UsableItem::Effect', ('code', 'data_id', 'value1', 'value2'), 'effect'),
+               'features': ('RPG::BaseItem::Feature', ('code', 'data_id', 'value'), 'feature'),
+               'actions': ('RPG::Enemy::Action', ACTION_ORDER, 'action'),
+               'drop_items': ('RPG::Enemy::DropItem', DROP_ORDER, 'drop item')}
 
 
 def build_objects(root, selected, key, rows):
@@ -797,8 +1004,7 @@ def build_objects(root, selected, key, rows):
     from rpgvxace_mcp.rubytypes import RubyFloat
     if not rows:
         return []
-    cls, fields, what = (('RPG::UsableItem::Effect', ('code', 'data_id', 'value1', 'value2'), 'effect') if key == 'effects'
-                         else ('RPG::BaseItem::Feature', ('code', 'data_id', 'value'), 'feature'))
+    cls, fields, what = ROW_OBJECTS[key]
     shape = object_shape(root, selected, key, cls, fields, what)
     out = []
     for row in rows:
@@ -849,7 +1055,7 @@ def new_entry(root, table, mutation, refs=None, project=None, rtp=None):
     for key, value in overrides.items():
         if key in damage:
             put(entry.get('damage'), damage[key], value)
-        elif key in ('effects', 'features'):
+        elif key in ROW_OBJECTS:
             entry.set(key, build_objects(root, selected, key, value))
         elif key == 'equips':
             entry.set(key, list(value))
@@ -927,8 +1133,8 @@ def indexed_snapshot(data, project, table, template_id, characters=(), faces=(),
                     'The note is forced empty and the class learnings are not copied; the actor learns the skills of the class at the initial level (Game_Actor#init_skills).'] if table == 'actors' else None
     return {'version': VERSION, 'table': table, **result,
             'limits': troop_limits or actor_limits or ['Only templates whose exact native field set, nested schemas and types are supported are admitted.',
-                       'Features, effects, drops, actions and damage type/element are inherited as-is unless an effects (skills, items) or features (weapons, armors, states) override replaces the whole list; note is forced empty. Review the inherited lists.',
-                       'Each effects/features code that references the database needs that database fingerprinted here (expected_states_sha256, expected_skills_sha256, expected_common_events_sha256, expected_system_sha256); only the needed hashes may appear in the spec, and edits to those files after the snapshot make it stale.',
+                       'Features, effects, drops, actions and damage type/element are inherited as-is unless an effects (skills, items), features (actors, weapons, armors, states, enemies), actions or drop_items (enemies) override replaces the whole list; note is forced empty. Review the inherited lists.',
+                       'Each effects/features code, enemy action (skill, state, switch) or enemy drop item (item, weapon, armor) that references a database needs that database fingerprinted here (expected_states_sha256, expected_skills_sha256, expected_common_events_sha256, expected_system_sha256, expected_items_sha256, expected_weapons_sha256, expected_armors_sha256); only the needed hashes may appear in the spec, and edits to those files after the snapshot make it stale.',
                        'Item templates of item type 2 (key items) are refused; use append_key_item for key items.',
                        'battler_name is only charset/length checked; the asset audit must confirm Graphics/Battlers files exist.',
                        'A new static ID can still collide with runtime-created IDs or custom consumers; review scripts/events/notes.',

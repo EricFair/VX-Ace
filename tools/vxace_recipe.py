@@ -14,10 +14,10 @@ import subprocess
 import sys
 from pathlib import Path
 from vxace_copy_patcher import current_inventory
-from vxace_database_append import LIST_TABLES, ref_field, required_refs
+from vxace_database_append import LIST_TABLES, DROP_TABLES, ref_field, required_refs
 from vxace_index_query import unlinked
 
-VERSION = '1.26.0'
+VERSION = '1.27.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -410,8 +410,23 @@ def validate_recipe(recipe):
                                 raise RecipeError(f'step {number}: {key} data_id from_step is only allowed for codes {sorted(rules)}')
                             check_ref(row['data_id'], number, steps, want, f'{key} data_id (code {row["code"]})')
                             row['data_id'] = 0
+            if step['table'] == 'enemies':
+                actions = shadow.get('actions')
+                for row in actions if isinstance(actions, list) else []:
+                    if isinstance(row, dict) and is_ref(row.get('skill_id')):
+                        check_ref(row['skill_id'], number, steps, 'skills', 'actions skill_id')
+                        row['skill_id'] = 0
+                drops = shadow.get('drop_items')
+                for slot in drops if isinstance(drops, list) else []:
+                    if isinstance(slot, dict) and is_ref(slot.get('id')):
+                        drop_kind = slot.get('kind')
+                        want = DROP_TABLES.get(drop_kind) if isinstance(drop_kind, str) else None
+                        if want is None:
+                            raise RecipeError(f'step {number}: drop_items id from_step needs kind item, weapon or armor')
+                        check_ref(slot['id'], number, steps, want, f'drop_items id (kind {drop_kind})')
+                        slot['id'] = 0
             if contains_ref_key(shadow):
-                raise RecipeError(f'step {number}: from_step is only allowed for troop members enemy_id, actor equips and effects/features data_id')
+                raise RecipeError(f'step {number}: from_step is only allowed for troop members enemy_id, actor equips, effects/features data_id, enemy action skill_id and enemy drop item id')
         elif kind == 'append_key_item':
             if not is_int(step['template_item']) or step['template_item'] < 1:
                 raise RecipeError(f'step {number}: template_item must be a positive integer')

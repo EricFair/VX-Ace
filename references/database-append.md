@@ -1,4 +1,4 @@
-# Guarded native template-clone database append — v1.9 (troops: v1.11, items/effects/features: v1.20, actors: v1.23)
+# Guarded native template-clone database append — v1.9 (troops: v1.11, items/effects/features: v1.20, actors: v1.23, enemy actions/drops/features: v1.27)
 
 Use this narrow operation to add one new entry to an existing native Enemies, Items, Skills, States, Weapons or Armors database by cloning a reviewed template entry and overriding a small whitelist of fields. It does not delete, reuse or reorder entries, create other database objects, wire the new entry into troops/shops/drops/classes, or edit saves. Key items keep the separate [key-item append](key-item-append.md) (`append_key_item`), which is unchanged; usable items (potions, ethers, stat boosters) are cloned from a normal item template with `append_database_entry` on `items` (see [Items, effects and features](#items-effects-and-features-v120)).
 
@@ -53,13 +53,13 @@ The array must have nil slot zero and every existing entry must be the table's n
 | Table | Overridable fields and ranges |
 | --- | --- |
 | all | `name` 1..100 chars, no control codes (required) |
-| enemies | `params` 8 ints (mhp 1..999999, mmp 0..9999, others 1..999), `exp` 0..9999999, `gold` 0..9999999, `battler_name` <=100 chars, no path separators/control characters, `battler_hue` 0..360 |
+| enemies | `params` 8 ints (mhp 1..999999, mmp 0..9999, others 1..999), `exp` 0..9999999, `gold` 0..9999999, `battler_name` <=100 chars, no path separators/control characters, `battler_hue` 0..360, `actions`, `drop_items` and `features` (v1.27, [Enemies](#enemies-v127)) |
 | skills | `description` <=1000 (newlines allowed), `icon_index` 0..4095, `mp_cost` 0..9999, `tp_cost` 0..100, `message1`/`message2` <=200, `damage_formula` (must parse in the `vxace_balance.py` formula parser; opaque formulas refuse), `damage_variance` 0..100, `damage_critical` bool, `effects` (v1.20, below) |
 | items (v1.20) | `description` <=1000, `icon_index` 0..4095, `price` 0..9999999, `consumable` bool, the same `damage_formula`/`damage_variance`/`damage_critical` as skills, `effects` (below) |
 | states | `icon_index`, `message1`..`message4` <=200, `priority` 0..100, `min_turns`/`max_turns` 0..9999 with min <= max (checked against the final merged values), `auto_removal_timing` 0..2, `features` (v1.20, below) |
 | weapons, armors | `description`, `icon_index`, `price` 0..9999999, `params` 8 ints each -999..999, `features` (v1.20, below) |
 
-Everything else is refused: unknown keys, wrong types (booleans are not integers), out-of-range values, `note`, `id`, drops/actions, scope, occasion, element, hit type, item type and so on (`effects` and `features` are accepted only where the table above lists them, as whole-list replacements). Editor-saved `RPG::Enemy` entries have no `description`/`icon_index` fields (they keep legacy `hit`/`eva` integers instead), and `RPG::State` entries have no `description` (they keep a legacy `release_by_damage` boolean); the template schemas follow that real data. Damage overrides require a template with a native damage type; a no-damage template refuses them.
+Everything else is refused: unknown keys, wrong types (booleans are not integers), out-of-range values, `note`, `id`, scope, occasion, element, hit type, item type and so on (`effects`, `features`, and for enemies `actions` and `drop_items`, are accepted only where the tables list them, as whole-list replacements). Editor-saved `RPG::Enemy` entries have no `description`/`icon_index` fields (they keep legacy `hit`/`eva` integers instead), and `RPG::State` entries have no `description` (they keep a legacy `release_by_damage` boolean); the template schemas follow that real data. Damage overrides require a template with a native damage type; a no-damage template refuses them.
 
 ## Inherited versus overridden
 
@@ -289,6 +289,107 @@ A new party member cloned from actor 1, with a class, level and starting weapon:
 In a recipe, equips accept `{"from_step": k}` pointing at a weapons (slot 0) or armors (slots 1..4) append, and the new actor is usable in a staged or common event `party` command and in `set_system_fields.party_members` through `{"from_step": k}`.
 
 Impact: class, levels, equips by name, graphics and warnings (the actor is in no party until `set_system_fields` or a Change Party Member command adds it; an unsuitable inherited equip is released). The copy backend does not advance `System.version_id`. See [system-fields.md](system-fields.md) to make the actor the starting party.
+
+## Enemies (v1.27)
+
+Three more whole-list overrides for `enemies`: `actions`, `drop_items` and `features`. They are full replacements; an enemy that does not override a list keeps the template's list as before. Every id is checked against the database read from the same snapshot or copy and bound by its own hash.
+
+### `actions` (1..16 entries)
+
+Each entry is `{"skill_id": id, "rating": 1..9, "condition": COND}` and is saved as an `RPG::Enemy::Action`. `COND` has exactly one key:
+
+| Condition | `condition_type` | `condition_param1` | `condition_param2` | Hash needed |
+| --- | --- | --- | --- | --- |
+| `{"always": true}` | 0 | 0 | 0 | none |
+| `{"turn": [a, b]}` (each 0..999) | 1 | a | b | none |
+| `{"hp_percent": [min, max]}` (0..100, min <= max) | 2 | min / 100 | max / 100 | none |
+| `{"mp_percent": [min, max]}` (0..100, min <= max) | 3 | min / 100 | max / 100 | none |
+| `{"state": state_id}` | 4 | state id | 0 | `expected_states_sha256` |
+| `{"party_level_at_least": n}` (1..99) | 5 | n | 0 | none |
+| `{"switch": switch_id}` (1..len-1 of System switches) | 6 | switch id | 0 | `expected_system_sha256` |
+
+`skill_id` always needs `expected_skills_sha256`. The codes and parameter meanings follow `Game_Enemy#conditions_met_*`: a turn condition is true on turn `n` when `b` is 0 and `n == a`, otherwise when `n > 0 && n >= a && n % b == a % b` (so `[0, 3]` is every 3rd turn and `[1, 3]` is turns 1, 4, 7). HP and MP conditions compare the enemy's 0.0..1.0 rate with the two params. The editor saves a percent as a Float (an HP 0-80% condition is `param1` Integer `0`, `param2` Float `0.8`), so a percent is written as a Float rate and an exact `0` is left as Integer `0`; every other param is an Integer. The built object copies its class and ivar order from an existing action (the template's, else any enemy's) and falls back to the editor's order (`condition_type, rating, skill_id, condition_param2, condition_param1`).
+
+The enemy picks among the actions whose condition holds and whose skill is usable, weighted by rating; an action whose rating is 3 or more below the highest rating among the usable ones is never picked. The list is refused when every action can never be selected (`turn [0, 0]`: the turn count is already 1 when actions are made). The impact warns, in plain words, when:
+
+- every action has a condition that can be false (the enemy has no usable action on some turns);
+- an action is 3 or more ratings below the highest rating;
+- a skill's `scope` is 7..10 (allies only; as an enemy action it can only affect other enemies of the troop) or 0 (no target);
+- a skill costs more MP than the enemy's final MP parameter (it can never be used), or costs TP (enemies start with under 25 TP and gain it only from damage).
+
+### `drop_items` (exactly 3 slots)
+
+Each slot is `{"kind": "none"|"item"|"weapon"|"armor", "id": id, "denominator": 1..1000}` and is saved as an `RPG::Enemy::DropItem`. Kind `item`, `weapon` and `armor` are `kind` 1, 2 and 3 and bind `expected_items_sha256`, `expected_weapons_sha256` and `expected_armors_sha256`; the id must exist in that array. The drop chance is `1/denominator` times the troop's drop rate (`Game_Enemy#make_drop_items`).
+
+An empty slot is `{"kind": "none", "id": 0, "denominator": 1}` and is written the way the editor saves it: `kind` 0, `data_id` 1, `denominator` 1 (every empty slot in editor-saved data has `data_id` 1; the engine ignores the id when `kind` is 0). A `none` slot needs no hash. The ivar order is copied the same way (editor order `denominator, kind, data_id`).
+
+### `features` for enemies
+
+The v1.20 `features` override is now allowed for enemies, with the same codes, bounds, hashes and encodings (see [features override](#features-override-weapons-armors-and-states)). Element rates (code 11, `expected_system_sha256`) and state rates and resists (codes 13, 14, `expected_states_sha256`) matter most. Editor-saved enemies keep the default attack element feature (code 31) as value `100`; the override writes the usual Integer `0` for it, which the engine ignores.
+
+### Hashes, snapshot and impact
+
+Only the hashes the overrides need may appear in the spec; extra, stale or missing ones refuse. The enemies snapshot now reports `states_sha256`, `skills_sha256`, `items_sha256`, `weapons_sha256`, `armors_sha256` and `system_sha256` (when those files can be read) and their counts. Templates whose actions carry Float condition params (any HP/MP condition) are admitted. The impact report adds `new_actions`, `new_drop_items` and `action_warnings`, for example `Fire (rating 5) when HP 0–50%` and `Slot 1: Potion 1/3`, and the recipe `plan` prints them as `Action:` and `Drop:` lines with the same warnings.
+
+### Examples
+
+A slime that always uses Attack and a new "Acid" skill when HP is 50% or lower, and drops a Potion one time in three. As a recipe (the Acid skill is created first and referenced with `from_step`):
+
+```json
+{"title": "Acid slime", "steps": [
+  {"type": "append_entry", "table": "skills", "template_id": 1, "overrides": {"name": "Acid", "mp_cost": 0, "damage_formula": "a.atk * 3 - b.def * 2"}},
+  {"type": "append_entry", "table": "enemies", "template_id": 1, "overrides": {
+    "name": "Acid Slime",
+    "actions": [
+      {"skill_id": 1, "rating": 5, "condition": {"always": true}},
+      {"skill_id": {"from_step": 1}, "rating": 5, "condition": {"hp_percent": [0, 50]}}],
+    "drop_items": [
+      {"kind": "item", "id": 1, "denominator": 3},
+      {"kind": "none", "id": 0, "denominator": 1},
+      {"kind": "none", "id": 0, "denominator": 1}]}}]}
+```
+
+The same enemy as a direct spec (the snapshot supplies the hashes):
+
+```json
+{"action": "append_database_entry", "template_id": 1, "new_id": 31,
+ "expected_array_sha256": "...", "expected_template_sha256": "...",
+ "expected_skills_sha256": "...", "expected_items_sha256": "...",
+ "overrides": {"name": "Acid Slime",
+   "actions": [{"skill_id": 1, "rating": 5, "condition": {"always": true}},
+               {"skill_id": 127, "rating": 5, "condition": {"hp_percent": [0, 50]}}],
+   "drop_items": [{"kind": "item", "id": 1, "denominator": 3}, {"kind": "none", "id": 0, "denominator": 1}, {"kind": "none", "id": 0, "denominator": 1}]}}
+```
+
+A boss that attacks, casts a skill every 3rd turn and is weak to fire (element 3 here; use your System's element ids):
+
+```json
+{"action": "append_database_entry", "template_id": 2, "new_id": 32,
+ "expected_array_sha256": "...", "expected_template_sha256": "...",
+ "expected_skills_sha256": "...", "expected_system_sha256": "...",
+ "overrides": {"name": "Flame Warden", "params": [900, 50, 20, 10, 12, 12, 14, 10],
+   "actions": [{"skill_id": 1, "rating": 5, "condition": {"always": true}},
+               {"skill_id": 8, "rating": 6, "condition": {"turn": [0, 3]}}],
+   "features": [{"code": 11, "data_id": 3, "value": 2.0}, {"code": 11, "data_id": 4, "value": 0.5}]}}
+```
+
+`turn [0, 3]` fires on turns 3, 6, 9 and so on; on those turns the rating 6 action is picked more often than the rating 5 attack. Limits: nothing adds the enemy to a troop (use a troops append or a recipe), condition `state` and `switch` ids are static, actions are replaced as a whole list, and skills the enemy cannot afford only produce a warning.
+
+### Native evidence (v1.27)
+
+A three-step recipe ran on the editor-saved Project3 and added three entries:
+- an Acid skill, cloned from skill 1;
+- an Acid Slime, with Attack rated 5 always, Acid via ``from_step`` rated 9 at HP 0–50%, slot 1 dropping a Potion at 1/1, and element 3 rate 2.0;
+- a Turn Boss, with skill 2 rated 9 on ``turn [0, 3]``.
+
+The dry-run's ids matched the run (skill 127, enemies 34 and 35), and the original was unchanged. In a real-engine smoke run with the party flagged in battle (battle-only skills are unusable otherwise):
+- At full HP only Attack was valid.
+- At 40% HP Acid became valid, and 30 action draws all picked Acid, because the rating gap of 4 drops the lower action.
+- ``make_drop_items`` returned exactly one Potion.
+- ``element_rate(3)`` was 2.0.
+- The boss's skill 2 was valid on turns 3 and 6 only, across turns 0–6.
+
+An existing save loaded with the new enemies.
 
 ## Troops (v1.11)
 

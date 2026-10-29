@@ -2,6 +2,16 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.27.0 — Enemy actions and drops
+
+- Enemy appends can now override action patterns: a skill, a rating, and a condition (always, turn, HP%, MP%, state, party level or switch). They can also set the three drop slots and features such as element and state rates. These are encoded exactly as the editor saves them (for example, the empty drop slot is kind 0 / id 1). Recipes can point actions at a new skill and drops at a new item. Verified in the real engine:
+  - an Acid Slime only attacked at full HP and always chose its new rating-9 Acid skill below half HP;
+  - the slime dropped its Potion and took double fire damage;
+  - a boss's every-third-turn skill was valid on turns 3 and 6 only;
+  - the dry-run predicted every id.
+
+  See [database append](references/database-append.md).
+
 ## 1.26.0 — New areas
 
 - **Fresh-map mode for blank-map append:** when width, height and tileset are given, any existing map serves as the schema template. The new map gets the editor's new-map defaults (checked against an unedited editor project) and an optional passable A5 floor fill.

@@ -97,7 +97,7 @@ Recipes never contain hashes, next ids or counts. Those come from each step's sn
 
 `{"from_step": k}` resolves to the id created by step *k*. It is allowed in exactly these places: any `map_id` (of the event, encounter, shop and display-name steps and the chest/touch macros), the `map_id` of a `transfer` command in staged pages and common events, and `set_system_fields.start.map_id` (step *k* must be an `append_blank_map` or `add_area` step, v1.26), and also a troop's `members[].enemy_id` (step *k* must be an `append_entry` on `enemies`), `append_dialogue_event.template_event` (an `append_blank_event` step on the same `map_id`), `append_encounter.troop_id` (an `append_entry` on `troops`), `append_learning.skill_id` (an `append_entry` on `skills`), `add_shop.event_id` (an `append_dialogue_event` step on the same `map_id`) and `add_shop.goods[].id` (an `append_entry` on `weapons` for a weapon, on `armors` for an armor, or an `append_key_item` step or an `append_entry` on `items` for an item), the item ids of an `append_staged_event` page (`item` commands and `has_item` conditions: an `append_key_item` step or an `append_entry` on `items`), the `common_event` ids of an `append_staged_event` page or an `append_common_event` step's commands (an `append_common_event` step, v1.21), the `battle` troop ids of those commands (an `append_entry` on `troops`), and the `data_id` of an `effects`/`features` override row (v1.20). *k* must be an earlier step; forward, self or unknown references are refused during validation. The id is the snapshot's next id for that step and is cross-checked against the copy patcher's audit (`created_id`, or the new event id for the event steps and the new common event id for `append_common_event`).
 
-In an `effects` row (skills and items) `data_id` may be `{"from_step": k}` for code 21 or 22 (step *k* an `append_entry` on `states`) and code 43 (an `append_entry` on `skills`). In a `features` row (weapons, armors, states) it may be `{"from_step": k}` for codes 13, 14 and 32 (an `append_entry` on `states`) and code 43 (an `append_entry` on `skills`). Effect 44 (common event call) `data_id` may be `{"from_step": k}` when step *k* is an `append_common_event` step (v1.21). Element ids (codes 11 and 31 of features) have no recipe step that creates them, so a reference there is refused; give a literal id. The referenced-database hashes (`expected_states_sha256`, `expected_skills_sha256`, `expected_common_events_sha256`, `expected_system_sha256`) are taken from the step's snapshot, and only for the databases the resolved rows reference; a recipe never contains them.
+In an `effects` row (skills and items) `data_id` may be `{"from_step": k}` for code 21 or 22 (step *k* an `append_entry` on `states`) and code 43 (an `append_entry` on `skills`). In a `features` row (weapons, armors, states) it may be `{"from_step": k}` for codes 13, 14 and 32 (an `append_entry` on `states`) and code 43 (an `append_entry` on `skills`). Effect 44 (common event call) `data_id` may be `{"from_step": k}` when step *k* is an `append_common_event` step (v1.21). In an enemy `append_entry` (v1.27) `actions[].skill_id` may be `{"from_step": k}` for an `append_entry` on `skills`, and `drop_items[].id` may be `{"from_step": k}` for an `append_entry` on the table that matches its `kind` (`item` items, `weapon` weapons, `armor` armors; a `none` slot cannot have one); enemy `features` rows follow the same rule as the other tables. Element ids (codes 11 and 31 of features) have no recipe step that creates them, so a reference there is refused; give a literal id. The referenced-database hashes (`expected_states_sha256`, `expected_skills_sha256`, `expected_common_events_sha256`, `expected_system_sha256`, plus `expected_items_sha256`, `expected_weapons_sha256`, `expected_armors_sha256` for enemy drops) are taken from the step's snapshot, and only for the databases the resolved rows reference; a recipe never contains them.
 
 Example: a venom state, a poison dagger that inflicts it and an antivenom potion that cures it.
 
@@ -108,6 +108,18 @@ Example: a venom state, a poison dagger that inflicts it and an antivenom potion
     "features": [{"code": 32, "data_id": {"from_step": 1}, "value": 0.5}]}},
   {"type": "append_entry", "table": "items", "template_id": 1, "overrides": {"name": "Antivenom", "description": "Cures Venom and restores 25% HP.",
     "price": 80, "effects": [{"code": 11, "data_id": 0, "value1": 0.25, "value2": 0}, {"code": 22, "data_id": {"from_step": 1}, "value1": 1.0, "value2": 0}]}}
+]}
+```
+
+Example: an Acid Slime that uses Attack always and a new Acid skill at 50% HP or lower, and drops a Potion one time in three (see [database-append.md](database-append.md#enemies-v127)).
+
+```json
+{"title": "Acid slime", "steps": [
+  {"type": "append_entry", "table": "skills", "template_id": 1, "overrides": {"name": "Acid", "mp_cost": 0}},
+  {"type": "append_entry", "table": "enemies", "template_id": 1, "overrides": {"name": "Acid Slime",
+    "actions": [{"skill_id": 1, "rating": 5, "condition": {"always": true}},
+                {"skill_id": {"from_step": 1}, "rating": 5, "condition": {"hp_percent": [0, 50]}}],
+    "drop_items": [{"kind": "item", "id": 1, "denominator": 3}, {"kind": "none", "id": 0, "denominator": 1}, {"kind": "none", "id": 0, "denominator": 1}]}}
 ]}
 ```
 
