@@ -158,16 +158,16 @@ def main(argv=None):
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('index');ap.add_argument('--project',required=True);ap.add_argument('--output',required=True)
     ap.add_argument('--template-item',type=int,help='Items template ID for the inert key-item append (append_key_item)')
-    ap.add_argument('--table',default='items',help='items (with --template-id: template clone; with --template-item: key item), actors, enemies, skills, states, weapons, armors, troops or classes (learnings)')
+    ap.add_argument('--table',default='items',help='items (with --template-id: template clone; with --template-item: key item), actors, enemies, skills, states, weapons, armors, troops or classes (with --class-id: learnings; with --template-id: class clone)')
     ap.add_argument('--template-id',type=int)
     ap.add_argument('--class-id',type=int,help='classes table only: the class whose skill learnings are snapshotted')
     ap.add_argument('--character-sheet',action='append',default=[],help='actors table only: also bind this Graphics/Characters sheet (repeatable; project first, optional --rtp)')
     ap.add_argument('--face-sheet',action='append',default=[],help='actors table only: also bind this Graphics/Faces sheet (repeatable; project first, optional --rtp)')
     ap.add_argument('--rtp',help='actors table only: explicit read-only RTP root used to resolve the sheets')
     args=ap.parse_args(argv)
-    if args.table=='classes':
-        if args.class_id is None or args.template_item is not None or args.template_id is not None:
-            ap.error('--table classes takes only --class-id')
+    if args.table=='classes' and args.template_id is None:
+        if args.class_id is None or args.template_item is not None:
+            ap.error('--table classes takes --class-id (learning append) or --template-id (class clone)')
         try:
             project=unlinked(args.project)
             if project.is_file() and project.suffix.lower()=='.rvproj2':project=project.parent
@@ -180,7 +180,7 @@ def main(argv=None):
             print('Class learning snapshot refused: '+str(exc),file=sys.stderr)
             return 2
     if args.class_id is not None:
-        ap.error('--class-id is only for --table classes')
+        ap.error('--class-id is only for --table classes without --template-id')
     if (args.character_sheet or args.face_sheet or args.rtp) and args.table!='actors':
         ap.error('--character-sheet, --face-sheet and --rtp are only for --table actors')
     if args.rtp and not (args.character_sheet or args.face_sheet):

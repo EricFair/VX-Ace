@@ -9,7 +9,7 @@ def mutator_command(ruby, mutator, *args):
     return [sys.executable if mutator.suffix == '.py' else ruby, str(mutator), *map(str, args)]
 DB_FILES={'actors':'Actors.rvdata2','classes':'Classes.rvdata2','skills':'Skills.rvdata2','items':'Items.rvdata2','weapons':'Weapons.rvdata2','armors':'Armors.rvdata2','enemies':'Enemies.rvdata2','troops':'Troops.rvdata2','states':'States.rvdata2','animations':'Animations.rvdata2','tilesets':'Tilesets.rvdata2','common-events':'CommonEvents.rvdata2','common_events':'CommonEvents.rvdata2','system':'System.rvdata2','map-infos':'MapInfos.rvdata2','map_infos':'MapInfos.rvdata2'}
 
-ENTRY_TABLES={'actors','items','enemies','skills','states','weapons','armors','troops'}
+ENTRY_TABLES={'actors','classes','items','enemies','skills','states','weapons','armors','troops'}
 
 
 def sha256(path:Path)->str:
@@ -92,7 +92,7 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             if table not in DB_FILES: raise ValueError(f'unsupported database table: {table}')
             if 'id' not in loc or not mut.get('field'): raise ValueError(f'database change #{n} requires locator.id and mutation.field')
             out.append({'kind':'database','target':'Data/'+DB_FILES[table],'ruby_spec':{'type':'database','mutation':{'id':loc['id'],'field':mut['field'],'value':mut.get('value')}},'description':c.get('description',''),'locator':loc,'mutation':mut})
-        elif kind=='database_entry' and isinstance(loc,dict) and loc.get('table')=='classes':
+        elif kind=='database_entry' and isinstance(loc,dict) and loc.get('table')=='classes' and ('id' in loc or (isinstance(mut,dict) and mut.get('action')=='append_class_learning')):
             from vxace_class_learning import native_mutation
             out.append({'kind':'database_entry','target':'Data/'+DB_FILES['classes'],
                         'ruby_spec':{'type':'database_entry','mutation':native_mutation(loc,mut)},'description':c.get('description',''),
@@ -102,7 +102,7 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
                 raise ValueError('Entry creation supports only an exact items or append-table locator')
             action=mut.get('action') if isinstance(mut,dict) else None
             if action!='append_database_entry' and (loc['table'],action)!=('items','append_key_item'):
-                raise ValueError('Entry action does not match the table: items use append_key_item (key items) or append_database_entry (template clones); actors/enemies/skills/states/weapons/armors/troops use append_database_entry')
+                raise ValueError('Entry action does not match the table: items use append_key_item (key items) or append_database_entry (template clones); actors/classes/enemies/skills/states/weapons/armors/troops use append_database_entry')
             out.append({'kind':'database_entry','target':'Data/'+DB_FILES[loc['table']],
                         'ruby_spec':{'type':'database_entry','mutation':mut},'description':c.get('description',''),
                         'locator':loc,'mutation':mut})
@@ -297,9 +297,10 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         from vxace_database_append import snapshot as table_snapshot, snapshot_refs, required_refs, REF_FILES, SNAPSHOT_REFS
         entry_table=change['locator']['table']
         entry_key_item=entry_table=='items' and mutation.get('action')=='append_key_item'
-        entry_enemies=snapshot_refs(target,entry_table) if entry_table in SNAPSHOT_REFS and not entry_key_item else None
+        entry_learning=entry_table=='classes' and mutation.get('action')=='append_class_learning'
+        entry_enemies=snapshot_refs(target,entry_table) if entry_table in SNAPSHOT_REFS and not entry_key_item and not entry_learning else None
         entry_ref_hashes={}
-        if entry_table=='classes':
+        if entry_learning:
             from vxace_class_learning import snapshot as learning_snapshot, skills_for
             entry_skills=skills_for(target);entry_skills_sha=sha256(target.parent/'Skills.rvdata2')
             entry_snapshot=lambda root,cid:learning_snapshot(root,entry_skills,cid)
@@ -379,7 +380,7 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         if entry_key_item:
             from vxace_database_entries import verify_transition as verify_entry
             verify_entry(before_entry_root,load(tmp)[0],mutation)
-        elif entry_table=='classes':
+        elif entry_learning:
             from vxace_class_learning import verify_transition as verify_learning
             verify_learning(before_entry_root,load(tmp)[0],mutation,entry_skills)
         else:
@@ -485,7 +486,7 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         rec['diff']=''.join(difflib.unified_diff(json.dumps(before_regions,indent=2).splitlines(True),json.dumps(after_regions,indent=2).splitlines(True),fromfile='source-regions',tofile='staged-regions'))
     if change['kind']=='database_entry':
         after_entry=entry_snapshot(load(target)[0],entry_key)
-        if entry_table=='classes':
+        if entry_learning:
             if sha256(target.parent/'Skills.rvdata2')!=entry_skills_sha:raise RuntimeError('Skills file changed during class learning append')
             rec['entry']={'before':before_entry,'after':after_entry,'class_id':mutation['class_id'],'skill_id':mutation['skill_id'],'level':mutation['level'],
                           'other_classes_and_existing_learnings_unchanged':True,'skills_unchanged':True,'approved_class_learning_verified':True,'table':'classes'}
@@ -701,7 +702,7 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         from vxace_index_query import Index, unlinked
         for c in entries:
             table=c['locator']['table']
-            if table=='classes':
+            if table=='classes' and c['mutation'].get('action')=='append_class_learning':
                 if any(o['target']=='Data/Skills.rvdata2' for o in changes):
                     raise ValueError('Class learning append reads Skills read-only; it cannot be combined with changes to Skills')
                 from vxace_class_learning import indexed_snapshot as learning_indexed, validate as learning_validate, skills_for as learning_skills

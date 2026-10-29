@@ -17,11 +17,11 @@ from vxace_copy_patcher import current_inventory
 from vxace_database_append import LIST_TABLES, DROP_TABLES, ref_field, required_refs
 from vxace_index_query import unlinked
 
-VERSION = '1.27.0'
+VERSION = '1.28.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
-TABLES = ('actors', 'enemies', 'items', 'skills', 'states', 'weapons', 'armors', 'troops')
+TABLES = ('actors', 'classes', 'enemies', 'items', 'skills', 'states', 'weapons', 'armors', 'troops')
 STEP_KEYS = {
     'append_entry': ({'type', 'table', 'template_id', 'overrides'}, {'type', 'table', 'template_id', 'overrides'}),
     'append_key_item': ({'type', 'template_item', 'name', 'description'}, {'type', 'template_item', 'name', 'description'}),
@@ -400,6 +400,19 @@ def validate_recipe(recipe):
                     if is_ref(item):
                         check_goods_ref(item, number, steps, 'weapon' if slot == 0 else 'armor')
                         equips[slot] = 0
+            if step['table'] == 'actors' and is_ref(shadow.get('class_id')):
+                check_ref(shadow['class_id'], number, steps, 'classes', 'class_id')
+                shadow['class_id'] = 0
+            if step['table'] == 'classes':
+                learned = shadow.get('learnings')
+                for row in learned if isinstance(learned, list) else []:
+                    if isinstance(row, dict) and is_ref(row.get('skill_id')):
+                        check_ref(row['skill_id'], number, steps, 'skills', 'learnings skill_id')
+                        row['skill_id'] = 0
+                curves = shadow.get('params')
+                if isinstance(curves, dict) and is_ref(curves.get('copy_from_class')):
+                    check_ref(curves['copy_from_class'], number, steps, 'classes', 'params copy_from_class')
+                    curves['copy_from_class'] = 0
             for key, rules in (('effects', EFFECT_REF_TABLE), ('features', FEATURE_REF_TABLE)):
                 rows = shadow.get(key)
                 if step['table'] in LIST_TABLES[key] and isinstance(rows, list):
@@ -426,7 +439,7 @@ def validate_recipe(recipe):
                         check_ref(slot['id'], number, steps, want, f'drop_items id (kind {drop_kind})')
                         slot['id'] = 0
             if contains_ref_key(shadow):
-                raise RecipeError(f'step {number}: from_step is only allowed for troop members enemy_id, actor equips, effects/features data_id, enemy action skill_id and enemy drop item id')
+                raise RecipeError(f'step {number}: from_step is only allowed for troop members enemy_id, actor equips and class_id, class learnings skill_id and params copy_from_class, effects/features data_id, enemy action skill_id and enemy drop item id')
         elif kind == 'append_key_item':
             if not is_int(step['template_item']) or step['template_item'] < 1:
                 raise RecipeError(f'step {number}: template_item must be a positive integer')
@@ -434,8 +447,10 @@ def validate_recipe(recipe):
                 if not isinstance(step[key], str):
                     raise RecipeError(f'step {number}: {key} must be a string')
         elif kind == 'append_learning':
-            if not is_int(step['class_id']) or step['class_id'] < 1:
-                raise RecipeError(f'step {number}: class_id must be a positive integer')
+            if is_ref(step['class_id']):
+                check_ref(step['class_id'], number, steps, 'classes', 'class_id')
+            elif not is_int(step['class_id']) or step['class_id'] < 1:
+                raise RecipeError(f'step {number}: class_id must be a positive integer or {{"from_step": N}}')
             if is_ref(step['skill_id']):
                 check_ref(step['skill_id'], number, steps, 'skills', 'skill_id')
             elif not is_int(step['skill_id']) or step['skill_id'] < 1:
@@ -593,8 +608,8 @@ def validate_recipe(recipe):
             raise RecipeError(f'step {number}: from_step is not allowed in a {kind} step')
         if kind == 'append_encounter' and contains_ref_key({k: v for k, v in step.items() if k not in ('troop_id', 'map_id')}):
             raise RecipeError(f'step {number}: from_step is only allowed for map_id and troop_id')
-        if kind == 'append_learning' and contains_ref_key({k: v for k, v in step.items() if k != 'skill_id'}):
-            raise RecipeError(f'step {number}: from_step is only allowed for skill_id')
+        if kind == 'append_learning' and contains_ref_key({k: v for k, v in step.items() if k not in ('skill_id', 'class_id')}):
+            raise RecipeError(f'step {number}: from_step is only allowed for class_id and skill_id')
     return steps
 
 

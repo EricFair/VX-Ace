@@ -18,7 +18,7 @@ import vxace_recipe as R
 from vxace_copy_patcher import current_inventory, normalize_changes
 from vxace_index_query import unlinked
 
-VERSION = '1.27.0'
+VERSION = '1.28.0'
 PREDICTED = 'predicted, verify after run'
 EXACT = 'exact'
 HASHES = 'bound at run time'
@@ -252,7 +252,7 @@ def verify_change(sim, change, before, after, extras):
         verify_transition(before, after, mutation, project, rtp)
     elif kind == 'database_entry':
         table = change['locator']['table']
-        if table == 'classes':
+        if table == 'classes' and mutation.get('action') == 'append_class_learning':
             from vxace_class_learning import verify_transition
             verify_transition(before, after, mutation, extras['skills'])
         elif mutation.get('action') == 'append_key_item':
@@ -286,7 +286,7 @@ def before_extras(sim, change):
     kind, target = change['kind'], sim.path(change['target'])
     if kind == 'database_entry':
         table = change['locator']['table']
-        if table == 'classes':
+        if table == 'classes' and change['ruby_spec']['mutation'].get('action') == 'append_class_learning':
             from vxace_class_learning import skills_for
             return {'skills': skills_for(target)}
         from vxace_database_append import snapshot_refs, SNAPSHOT_REFS
@@ -375,14 +375,22 @@ def describe_entry(sim, step, snapshot, spec_mutation):
     table, overrides = step['table'], step['overrides']
     new_id = snapshot['next_id']
     lines = [f'Append {table} entry {new_id} "{overrides.get("name", snapshot["template_name"])}" cloned from template {step["template_id"]} "{snapshot["template_name"]}".']
-    others = sorted(set(overrides) - {'name', 'effects', 'features', 'members', 'actions', 'drop_items'})
+    others = sorted(set(overrides) - {'name', 'effects', 'features', 'members', 'actions', 'drop_items'} - ({'exp_params', 'params', 'learnings'} if table == 'classes' else set()))
     if others:
         lines.append('Overrides: ' + ', '.join(f'{key}={json.dumps(overrides[key], ensure_ascii=False)[:60]}' for key in others))
     warnings = []
     from vxace_database_append import effect_rows, feature_rows, describe_effects, describe_features, mutation_refs, action_rows, drop_rows, describe_actions, describe_drops
+    from vxace_database_append import exp_params_value, class_params_spec, learning_rows, describe_class, class_feature_warnings, feature_pairs, load_reference
     try:
         roots = mutation_refs(sim.path(entry_target(step)), table, spec_mutation)
         roots[table] = sim.get(entry_target(step))
+        if table == 'classes':
+            for extra in ('system', 'skills'):
+                if extra not in roots:       # names only: the hash-bound validation below uses the same roots, which then simply hold more
+                    try:
+                        roots[extra] = load_reference(sim.path(entry_target(step)), extra)
+                    except Exception:
+                        pass
 
         def name_of(kind, number):
             if kind == 'element':
@@ -393,14 +401,26 @@ def describe_entry(sim, step, snapshot, spec_mutation):
                 system = roots.get('system')
                 names = system.get('switches') if system is not None else None
                 return text_of(names[number]) or None if names and 0 <= number < len(names) and names[number] is not None else None
-            source = roots.get({'state': 'states', 'skill': 'skills', 'common event': 'common_events', 'item': 'items', 'weapon': 'weapons', 'armor': 'armors'}.get(kind))
+            if kind in ('skill type', 'weapon type', 'armor type'):
+                system = roots.get('system')
+                names = system.get(kind.replace(' ', '_') + 's') if system is not None else None
+                return text_of(names[number]) or None if names and 0 <= number < len(names) else None
+            source = roots.get({'state': 'states', 'skill': 'skills', 'common event': 'common_events', 'item': 'items', 'weapon': 'weapons', 'armor': 'armors', 'class': 'classes'}.get(kind))
             row = source[number] if source is not None and 0 <= number < len(source) else None
             return text_of(row.get('name')) if row is not None else None
         for key, rows, describe in (('effects', effect_rows, describe_effects), ('features', feature_rows, describe_features)):
             if key in overrides:
-                text, warns = describe(rows(overrides[key], roots), name_of)
+                text, warns = describe(rows(overrides[key], roots, table) if key == 'features' else rows(overrides[key], roots), name_of)
                 lines += [f'{key[:-1].title()}: {item}' for item in text] or [f'{key.title()}: none']
                 warnings += warns
+        if table == 'classes':
+            exp = exp_params_value(overrides['exp_params']) if 'exp_params' in overrides else None
+            spec = class_params_spec(overrides['params'], roots) if 'params' in overrides else None
+            learned = learning_rows(overrides['learnings'], roots) if 'learnings' in overrides else None
+            lines += [f'Class: {item}' for item in describe_class(exp, spec, learned, name_of)]
+            template_pairs = feature_pairs(roots[table][step['template_id']].get('features'))
+            effective = feature_pairs(feature_rows(overrides['features'], roots, table)) if 'features' in overrides else template_pairs
+            warnings += class_feature_warnings(effective, template_pairs, 'features' in overrides, name_of)
         if 'actions' in overrides:
             def skill_info(number):
                 row = roots['skills'][number] if 0 < number < len(roots['skills']) else None

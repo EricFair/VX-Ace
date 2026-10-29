@@ -2,6 +2,18 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.28.0 — Classes
+
+- Database append gains classes, configurable through:
+  - EXP parameters;
+  - generated stat curves (exact level-1 and level-99 endpoints, linear, early or late);
+  - learnings;
+  - class features (skill, weapon and armor types, equip fix and seal, dual wield, action plus, special flags).
+
+  Recipes can teach a new skill and give the class to a new actor in the same run.
+
+  Verified in the real engine: a new Battle Mage actor started with base MHP 400 and MAT 30 and reached exactly 6000, 1500 and 700 at level 99. Its early MMP curve ran ahead of its late MAT curve at level 50. It learned the new Spark at level 3 and skill 2 at level 8. The dry-run predicted every id. See [database append](references/database-append.md).
+
 ## 1.27.0 — Enemy actions and drops
 
 - Enemy appends can now override action patterns: a skill, a rating, and a condition (always, turn, HP%, MP%, state, party level or switch). They can also set the three drop slots and features such as element and state rates. These are encoded exactly as the editor saves them (for example, the empty drop slot is kind 0 / id 1). Recipes can point actions at a new skill and drops at a new item. Verified in the real engine:

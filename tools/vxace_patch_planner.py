@@ -95,12 +95,12 @@ def normalize_spec(spec: dict) -> dict:
                 raise ValueError('Map append proposal requires template_map_id and proposal')
         elif kind == 'database_entry':
             locator=item.get('locator');mutation=item.get('mutation')
-            if isinstance(locator,dict) and locator.get('table')=='classes':
+            if isinstance(locator,dict) and locator.get('table')=='classes' and ('id' in locator or (isinstance(mutation,dict) and mutation.get('action')=='append_class_learning')):
                 from vxace_class_learning import native_mutation
                 native_mutation(locator,mutation)
                 if not item.get('proposal'):raise ValueError('Class learning requires a proposal')
             else:
-                if not isinstance(locator,dict) or set(locator)!={'table'} or locator['table'] not in ('actors','items','enemies','skills','states','weapons','armors','troops') or not item.get('proposal'):
+                if not isinstance(locator,dict) or set(locator)!={'table'} or locator['table'] not in ('actors','classes','items','enemies','skills','states','weapons','armors','troops') or not item.get('proposal'):
                     raise ValueError('Database entry proposal requires an exact supported table locator and proposal')
                 action=mutation.get('action') if isinstance(mutation,dict) else None
                 if action!='append_database_entry' and (locator['table'],action)!=('items','append_key_item'):
@@ -209,6 +209,10 @@ def regression_checks(changes: list[dict]) -> list[str]:
         checks += ['Review every inherited feature, effect, drop, action and damage element/type of the template clone; the note is forced empty (troops have no note and copy only a blank battle page).',
                    'Review troops, shops, drops, dynamic IDs and notetag consumers; check battler_name against the asset audit.',
                    'Verify the new entry in the VX Ace editor, a battle test or smoke test, and engine save/full-process restart.']
+    if any(i.get('kind')=='database_entry' and i.get('locator',{}).get('table')=='classes' and i.get('mutation',{}).get('action')=='append_database_entry' for i in changes):
+        checks += ['Review the new class EXP curve, the eight parameter curves (levels 1 and 99 and a middle level), the learnings (skill and level) and the equip / skill-type features in the impact report.',
+                   'The new class is used by no actor until an actor with that class_id exists; give that actor equips the class can wear (the actor append checks them).',
+                   'Verify the class in the VX Ace editor (EXP curve, parameter curves, skills to learn, features) and level a test actor through several levels in a battle or smoke test.']
     if any(i.get('kind')=='database_entry' and i.get('mutation',{}).get('action')=='append_class_learning' for i in changes):
         checks += ['Review the class existing learnings, the skill (cost, scope, damage) and the level; the new learning has an empty note and is appended last.',
                    'Check actor initial levels, class-change scripts and custom skill-learning scripts; old saves learn the skill only on a later level-up (no retroactive learning).',

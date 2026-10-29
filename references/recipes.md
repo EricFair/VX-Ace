@@ -1,4 +1,4 @@
-# Recipes — v1.15
+# Recipes — v1.15 (classes: v1.28)
 
 `tools/vxace_recipe.py` chains existing guarded operations. A recipe is a JSON list of high-level steps. Each step is run as its own normal single-change transaction through the existing tools, on a chain of disposable copies: step 1 reads the original project, step *k* reads step *k-1*'s copy. The original project is never written. The runner adds **no mutation logic**: it only drives the Project Reader, the operation's read-only snapshot CLI, the patch planner, the impact report and the Python copy patcher.
 
@@ -74,7 +74,7 @@ Top level: `{"title": "optional text", "steps": [ ... ]}` (1..50 steps). Unknown
 
 | `type` | Keys | Existing operation |
 | --- | --- | --- |
-| `append_entry` | `table` (`enemies`, `items`, `skills`, `states`, `weapons`, `armors`, `troops`), `template_id`, `overrides` | [database append](database-append.md) (`append_database_entry`, troops and items included) |
+| `append_entry` | `table` (`actors`, `classes`, `enemies`, `items`, `skills`, `states`, `weapons`, `armors`, `troops`), `template_id`, `overrides` | [database append](database-append.md) (`append_database_entry`, troops and items included) |
 | `append_key_item` | `template_item`, `name`, `description` | [key-item append](key-item-append.md) |
 | `append_learning` | `class_id`, `skill_id` (integer or `{"from_step": k}`), `level` | [class skill learnings](database-append.md#class-skill-learnings-v114) (`append_class_learning`) |
 | `append_encounter` | `map_id`, `troop_id`, `weight`; optional `region_ids` (default `[]`), `encounter_step` (default `null`) | [map encounters](map-encounters.md) |
@@ -95,7 +95,7 @@ Recipes never contain hashes, next ids or counts. Those come from each step's sn
 
 ## from_step
 
-`{"from_step": k}` resolves to the id created by step *k*. It is allowed in exactly these places: any `map_id` (of the event, encounter, shop and display-name steps and the chest/touch macros), the `map_id` of a `transfer` command in staged pages and common events, and `set_system_fields.start.map_id` (step *k* must be an `append_blank_map` or `add_area` step, v1.26), and also a troop's `members[].enemy_id` (step *k* must be an `append_entry` on `enemies`), `append_dialogue_event.template_event` (an `append_blank_event` step on the same `map_id`), `append_encounter.troop_id` (an `append_entry` on `troops`), `append_learning.skill_id` (an `append_entry` on `skills`), `add_shop.event_id` (an `append_dialogue_event` step on the same `map_id`) and `add_shop.goods[].id` (an `append_entry` on `weapons` for a weapon, on `armors` for an armor, or an `append_key_item` step or an `append_entry` on `items` for an item), the item ids of an `append_staged_event` page (`item` commands and `has_item` conditions: an `append_key_item` step or an `append_entry` on `items`), the `common_event` ids of an `append_staged_event` page or an `append_common_event` step's commands (an `append_common_event` step, v1.21), the `battle` troop ids of those commands (an `append_entry` on `troops`), and the `data_id` of an `effects`/`features` override row (v1.20). *k* must be an earlier step; forward, self or unknown references are refused during validation. The id is the snapshot's next id for that step and is cross-checked against the copy patcher's audit (`created_id`, or the new event id for the event steps and the new common event id for `append_common_event`).
+`{"from_step": k}` resolves to the id created by step *k*. It is allowed in exactly these places: any `map_id` (of the event, encounter, shop and display-name steps and the chest/touch macros), the `map_id` of a `transfer` command in staged pages and common events, and `set_system_fields.start.map_id` (step *k* must be an `append_blank_map` or `add_area` step, v1.26), and also a troop's `members[].enemy_id` (step *k* must be an `append_entry` on `enemies`), `append_dialogue_event.template_event` (an `append_blank_event` step on the same `map_id`), `append_encounter.troop_id` (an `append_entry` on `troops`), `append_learning.skill_id` (an `append_entry` on `skills`), `append_learning.class_id` (an `append_entry` on `classes`, v1.28), an actor's `class_id`, a class's `learnings[].skill_id` (an `append_entry` on `skills`) and a class's `params.copy_from_class` (an `append_entry` on `classes`, v1.28), `add_shop.event_id` (an `append_dialogue_event` step on the same `map_id`) and `add_shop.goods[].id` (an `append_entry` on `weapons` for a weapon, on `armors` for an armor, or an `append_key_item` step or an `append_entry` on `items` for an item), the item ids of an `append_staged_event` page (`item` commands and `has_item` conditions: an `append_key_item` step or an `append_entry` on `items`), the `common_event` ids of an `append_staged_event` page or an `append_common_event` step's commands (an `append_common_event` step, v1.21), the `battle` troop ids of those commands (an `append_entry` on `troops`), and the `data_id` of an `effects`/`features` override row (v1.20). *k* must be an earlier step; forward, self or unknown references are refused during validation. The id is the snapshot's next id for that step and is cross-checked against the copy patcher's audit (`created_id`, or the new event id for the event steps and the new common event id for `append_common_event`).
 
 In an `effects` row (skills and items) `data_id` may be `{"from_step": k}` for code 21 or 22 (step *k* an `append_entry` on `states`) and code 43 (an `append_entry` on `skills`). In a `features` row (weapons, armors, states) it may be `{"from_step": k}` for codes 13, 14 and 32 (an `append_entry` on `states`) and code 43 (an `append_entry` on `skills`). Effect 44 (common event call) `data_id` may be `{"from_step": k}` when step *k* is an `append_common_event` step (v1.21). In an enemy `append_entry` (v1.27) `actions[].skill_id` may be `{"from_step": k}` for an `append_entry` on `skills`, and `drop_items[].id` may be `{"from_step": k}` for an `append_entry` on the table that matches its `kind` (`item` items, `weapon` weapons, `armor` armors; a `none` slot cannot have one); enemy `features` rows follow the same rule as the other tables. Element ids (codes 11 and 31 of features) have no recipe step that creates them, so a reference there is refused; give a literal id. The referenced-database hashes (`expected_states_sha256`, `expected_skills_sha256`, `expected_common_events_sha256`, `expected_system_sha256`, plus `expected_items_sha256`, `expected_weapons_sha256`, `expected_armors_sha256` for enemy drops) are taken from the step's snapshot, and only for the databases the resolved rows reference; a recipe never contains them.
 
@@ -219,6 +219,25 @@ With `"repeatable": true` only page 1 is emitted and it has no self-switch comma
   {"type": "set_system_fields", "game_title": "Hero Quest", "party_members": [{"from_step": 2}, 1]},
   {"type": "append_staged_event", "map_id": 1, "template_event": 1, "x": 6, "y": 6, "name": "Recruiter", "pages": [
     {"condition": {}, "commands": [{"text": ["Join us!"]}, {"party": "add", "actor": {"from_step": 2}, "initialize": true}]}]}]}
+```
+
+## Classes (v1.28)
+
+`append_entry` accepts table `classes` (see [database-append.md](database-append.md#classes-v128)): a template clone with `exp_params`, per-parameter `params` curves (or `copy_from_class`), a full `learnings` list and class `features` (codes 41, 42, 51..55, 61, 62 besides the v1.20 ones). A skill, a class and an actor chain together through `from_step`: `learnings[].skill_id` may name a skills step, an actor's `class_id` and an `append_learning`'s `class_id` may name a classes step, and a class feature 43 `data_id` may name a skills step. The hashes (`expected_skills_sha256`, `expected_system_sha256`, `expected_states_sha256`, `expected_classes_sha256`) come from the step's snapshot and only for what the resolved overrides reference. The actor step reads Classes of the previous copy (in `plan`, the simulated state), so its equips are checked against the features of the class appended earlier in the same recipe. `plan` describes the class in plain terms (curve endpoints, `Spark @ Lv3, Fire @ Lv8`, the features) and gives the same warnings as the impact report (no weapon type or skill type, dropped template features).
+
+```json
+{"title": "Battle Mage", "steps": [
+  {"type": "append_entry", "table": "skills", "template_id": 1, "overrides": {"name": "Spark", "mp_cost": 4}},
+  {"type": "append_entry", "table": "classes", "template_id": 1, "overrides": {"name": "Battle Mage", "exp_params": [35, 20, 30, 30],
+    "params": {"mhp": {"lv1": 400, "lv99": 6000}, "mmp": {"lv1": 80, "lv99": 1500, "curve": "early"}, "atk": {"lv1": 10, "lv99": 100},
+               "def": {"lv1": 10, "lv99": 120}, "mat": {"lv1": 20, "lv99": 200, "curve": "late"}, "mdf": {"lv1": 10, "lv99": 120},
+               "agi": {"lv1": 15, "lv99": 150}, "luk": {"lv1": 15, "lv99": 150}},
+    "learnings": [{"skill_id": {"from_step": 1}, "level": 3}, {"skill_id": 4, "level": 8}],
+    "features": [{"code": 41, "data_id": 1, "value": 0}, {"code": 41, "data_id": 2, "value": 0}, {"code": 51, "data_id": 1, "value": 0},
+                 {"code": 52, "data_id": 1, "value": 0}, {"code": 52, "data_id": 2, "value": 0}]}},
+  {"type": "append_entry", "table": "actors", "template_id": 1, "overrides": {"name": "Mia", "class_id": {"from_step": 2}, "initial_level": 3}},
+  {"type": "append_learning", "class_id": {"from_step": 2}, "skill_id": 5, "level": 12}
+]}
 ```
 
 ## Limits

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guarded append-only native template clones for Actors, Enemies, Items, Skills, States, Weapons, Armors and blank-page Troops."""
+"""Guarded append-only native template clones for Actors, Classes, Enemies, Items, Skills, States, Weapons, Armors and blank-page Troops."""
 from __future__ import annotations
 import hashlib
 import math
@@ -29,6 +29,9 @@ TABLES = {
     # note, equips, nickname, description, max_level; actors created in the editor also carry a trailing icon_index (an optional field here).
     'actors': ('RPG::Actor', {'id','name','nickname','class_id','initial_level','max_level','character_name','character_index','face_name','face_index',
                               'equips','features','note','description'}),
+    # Editor-saved RPG::Class (Project3 and a stock editor project): ivars name, learnings, id, features, note, params, exp_params, icon_index, description.
+    # params is a Table (dim 2, xsize 8 params, ysize 100 levels, zsize 1) addressed [param, level]; level 0 is an unused all-zero column.
+    'classes': ('RPG::Class', {'id','name','icon_index','description','features','note','exp_params','params','learnings'}),
 }
 OPTIONAL_FIELDS = {'actors': {'icon_index'}}
 EQUIP_SLOTS = 5
@@ -39,7 +42,7 @@ MEMBER_RANGES = {'x':(0,544),'y':(0,416)}
 MAX_MEMBERS = 8
 TEXT = {'name','description','note','battler_name','message1','message2','message3','message4','nickname','character_name','face_name'}
 BOOLS = {'consumable','remove_at_battle_end','remove_by_restriction','remove_by_damage','release_by_damage','remove_by_walking'}
-LISTS = {'features','effects','drop_items','actions','params','members','pages','equips'}
+LISTS = {'features','effects','drop_items','actions','params','members','pages','equips','exp_params','learnings'}
 NESTED = {'damage'}
 FEATURE_FIELDS = {'code','data_id','value'}
 EFFECT_FIELDS = {'code','data_id','value1','value2'}
@@ -56,6 +59,7 @@ OVERRIDES = {
     'armors': ('name','description','icon_index','price','params','features'),
     'troops': ('name','members'),
     'actors': ('name','nickname','description','class_id','initial_level','max_level','character_name','character_index','face_name','face_index','equips','features'),
+    'classes': ('name','description','icon_index','exp_params','params','learnings','features'),
 }
 INT_RANGES = {'icon_index':(0,4095),'exp':(0,9999999),'gold':(0,9999999),'battler_hue':(0,360),
               'mp_cost':(0,9999),'tp_cost':(0,100),'damage_variance':(0,100),'priority':(0,100),
@@ -63,6 +67,22 @@ INT_RANGES = {'icon_index':(0,4095),'exp':(0,9999999),'gold':(0,9999999),'battle
 BATTLER_NAME = re.compile(r'[^\x00-\x1f\\/:*?"<>|]{0,100}')
 PARAM_COUNT = 8
 LIST_BUDGET = 256
+# Classes. Editor-saved Class data (Project3 + stock project): params is Table(dim 2, 8 x 100 x 1) addressed [param, level] (cell = param + 8 * level), level 0 is an
+# all-zero unused column, exp_params is four Integers, each Learning is ivars level, skill_id, note (note is the empty string). The engine caps battler
+# params in Game_BattlerBase#param_max / Game_Actor#param_max: MHP 9999 (actors), MMP 9999, everything else 999.
+CLASS_PARAM_KEYS = ('mhp', 'mmp', 'atk', 'def', 'mat', 'mdf', 'agi', 'luk')
+CLASS_PARAM_RANGES = ((1, 9999), (0, 9999)) + ((1, 999),) * 6
+CLASS_CURVES = ('linear', 'early', 'late')
+CLASS_LEVELS = 99
+CLASS_TABLE = (PARAM_COUNT, CLASS_LEVELS + 1, 1)
+# EXP curve dialog sliders (basis, extra, acceleration A, acceleration B); acc_b is a divisor in Game_Actor/RPG::Class#exp_for_level, so it is never 0.
+EXP_LABELS = ('basis', 'extra', 'acc_a', 'acc_b')
+EXP_RANGES = ((10, 50), (0, 40), (10, 50), (10, 50))
+MAX_LEARNINGS = 64
+CLASS_MAX_ROWS = 32
+LEARNING_CLS = 'RPG::Class::Learning'
+LEARNING_FIELDS = ('level', 'skill_id', 'note')
+CLASS_FEATURE_CODES = (41, 42, 51, 52, 53, 54, 55, 61, 62)
 
 
 def integer(value, label, minimum, maximum):
@@ -81,13 +101,13 @@ REF_FILES = {'enemies': 'Enemies', 'states': 'States', 'skills': 'Skills', 'comm
              'classes': 'Classes', 'weapons': 'Weapons', 'armors': 'Armors', 'items': 'Items'}
 # Which referenced database each effect / feature code needs (codes absent here carry no database id).
 EFFECT_REFS = {21: 'states', 22: 'states', 43: 'skills', 44: 'common_events'}
-FEATURE_REFS = {11: 'system', 31: 'system', 13: 'states', 14: 'states', 32: 'states', 43: 'skills'}
-LIST_TABLES = {'effects': ('items', 'skills'), 'features': ('actors', 'armors', 'enemies', 'states', 'weapons')}
+FEATURE_REFS = {11: 'system', 31: 'system', 13: 'states', 14: 'states', 32: 'states', 43: 'skills', 41: 'system', 42: 'system', 51: 'system', 52: 'system'}
+LIST_TABLES = {'effects': ('items', 'skills'), 'features': ('actors', 'armors', 'classes', 'enemies', 'states', 'weapons')}
 # Referenced databases a snapshot reports (hashes/counts) per table; the table's own array is always reported.
 SNAPSHOT_REFS = {'enemies': ('system', 'states', 'skills', 'items', 'weapons', 'armors'), 'troops': ('enemies',), 'items': ('states', 'skills', 'common_events'),
                  'skills': ('states', 'skills', 'common_events'), 'weapons': ('system', 'states', 'skills'),
                  'armors': ('system', 'states', 'skills'), 'states': ('system', 'states', 'skills'),
-                 'actors': ('classes', 'weapons', 'armors', 'system', 'states', 'skills')}
+                 'actors': ('classes', 'weapons', 'armors', 'system', 'states', 'skills'), 'classes': ('classes', 'system', 'skills', 'states')}
 MAX_ROWS = 16
 MAX_ACTIONS = 16
 DROP_SLOTS = 3
@@ -123,6 +143,13 @@ def required_refs(table, overrides):
             names.add('weapons')
         if isinstance(equips, list) and any(type(value) is int and value != 0 for value in equips[1:]):
             names.add('armors')
+    if table == 'classes' and isinstance(overrides, dict):
+        learned = overrides.get('learnings')
+        if isinstance(learned, list) and any(isinstance(row, dict) for row in learned):
+            names.add('skills')
+        params = overrides.get('params')
+        if isinstance(params, dict) and 'copy_from_class' in params:
+            names.add('classes')
     if table == 'enemies' and isinstance(overrides, dict):
         names |= enemy_refs(overrides)
     if isinstance(overrides, dict):
@@ -362,7 +389,15 @@ def template(root, table, template_id):
             raise ValueError('Selected template has unknown damage schema')
         if any(type(damage.get(k)) is not int for k in ('type', 'element_id', 'variance')) or not isinstance(damage.get('formula'), RubyString) or type(damage.get('critical')) is not bool:
             raise ValueError('Selected damage field types are unsupported')
-    if 'params' in fields:
+    if table == 'classes':
+        exp = entry.get('exp_params')
+        if not isinstance(exp, list) or len(exp) != len(EXP_LABELS) or any(type(v) is not int for v in exp):
+            raise ValueError('Selected class exp_params must be four native integers')
+        class_table(entry)
+        check_objects(entry, entry.get('learnings'), LEARNING_CLS, LEARNING_FIELDS, 'learnings')
+        if any(type(o.get('level')) is not int or type(o.get('skill_id')) is not int or not isinstance(o.get('note'), RubyString) for o in entry.get('learnings')):
+            raise ValueError('Selected class learning field types are unsupported')
+    if 'params' in fields and table != 'classes':
         params = entry.get('params')
         if not isinstance(params, list) or len(params) != PARAM_COUNT or any(type(p) is not int for p in params):
             raise ValueError('Selected template params must be eight native integers')
@@ -473,18 +508,31 @@ def effect_rows(rows, roots):
     return out
 
 
-def feature_rows(rows, roots):
-    """Full replacement features list as (code, data_id, value) tuples (value float, or integer 0 for codes 31/43 like the editor)."""
-    if not isinstance(rows, list) or len(rows) > MAX_ROWS:
-        raise ValueError('features must be a list of 0..' + str(MAX_ROWS) + ' entries')
+def type_id(roots, key, value, label):
+    """A skill / weapon / armor type id 1..n of the fingerprinted System (slot 0 is the editor's unused empty name)."""
+    names = roots['system'].get(key)
+    count = len(names) - 1 if isinstance(names, list) else 0
+    if type(value) is not int or not 1 <= value <= count:
+        raise ValueError(label + ' must be a ' + key[:-1].replace('_', ' ') + ' id 1..' + str(count) + ' of the fingerprinted System')
+    return value
+
+
+def feature_rows(rows, roots, table=None):
+    """Full replacement features list as (code, data_id, value) tuples (value float, or integer 0 for codes 31/43 like the editor).
+
+    Codes 41/42/51..55/61/62 are admitted for classes only (their rows are Float values like every editor-added row: data_id carries the type / flag)."""
+    limit = CLASS_MAX_ROWS if table == 'classes' else MAX_ROWS
+    codes = FEATURE_CODES + CLASS_FEATURE_CODES if table == 'classes' else FEATURE_CODES
+    if not isinstance(rows, list) or len(rows) > limit:
+        raise ValueError('features must be a list of 0..' + str(limit) + ' entries')
     out = []
     for n, row in enumerate(rows):
         label = 'features[' + str(n) + ']'
         if not isinstance(row, dict) or set(row) != FEATURE_FIELDS:
             raise ValueError(label + ' must have exactly code, data_id and value')
         code = row['code']
-        if type(code) is not int or code not in FEATURE_CODES:
-            raise ValueError(label + '.code must be one of ' + ', '.join(map(str, FEATURE_CODES)))
+        if type(code) is not int or code not in codes:
+            raise ValueError(label + '.code must be one of ' + ', '.join(map(str, codes)) + (' (63 collapse type is not a class feature)' if table == 'classes' else ''))
         data, value = row['data_id'], row['value']
         if code == 11:
             data = element_id(roots, data, label + '.data_id');value = number(value, label + '.value (rate)', 0.0, 10.0)
@@ -502,6 +550,20 @@ def feature_rows(rows, roots):
             data = element_id(roots, data, label + '.data_id');value = zero(value, label + '.value')
         elif code == 32:
             data = database_id(roots, 'states', data, label + '.data_id');value = number(value, label + '.value (chance)', 0.0, 1.0)
+        elif code in (41, 42):
+            data = type_id(roots, 'skill_types', data, label + '.data_id');value = zero(value, label + '.value')
+        elif code == 51:
+            data = type_id(roots, 'weapon_types', data, label + '.data_id');value = zero(value, label + '.value')
+        elif code == 52:
+            data = type_id(roots, 'armor_types', data, label + '.data_id');value = zero(value, label + '.value')
+        elif code in (53, 54):
+            data = small_id(data, label + '.data_id (equip type)', 0, 4);value = zero(value, label + '.value')
+        elif code == 55:
+            data = small_id(data, label + '.data_id (1 = dual wield)', 1, 1);value = zero(value, label + '.value')
+        elif code == 61:
+            data = small_id(data, label + '.data_id', 0, 0);value = number(value, label + '.value (chance of an extra action)', 0.0, 1.0)
+        elif code == 62:
+            data = small_id(data, label + '.data_id (0 auto battle, 1 guard, 2 substitute, 3 preserve TP)', 0, 3);value = zero(value, label + '.value')
         else:
             data = database_id(roots, 'skills', data, label + '.data_id');value = zero(value, label + '.value')
         out.append((code, data, 0 if code in FEATURE_INT_ZERO else value))
@@ -604,8 +666,111 @@ def drop_rows(rows, roots):
     return out
 
 
+def class_table(entry):
+    """The class params Table (8 params x 100 levels, [param, level]); anything but the editor layout, or a non-zero level 0, refuses."""
+    from vxace_python_mutator import Table
+    table = entry.get('params')
+    if not isinstance(table, Table) or (table.dim, table.xsize, table.ysize, table.zsize) != (2,) + CLASS_TABLE or len(table.data) != PARAM_COUNT * (CLASS_LEVELS + 1):
+        raise ValueError('Selected class params must be the editor 8 x 100 Table (dim 2)')
+    if any(table.data[:PARAM_COUNT]):
+        raise ValueError('Selected class params Table has non-zero values in the unused level-0 column')
+    return table
+
+
+def exp_params_value(value):
+    if not isinstance(value, list) or len(value) != len(EXP_LABELS):
+        raise ValueError('exp_params must be [basis, extra, acc_a, acc_b]')
+    return [integer(v, 'exp_params[' + str(n) + '] (' + EXP_LABELS[n] + ', ' + str(EXP_RANGES[n][0]) + '..' + str(EXP_RANGES[n][1]) + ')', *EXP_RANGES[n]) for n, v in enumerate(value)]
+
+
+def param_curve(lv1, lv99, curve='linear'):
+    """Levels 1..99 of one parameter as Integers. With k = level - 1 and D = 98, f(k) is the share of the lv1 -> lv99 rise already made:
+    linear f = k / D, early f = 1 - ((D - k) / D)^2 (fast first, flattening), late f = (k / D)^2 (slow first, steep at the end);
+    value = lv1 + round_half_up((lv99 - lv1) * f), computed in exact integer arithmetic. Needs lv99 >= lv1, so values never decrease and level 1 / 99 equal the endpoints."""
+    top = CLASS_LEVELS - 1
+    out = []
+    for k in range(top + 1):
+        num, den = {'linear': (k, top), 'early': (top * top - (top - k) ** 2, top * top), 'late': (k * k, top * top)}[curve]
+        out.append(lv1 + (2 * (lv99 - lv1) * num + den) // (2 * den))
+    return out
+
+
+def class_params_spec(value, roots):
+    """('copy', class_id) or ('curves', [(lv1, lv99, curve)] x 8) from a params override."""
+    if not isinstance(value, dict):
+        raise ValueError('params must be an object: {"copy_from_class": id} or an entry for each of ' + ', '.join(CLASS_PARAM_KEYS))
+    if 'copy_from_class' in value:
+        if set(value) != {'copy_from_class'}:
+            raise ValueError('params copy_from_class cannot be combined with curves')
+        return 'copy', database_id(roots, 'classes', value['copy_from_class'], 'params.copy_from_class')
+    if set(value) != set(CLASS_PARAM_KEYS):
+        raise ValueError('params must give exactly ' + ', '.join(CLASS_PARAM_KEYS) + ' (or only copy_from_class)')
+    rows = []
+    for n, key in enumerate(CLASS_PARAM_KEYS):
+        item, (low, high) = value[key], CLASS_PARAM_RANGES[n]
+        if not isinstance(item, dict) or not {'lv1', 'lv99'} <= set(item) <= {'lv1', 'lv99', 'curve'}:
+            raise ValueError('params.' + key + ' must be {"lv1": n, "lv99": m} with an optional "curve"')
+        lv1 = integer(item['lv1'], 'params.' + key + '.lv1 (' + str(low) + '..' + str(high) + ')', low, high)
+        lv99 = integer(item['lv99'], 'params.' + key + '.lv99 (' + str(low) + '..' + str(high) + ')', low, high)
+        if lv99 < lv1:
+            raise ValueError('params.' + key + '.lv99 must not be below lv1 (growth never decreases)')
+        curve = item.get('curve', 'linear')
+        if not isinstance(curve, str) or curve not in CLASS_CURVES:
+            raise ValueError('params.' + key + '.curve must be one of ' + ', '.join(CLASS_CURVES))
+        rows.append((lv1, lv99, curve))
+    return 'curves', rows
+
+
+def class_param_cells(spec, classes=None):
+    """The 800 Table cells (cell = param + 8 * level) for a params spec; level 0 stays all zero like the editor writes it."""
+    kind, body = spec
+    if kind == 'copy':
+        return list(class_table(classes[body]).data)
+    cells = [0] * (PARAM_COUNT * (CLASS_LEVELS + 1))
+    for param, (lv1, lv99, curve) in enumerate(body):
+        for level, number in enumerate(param_curve(lv1, lv99, curve), 1):
+            cells[param + PARAM_COUNT * level] = number
+    return cells
+
+
+def learning_rows(rows, roots):
+    """Full replacement learnings as (level, skill_id) tuples sorted by level (stable, so the given order breaks ties)."""
+    if not isinstance(rows, list) or len(rows) > MAX_LEARNINGS:
+        raise ValueError('learnings must be a list of 0..' + str(MAX_LEARNINGS) + ' entries')
+    out, seen = [], set()
+    for n, row in enumerate(rows):
+        label = 'learnings[' + str(n) + ']'
+        if not isinstance(row, dict) or set(row) != {'skill_id', 'level'}:
+            raise ValueError(label + ' must have exactly skill_id and level')
+        skill = database_id(roots, 'skills', row['skill_id'], label + '.skill_id')
+        if skill in seen:
+            raise ValueError(label + ' repeats skill ' + str(skill))
+        seen.add(skill)
+        out.append((integer(row['level'], label + '.level (1..99)', 1, CLASS_LEVELS), skill))
+    return sorted(out, key=lambda row: row[0])
+
+
+def build_learnings(root, selected, rows):
+    from vxace_python_mutator import RubyObject, convert, marshal_rb
+    wanted = ['@' + k for k in LEARNING_FIELDS]
+    shape = next((o for entry in [selected, *root[1:]] for o in entry.get('learnings') if isinstance(o, RubyObject) and o.cls == LEARNING_CLS and list(o.ivars) == wanted),
+                 RubyObject(LEARNING_CLS, {'@level': 0, '@skill_id': 0, '@note': convert('')}))
+    out = []
+    for level, skill in rows:
+        obj = marshal_rb.load(marshal_rb.dump(shape))
+        obj.set('level', level);obj.set('skill_id', skill);obj.set('note', convert('', obj.get('note')))
+        out.append(obj)
+    return out
+
+
+def class_curve_points(cells):
+    return {key: {'lv1': cells[n + PARAM_COUNT], 'lv50': cells[n + PARAM_COUNT * 50], 'lv99': cells[n + PARAM_COUNT * CLASS_LEVELS]} for n, key in enumerate(CLASS_PARAM_KEYS)}
+
+
 PARAMS = ('Max HP', 'Max MP', 'Attack', 'Defense', 'M.Attack', 'M.Defense', 'Agility', 'Luck')
 XPARAMS = ('Hit', 'Evasion', 'Critical', 'Critical evasion', 'Magic evasion', 'Magic reflection', 'Counter', 'HP regen', 'MP regen', 'TP regen')
+ETYPES = ('Weapon', 'Shield', 'Head', 'Body', 'Accessory')
+SPECIAL_FLAGS = ('auto battle', 'guard', 'substitute', 'preserve TP')
 SPARAMS = ('Target rate', 'Guard effect', 'Recovery effect', 'Pharmacology', 'MP cost rate', 'TP charge rate', 'Physical damage', 'Magical damage', 'Floor damage', 'EXP gain')
 
 
@@ -666,9 +831,67 @@ def describe_features(rows, name_of=lambda kind, number: None):
             text.append('Attack element: ' + named('element', data))
         elif code == 32:
             text.append('Attack state: ' + named('state', data) + ' (' + pct(value) + ' chance)')
-        else:
+        elif code == 43:
             text.append('Add skill: ' + named('skill', data));warnings.append('Feature 43 (add skill) grants ' + named('skill', data) + ' while this is equipped or active.')
+        elif code == 41:
+            text.append('Add skill type: ' + named('skill type', data))
+        elif code == 42:
+            text.append('Seal skill type: ' + named('skill type', data));warnings.append('Feature 42 seals ' + named('skill type', data) + ': its skills cannot be used.')
+        elif code == 51:
+            text.append('Equip weapon type: ' + named('weapon type', data))
+        elif code == 52:
+            text.append('Equip armor type: ' + named('armor type', data))
+        elif code == 53:
+            text.append('Fix equip: ' + ETYPES[data] + ' (cannot be changed)')
+        elif code == 54:
+            text.append('Seal equip: ' + ETYPES[data] + ' (nothing can be equipped there)')
+        elif code == 55:
+            text.append('Slot type: dual wield')
+        elif code == 61:
+            text.append('Action plus: ' + pct(value) + ' chance of an extra action')
+        else:
+            text.append('Special flag: ' + SPECIAL_FLAGS[data])
     return text, warnings
+
+
+def describe_class(exp_params, params_spec, learnings, name_of=lambda kind, number: None):
+    """Human lines for the class-only overrides; any argument may be None (not overridden). `learnings` are (level, skill_id) tuples."""
+    lines = []
+    if exp_params is not None:
+        lines.append('EXP curve: ' + ', '.join(label + ' ' + str(v) for label, v in zip(EXP_LABELS, exp_params)))
+    if params_spec is not None:
+        kind, body = params_spec
+        if kind == 'copy':
+            label = name_of('class', body)
+            lines.append('Parameter curves copied from class ' + str(body) + (' "' + str(label) + '"' if label else ''))
+        else:
+            for name, (lv1, lv99, curve) in zip(PARAMS, body):
+                lines.append('Parameter ' + name + ': ' + str(lv1) + ' at Lv1 -> ' + str(lv99) + ' at Lv99 (' + curve + ')')
+    if learnings is not None:
+        shown = []
+        for level, skill in learnings:
+            label = name_of('skill', skill)
+            shown.append((str(label) if label else 'skill ' + str(skill)) + ' @ Lv' + str(level))
+        lines.append('Learnings: ' + (', '.join(shown) if shown else 'none'))
+    return lines
+
+
+def class_feature_warnings(effective, template_features, overridden, name_of=lambda kind, number: None):
+    """Warnings for a class feature list: (code, data_id) pairs it will have, the template's pairs, and whether features are replaced."""
+    def named(kind, number):
+        label = name_of(kind, number)
+        return kind + ' ' + str(number) + (' "' + str(label) + '"' if label else '')
+    warnings = []
+    kinds = {41: 'skill type', 51: 'weapon type', 52: 'armor type'}
+    if not any(code == 51 for code, _ in effective):
+        warnings.append('The new class has no equip weapon type feature (51): actors of this class cannot equip any weapon.')
+    if not any(code == 41 for code, _ in effective):
+        warnings.append('The new class has no add skill type feature (41): actors of this class get no skill type, so no skill menu or battle skill command (unless their own features add one).')
+    if overridden:
+        for code, data in template_features:
+            if code in kinds and (code, data) not in effective:
+                warnings.append('The features override drops the template feature ' + str(code) + ' (' + named(kinds[code], data) + '): the new class loses it.')
+    return warnings
 
 
 def ordinal(n):
@@ -852,7 +1075,15 @@ def validated_overrides(table, selected, overrides, refs=None):
         elif key == 'effects':
             out[key] = effect_rows(value, roots)
         elif key == 'features':
-            out[key] = feature_rows(value, roots)
+            out[key] = feature_rows(value, roots, table)
+        elif key == 'exp_params':
+            out[key] = exp_params_value(value)
+        elif key == 'learnings':
+            out[key] = learning_rows(value, roots)
+        elif key == 'params' and table == 'classes':
+            out[key] = class_params_spec(value, roots)
+            if out[key][0] == 'copy':
+                class_table(roots['classes'][out[key][1]])
         elif key == 'actions':
             out[key] = action_rows(value, roots)
         elif key == 'drop_items':
@@ -913,6 +1144,9 @@ def summarize(selected, table):
                             'max_level': selected.get('max_level'),
                             'character': [selected.get('character_name').data.decode('utf-8', 'replace'), selected.get('character_index')],
                             'face': [selected.get('face_name').data.decode('utf-8', 'replace'), selected.get('face_index')]}
+    if table == 'classes':
+        summary['class'] = {'exp_params': list(selected.get('exp_params')), 'param_curves': class_curve_points(list(selected.get('params').data)),
+                            'learnings': [[o.get('level'), o.get('skill_id')] for o in selected.get('learnings')]}
     if table in ('weapons', 'armors'):
         summary['equipment'] = {k: selected.get(k) for k in ('etype_id','wtype_id','atype_id','animation_id') if '@' + k in selected.ivars}
     return summary
@@ -926,7 +1160,7 @@ def scalar_summary(selected, table):
         value = selected.get(key)
         if isinstance(value, RubyString):
             out[key] = value.data.decode('utf-8', 'replace')
-        elif type(value) in (int, bool) or (isinstance(value, list) and key in ('params', 'equips')):
+        elif type(value) in (int, bool) or (isinstance(value, list) and key in ('params', 'equips', 'exp_params')):
             out[key] = value
     return out
 
@@ -957,12 +1191,19 @@ def snapshot(root, table, template_id, refs=None, assets=None):
             extra[name + '_sha256'] = digest(value)
             if name == 'system':
                 extra['element_count'] = len(value.get('elements')) - 1;extra['valid_element_id_range'] = [1, len(value.get('elements')) - 1]
+                if table == 'classes':
+                    extra.update(skill_type_count=len(value.get('skill_types')) - 1, weapon_type_count=len(value.get('weapon_types')) - 1,
+                                 armor_type_count=len(value.get('armor_types')) - 1)
             else:
                 extra[name + '_count'] = len(value) - 1
         if table in LIST_TABLES['effects']:
             extra['effects_shape_available'] = has_shape(root, 'effects', 'RPG::UsableItem::Effect', EFFECT_FIELDS)
         if table in LIST_TABLES['features']:
             extra['features_shape_available'] = has_shape(root, 'features', 'RPG::BaseItem::Feature', FEATURE_FIELDS)
+        if table == 'classes':
+            extra.update(param_keys=list(CLASS_PARAM_KEYS), param_ranges={k: list(r) for k, r in zip(CLASS_PARAM_KEYS, CLASS_PARAM_RANGES)},
+                         param_curves=list(CLASS_CURVES), exp_params_ranges={k: list(r) for k, r in zip(EXP_LABELS, EXP_RANGES)},
+                         max_learnings=MAX_LEARNINGS, max_features=CLASS_MAX_ROWS, class_feature_codes=list(FEATURE_CODES + CLASS_FEATURE_CODES))
         if table == 'actors':
             extra['equip_slots'] = ['weapon (etype 0)', 'armor etype 1', 'armor etype 2', 'armor etype 3', 'armor etype 4']
             if assets:
@@ -983,7 +1224,7 @@ def object_shape(root, selected, key, cls, fields, what):
         for obj in entry.get(key) if isinstance(entry.get(key), list) else []:
             if getattr(obj, 'cls', None) == cls and set(obj.ivars) == {'@' + f for f in fields}:
                 return obj
-    if cls == 'RPG::BaseItem::Feature' and getattr(root[1], 'cls', None) == 'RPG::Actor':
+    if cls == 'RPG::BaseItem::Feature' and getattr(root[1], 'cls', None) in ('RPG::Actor', 'RPG::Class'):
         # Editor-saved actors usually have no features to copy from; Project3 Classes/Weapons/Armors/States all store a Feature as ivars code, data_id, value.
         from vxace_python_mutator import RubyObject
         return RubyObject(cls, {'@code': 0, '@data_id': 0, '@value': 0.0})
@@ -1051,6 +1292,20 @@ def new_entry(root, table, mutation, refs=None, project=None, rtp=None):
         entry.set('members', [RubyObject('RPG::Troop::Member', {'@' + k: m[k] for k in TROOP_MEMBER_FIELDS}) for m in overrides['members']])
         return entry
     put(entry, 'note', '')
+    if table == 'classes':
+        from vxace_python_mutator import Table
+        for key, value in overrides.items():
+            if key == 'params':
+                entry.set(key, Table(CLASS_TABLE[0], CLASS_TABLE[1], CLASS_TABLE[2], dim=2, data=class_param_cells(value, roots.get('classes'))))
+            elif key == 'exp_params':
+                entry.set(key, list(value))
+            elif key == 'learnings':
+                entry.set(key, build_learnings(root, selected, value))
+            elif key in ROW_OBJECTS:
+                entry.set(key, build_objects(root, selected, key, value))
+            else:
+                put(entry, key, value)
+        return entry
     damage = {'damage_formula': 'formula', 'damage_variance': 'variance', 'damage_critical': 'critical'}
     for key, value in overrides.items():
         if key in damage:
@@ -1107,7 +1362,7 @@ def indexed_snapshot(data, project, table, template_id, characters=(), faces=(),
     from vxace_index_query import unlinked
     from vxace_python_mutator import load
     cls, _ = table_spec(table)
-    file = {'actors': 'Actors', 'enemies': 'Enemies', 'items': 'Items', 'skills': 'Skills', 'states': 'States', 'weapons': 'Weapons', 'armors': 'Armors', 'troops': 'Troops'}[table]
+    file = {'actors': 'Actors', 'enemies': 'Enemies', 'items': 'Items', 'skills': 'Skills', 'states': 'States', 'weapons': 'Weapons', 'armors': 'Armors', 'troops': 'Troops', 'classes': 'Classes'}[table]
     root, _ = load(unlinked(Path(project) / 'Data' / (file + '.rvdata2')))
     refs = snapshot_refs(Path(project) / 'Data' / (file + '.rvdata2'), table)
     assets = None
@@ -1131,8 +1386,13 @@ def indexed_snapshot(data, project, table, template_id, characters=(), faces=(),
                     'character_name/character_index and face_name/face_index must be given as a pair; each sheet is bound by expected_assets (character sheets: 4x2 characters or a !/$ single character; face sheets: 384x192 with 8 faces, a $-prefixed face is treated as a single face). Pass --character-sheet / --face-sheet (and --rtp for RTP sheets) to this snapshot to get the bindings.',
                     'Dual-wield classes (slot type 55) hold a weapon in slot 1; equips[1] must stay 0 for them. Appended equips are created in the actor slots only; the party inventory is not changed.',
                     'The note is forced empty and the class learnings are not copied; the actor learns the skills of the class at the initial level (Game_Actor#init_skills).'] if table == 'actors' else None
+    class_limits = ['Only a class with the editor-saved field set (name, learnings, id, features, note, params, exp_params, icon_index, description), an 8 x 100 params Table with an all-zero level 0 and exact learning objects is admitted; the note is forced empty.',
+                    'Unless overridden the clone keeps the template exp_params, params Table, learnings and features. params gives lv1/lv99 and an optional curve (linear, early, late) per parameter, or copy_from_class; learnings is a full replacement list (0..64, skill ids bound by expected_skills_sha256, written sorted by level); features is a full replacement list (up to 32 rows) that also admits codes 41, 42, 51, 52, 53, 54, 55, 61 and 62 (type ids bound by expected_system_sha256); code 63 (collapse type) is refused.',
+                    'Parameter limits follow the engine caps: Max HP 1..9999, Max MP 0..9999, the rest 1..999 (Game_Actor#param_max); growth never decreases. exp_params bounds are the EXP curve dialog sliders: basis 10..50, extra 0..40, acc_a 10..50, acc_b 10..50.',
+                    'The new class is used by no actor until an actor is appended or changed to use it (append_entry on actors with class_id); old saves keep their actors on their current class.',
+                    'Equip and skill types are not cross-checked against actors, weapons or armors that already exist; the impact report warns when the class cannot equip a weapon or has no skill type.'] if table == 'classes' else None
     return {'version': VERSION, 'table': table, **result,
-            'limits': troop_limits or actor_limits or ['Only templates whose exact native field set, nested schemas and types are supported are admitted.',
+            'limits': troop_limits or actor_limits or class_limits or ['Only templates whose exact native field set, nested schemas and types are supported are admitted.',
                        'Features, effects, drops, actions and damage type/element are inherited as-is unless an effects (skills, items), features (actors, weapons, armors, states, enemies), actions or drop_items (enemies) override replaces the whole list; note is forced empty. Review the inherited lists.',
                        'Each effects/features code, enemy action (skill, state, switch) or enemy drop item (item, weapon, armor) that references a database needs that database fingerprinted here (expected_states_sha256, expected_skills_sha256, expected_common_events_sha256, expected_system_sha256, expected_items_sha256, expected_weapons_sha256, expected_armors_sha256); only the needed hashes may appear in the spec, and edits to those files after the snapshot make it stale.',
                        'Item templates of item type 2 (key items) are refused; use append_key_item for key items.',

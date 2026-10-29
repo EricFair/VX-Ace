@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.27.0
+Version: 1.28.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -98,7 +98,7 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Treasure chest | recipe step `add_treasure_chest` ([references/treasure-chests.md](references/treasure-chests.md)) |
 | Sell items/weapons/armors from a shopkeeper | [references/map-shops.md](references/map-shops.md) |
 | Make a troop appear as a random encounter | [references/map-encounters.md](references/map-encounters.md) |
-| Add an actor, enemy, skill, state, weapon, armor, usable item, troop or class skill learning; set item/skill effects or equipment/state features | [references/database-append.md](references/database-append.md) |
+| Add an actor, class, enemy, skill, state, weapon, armor, usable item, troop or class skill learning; set item/skill effects or equipment/state features | [references/database-append.md](references/database-append.md) |
 | Ship a build | [workflows/release-checklist.md](workflows/release-checklist.md) |
 | Bring a reviewed copy into the real project, or undo it | `tools/vxace_adopt.py` ([references/adopt.md](references/adopt.md)) |
 | Day-to-day working loop | [workflows/daily-game-dev.md](workflows/daily-game-dev.md) |
@@ -128,7 +128,7 @@ Only these structural writes exist; everything else is proposal/manual-only. Eac
 - existing-map region cells ([map-region-editing.md](references/map-region-editing.md));
 - one random-encounter entry on an existing map ([map-encounters.md](references/map-encounters.md));
 - append-only inert key items ([key-item-append.md](references/key-item-append.md));
-- one template-clone append of an actor, enemy, skill, state, weapon, armor, usable item or troop (blank battle page, 1..8 existing enemies) with whitelisted overrides (including bounded effects for skills/items, features for weapons/armors/states/enemies, and enemy action patterns and drop items), or one class skill learning ([database-append.md](references/database-append.md));
+- one template-clone append of an actor, class, enemy, skill, state, weapon, armor, usable item or troop (blank battle page, 1..8 existing enemies) with whitelisted overrides (including bounded effects for skills/items, features for weapons/armors/states/enemies, and enemy action patterns and drop items), or one class skill learning ([database-append.md](references/database-append.md));
 - one script slot before canonical Main ([script-slot-insertion.md](references/script-slot-insertion.md), [script-byte-fidelity.md](references/script-byte-fidelity.md));
 - ordinary upper-layer B-E tile painting ([upper-tile-painting.md](references/upper-tile-painting.md));
 - one blank event from an existing schema donor, or one stationary literal-dialogue event, per map ([map-event-creation.md](references/map-event-creation.md)) with optional character graphic ([character-event-graphics.md](references/character-event-graphics.md));

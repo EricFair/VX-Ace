@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v1.27
+# RPG Maker VX Ace Developer — v1.28
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -42,7 +42,7 @@ Each operation is a narrow, separately evidenced subset with exact native guards
 | One random-encounter entry (troop, weight, regions, optional step) | [encounters](references/map-encounters.md) |
 | Upper-layer scenery tiles | [upper tiles](references/upper-tile-painting.md) |
 | Inert key items | [key items](references/key-item-append.md) |
-| Actors, enemies, skills, states, weapons, armors, usable items, troops (template clone + whitelisted overrides, bounded effects and features, enemy action patterns and drops) | [database append](references/database-append.md) |
+| Actors, classes, enemies, skills, states, weapons, armors, usable items, troops (template clone + whitelisted overrides, bounded effects and features, enemy action patterns and drops) | [database append](references/database-append.md) |
 | One class skill learning (existing skill, level) | [database append](references/database-append.md) |
 | One script slot before canonical Main | [script slots](references/script-slot-insertion.md) |
 | Blank events (schema donor) and stationary dialogue events, optionally with character graphics | [map events](references/map-event-creation.md), [graphics](references/character-event-graphics.md) |
