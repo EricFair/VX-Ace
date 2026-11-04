@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v1.32
+# RPG Maker VX Ace Developer — v1.33
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -54,6 +54,7 @@ Each operation is a narrow, separately evidenced subset with exact native guards
 | Common events (call-only or switch-gated parallel) with the same command language | [common events](references/common-event-append.md) |
 | NPC movement (random, approach, custom routes), touch/parallel triggers, one-time step-on triggers, Set Move Route and Erase Event | [touch triggers](references/touch-triggers.md), [staged events](references/staged-events.md) |
 | Readable generated maps: border walls, paths and landmarks with stock-tileset presets; reachability warnings | [map layouts](references/map-layouts.md) |
+| Visible shopkeepers, inns that heal, one-time map intros; Shop Processing and Recover All in event pages | [shops and inns](references/shops-and-inns.md), [intros](references/intros.md) |
 | Map monsters that start battle on touch (`add_monster`); sprite events default to same priority (collide) | [monsters](references/monsters.md) |
 | Treasure chests (gold, item, weapon or armor; closed/opened pages with the RTP chest graphic) | [treasure chests](references/treasure-chests.md) |
 | Starting party, start position, game title, currency, menu terms, switch and variable names | [system fields](references/system-fields.md) |

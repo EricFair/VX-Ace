@@ -5,6 +5,7 @@ Staged event pages can start from a touch instead of the action button, can walk
 - Page `trigger`: `action` (default), `player_touch`, `event_touch`, `parallel` (needs a `wait`). Autorun stays refused. See [staged events](staged-events.md#triggers).
 - Page `move`: `fixed`, `random`, `approach` or a bounded `custom` route. See [staged events](staged-events.md#move-routes).
 - Commands `{"erase_event": true}` and `{"move_route": {...}}` (staged pages and [common events](common-event-append.md); `erase_event` and `this` routes are refused in a common event).
+- A parallel, run-once variant ("run this once on map entry") is the `add_intro` macro, see [intros](intros.md).
 - The `add_touch_trigger` [recipe](recipes.md) macro: a one-time (or repeatable) step-on trigger.
 - The `add_monster` macro (v1.30): a visible monster that starts a battle on touch. See [monsters](monsters.md).
 

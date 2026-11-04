@@ -462,7 +462,7 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
             from vxace_staged_commands import graphic_names
             if graphic_names(mutation['pages']):rec['map_event']['page_assets']=mutation['expected_assets']
         else:rec['map_event']['text']=mutation['text']
-        if 'graphic' in mutation:rec['map_event'].update(graphic=mutation['graphic'],asset=mutation['expected_asset'])
+        if 'graphic' in mutation:rec['map_event'].update(graphic=mutation['graphic'],asset=mutation['expected_asset'],**({'options':mutation['options']} if 'options' in mutation else {}))
     if change['kind']=='common_event':
         from vxace_common_event_append import IVAR_ORDER
         created=load(target)[0][-1]

@@ -12,7 +12,7 @@ from vxace_map_regions import integer, table_for
 from vxace_staged_commands import (commands_shape, staged_ids as _staged_ids, ref_fields, check_references, native_rows, structure_check, reference_snapshot, graphic_names,
                                    iter_ops, route_shape, plain_route, native_route, PAGE_TRIGGERS, TOUCH_TRIGGERS, MOVE_TYPES)
 
-VERSION = '1.32.0'
+VERSION = '1.33.0'
 FIELDS = {'action','template_id','new_id','name','x','y','text',
           'expected_map_sha256','expected_template_sha256'}
 BLANK_FIELDS = {'action','donor_event_id','new_id','name','x','y','expected_map_sha256','expected_donor_sha256'}
@@ -212,11 +212,12 @@ def schema(mutation):
         if not BLANK_FIELDS<=set(mutation)<=BLANK_FIELDS|BLANK_OPTIONAL:raise ValueError('Exact append_blank_event schema required')
         if 'donor_map_id' in mutation:integer(mutation['donor_map_id'],'donor map ID',1,999)
         return
-    if not isinstance(mutation,dict) or set(mutation) not in (FIELDS,FIELDS|{'graphic','expected_asset'}) or mutation.get('action')!='append_dialogue_event':
-        raise ValueError('Exact append_dialogue_event schema required; optional graphic and expected_asset must appear together')
+    if not isinstance(mutation,dict) or set(mutation) not in (FIELDS,FIELDS|{'graphic','expected_asset'},FIELDS|{'graphic','expected_asset','options'}) or mutation.get('action')!='append_dialogue_event':
+        raise ValueError('Exact append_dialogue_event schema required; optional graphic and expected_asset must appear together, and options (v1.33) only with them')
     if 'graphic' in mutation:
         from vxace_character_graphics import graphic_schema
         graphic_schema(mutation['graphic'])
+    if 'options' in mutation:page_options_shape(mutation['options'])
 
 
 def digest(value):
@@ -256,7 +257,8 @@ def events_for(root):
     return events
 
 
-def template(root,template_id,blank_list=True):
+def template(root,template_id,blank_list=True,allow_graphic=False):
+    """Validate the one-page stationary action-button event. `allow_graphic` (v1.33, shop append) also accepts a character graphic (tile_id 0, any name)."""
     from vxace_python_mutator import RubyString
     events=events_for(root);integer(template_id,'template event ID',1,999)
     selected=next((event for key,event in events.pairs if key==template_id),None)
@@ -281,8 +283,9 @@ def template(root,template_id,blank_list=True):
     if not isinstance(ch,RubyString) or ch.ivars not in ({},{'E':True},{'E':False}) or ch.data not in (b'A',b'B',b'C',b'D'):raise ValueError('Native self-switch letter required')
     graphic=exact(page.get('graphic'),'RPG::Event::Page::Graphic',GRAPHIC_FIELDS)
     empty=graphic.get('character_name')
-    if type(graphic.get('tile_id')) is not int or graphic.get('tile_id')!=0 or not isinstance(empty,RubyString) or empty.data or empty.ivars not in ({},{'E':True},{'E':False}):
+    if type(graphic.get('tile_id')) is not int or graphic.get('tile_id')!=0 or not isinstance(empty,RubyString) or (empty.data and not allow_graphic) or empty.ivars not in ({},{'E':True},{'E':False}):
         raise ValueError('Only blank native graphics are enabled for new dialogue events')
+    if allow_graphic and empty.data:empty.data.decode('utf-8','strict')
     integer(graphic.get('character_index'),'character index',0,7);integer(graphic.get('pattern'),'pattern',0,2)
     if type(graphic.get('direction')) is not int or graphic.get('direction') not in (2,4,6,8):raise ValueError('Native graphic direction required')
     route=exact(page.get('move_route'),'RPG::MoveRoute',{'repeat','skippable','wait','list'})
@@ -420,7 +423,14 @@ def new_event(root,mutation,project=None,rtp=None):
     event.get('pages')[0].set('list',[command(101,[RubyString(b'',{'E':True}),0,0,2])]+[command(401,[RubyString(line.encode('utf-8'),{'E':True})]) for line in lines]+[command(0,[])])
     if 'graphic' in mutation:
         from vxace_character_graphics import set_graphic
-        set_graphic(event.get('pages')[0],mutation['graphic'],mutation['expected_asset'],project,rtp)
+        page=event.get('pages')[0]
+        set_graphic(page,mutation['graphic'],mutation['expected_asset'],project,rtp)
+        # v1.33: a dialogue event with a character graphic defaults to Same as Characters (as a staged page does since v1.30), so the player bumps into it;
+        # the options may set walk_anime, step_anime, direction_fix, through and an explicit priority. A graphic-less dialogue event keeps the template's page.
+        options=mutation.get('options',{})
+        for key in OPTION_FLAGS:
+            if key in options:page.set(key,options[key])
+        page.set('priority_type',PRIORITIES[options.get('priority','same')])
     return event
 
 

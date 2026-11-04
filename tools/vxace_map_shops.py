@@ -22,7 +22,7 @@ HASH_FIELD = {'item': 'expected_items_sha256', 'weapon': 'expected_weapons_sha25
 MAX_GOODS = 32
 MAX_PRICE = 9999999
 LIMITS = ['One Shop Processing block (302 plus 605 rows) inserted before the terminator of an existing exact blank or single-literal-dialogue, '
-          'one-page, stationary, unconditional action-button map event with a blank graphic.',
+          'one-page, stationary, unconditional action-button map event; a single-dialogue event may carry a character graphic (v1.33, its priority is not changed), a blank one may not.',
           'Goods come from the static Items/Weapons/Armors arrays, which are read-only; no price/stock/shop-sprite editing, no variable shops.',
           'Prices are the native database price (price_type 0) or a constant 0..9999999; custom shop scenes/scripts can change what is shown.',
           'System/version advances so default older saves reload the edited map; custom loaders need separate review.']
@@ -130,7 +130,7 @@ def event_shape(root, event_id):
     if len(commands) == 1:
         template(root, event_id)
         return event, 'blank', []
-    template(root, event_id, blank_list=False)
+    template(root, event_id, blank_list=False, allow_graphic=True)
     head = exact(commands[0], 'RPG::EventCommand', {'code', 'indent', 'parameters'})
     header = head.get('parameters')
     if type(head.get('code')) is not int or head.get('code') != 101 or type(head.get('indent')) is not int or head.get('indent') != 0 \

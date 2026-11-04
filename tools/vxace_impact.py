@@ -792,7 +792,7 @@ def map_event_impact(index,change):
         pages=mutation['pages'];staged_ids(pages,len(system['switches']),len(system['variables']));index_check(data.json,pages)
         rows,warnings=staged_page_report(pages,system['switches'],system['variables'])
         def goods_name(kind,number):
-            table={'item':'items','weapon':'weapons','armor':'armors'}[kind]
+            table={'item':'items','weapon':'weapons','armor':'armors','actor':'actors'}[kind]
             try:rows_=data.json('database/'+table+'.json')
             except Exception:return None
             row=rows_[number] if isinstance(rows_,list) and 0<=number<len(rows_) else None
@@ -815,13 +815,18 @@ def map_event_impact(index,change):
                     gives.append(f'{op["amount"]} x {kind} {op[kind]}'+(f' "{label}"' if label else ' (unnamed)'))
             chests.append({**chest,'description':f'Treasure chest: page {chest["page"]} gives '+', '.join(gives)+f' and turns self switch {chest["self_switch"]} ON; page {chest["opened_page"]} (self switch {chest["self_switch"]}) is the opened chest.'})
         graphics=[{'page':number,'graphic':page.get('graphic'),'options':page.get('options')} for number,page in enumerate(pages,1) if page.get('graphic') or page.get('options')]
-        staged_report={'page_count':len(pages),'pages':rows,'chests':chests,'monsters':monsters,'graphic_changes':graphics,'priority_note':'The engine runs the highest-numbered page whose conditions are all met; verify the page order against the quest state machine.',
+        from vxace_staged_commands import extra_descriptions
+        unit=system.get('currency_unit') if isinstance(system.get('currency_unit'),str) and system.get('currency_unit') else 'G'
+        described=[{'page':number,'description':line} for number,page in enumerate(pages,1) for line in extra_descriptions(page['commands'],goods_name,unit)]   # v1.33 shop / recover_all
+        staged_report={'page_count':len(pages),'pages':rows,'chests':chests,'monsters':monsters,'graphic_changes':graphics,'command_descriptions':described,'priority_note':'The engine runs the highest-numbered page whose conditions are all met; verify the page order against the quest state machine.',
                        'warnings':warnings}
-    reach=[] if blank else reachability_warnings(data,mid,native,x,y,name,mutation['pages'] if staged else None,template_id)
+    dialogue_page=[{'graphic':mutation['graphic'],'options':mutation.get('options')}] if not blank and not staged and 'graphic' in mutation else None   # v1.33: priority defaults to same
+    reach=[] if blank else reachability_warnings(data,mid,native,x,y,name,mutation['pages'] if staged else dialogue_page,template_id)
     data.unchanged()
     return {'kind':'map_event','severity':'high','target':{'map_id':mid,'new_id':identifier,'name':name,'x':x,'y':y,('donor_event_id' if blank else 'template_id'):template_id},
             **({'warnings':reach} if reach else {}),
             **({'staged':staged_report} if staged_report else {}),'literal_dialogue':lines,'event_consumer_mentions':mentions,'proposed_graphic':mutation.get('graphic'),
+            **({'proposed_options':mutation.get('options'),'priority':(mutation.get('options') or {}).get('priority','same')} if 'graphic' in mutation else {}),
             'limitations':['Native exact template/map/schema preservation gates are enforced separately by the Python copy chain.',
                           'An appended static ID can collide with runtime-created events or pre-existing orphan self-switch/save state.',
                           'Literal consumers miss dynamic ownership; inspect custom map/save hooks and action-button accessibility.',
@@ -867,6 +872,8 @@ def common_event_impact(index,change):
         if kind in ('switch','variable'):
             names=system.get({'switch':'switches','variable':'variables'}[kind]);value=names[number] if isinstance(names,list) and 0<=number<len(names) else None
             return value if isinstance(value,str) and value else None
+        if kind=='currency':
+            value=system.get('currency_unit');return value if isinstance(value,str) and value else None
         if kind=='map':
             infos=table('database/map-infos.json');row=infos.get(str(number)) if isinstance(infos,dict) else None
             return row.get('name') if isinstance(row,dict) and row.get('name') else None

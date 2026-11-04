@@ -11,7 +11,7 @@ from pathlib import Path
 import sys
 from vxace_index_query import execute, unlinked
 from vxace_staged_commands import (commands_shape, iter_ops, staged_ids, ref_fields, check_references, native_rows, structure_check,
-                                   reference_snapshot, check_text, sha_text, plain_int, describe_route, command_notes)
+                                   reference_snapshot, check_text, sha_text, plain_int, describe_route, command_notes, describe_shop, describe_recover)
 
 VERSION = '1.21.0'
 ACTION = 'append_common_event'
@@ -259,6 +259,12 @@ def describe(commands, lookup, depth=0):
             lines.append(pad + f'Wait {op["wait"]} frames')
         elif 'erase_event' in op:
             lines.append(pad + 'Erase this event (temporary until the map is reloaded)')
+        elif 'shop' in op:
+            try:unit = lookup('currency', 0) or 'G'
+            except Exception:unit = 'G'
+            lines.append(pad + describe_shop(op['shop'], lookup, unit))
+        elif 'recover_all' in op:
+            lines.append(pad + describe_recover(op['recover_all'], lookup))
         elif 'move_route' in op:
             spec = op['move_route']
             flags = [text for flag, text, default in (('repeat', 'repeating', False), ('skippable', 'skips blocked steps', False), ('wait', 'waits until it finishes', True)) if spec.get(flag, default)]

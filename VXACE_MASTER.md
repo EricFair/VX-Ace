@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v1.32.0
+# VX Ace Masterfile — v1.33.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -53,6 +53,8 @@ v1.30 makes staged pages with a character graphic default to priority same (they
 v1.31 adds a `layout` option for fresh maps and `add_area` ([map layouts](references/map-layouts.md)): A5 floor, impassable border wall, visible paths from the anchor, B-E landmarks, stock-tileset presets, and plan/impact reachability warnings for placed events.
 
 v1.32 adds `features_add`/`features_remove` and a HIT guard for features overrides, a `set_fields` recipe step (guarded `edit_database_entry` on existing entries), switch/variable names in `set_system_fields`, and hit/evasion in the balance analysis.
+
+v1.33 adds Shop Processing and Recover All to the shared command language, graphics on dialogue events, and the `add_shopkeeper`, `add_inn` and `add_intro` recipe macros.
 
 v1.4.1 corrects static passage observations in the [ordinary upper-tile snapshot](references/upper-tile-painting.md). Recreate previous snapshots; the native uppermost non-star tile now takes priority over lower flags. Mutation capabilities and copy safety gates remain as documented.
 

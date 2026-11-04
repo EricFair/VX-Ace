@@ -2,6 +2,22 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.33.0 — Shops, inns and intros
+
+- **New commands:** Shop Processing (302/605, the same rows as `add_shop` and the editor) and Recover All (314) are now available in event pages and common events.
+- **Dialogue graphics:** dialogue events can have a graphic, and then default to priority same.
+- **New macros:**
+  - `add_shopkeeper`: a visible NPC that is the shop. It can stay closed until a condition is met.
+  - `add_inn`: the player pays, and the party is fully healed.
+  - `add_intro`: runs once on map entry, as a bounded stand-in for autorun.
+- **Checked on the test project:** a new test map (Test: v1.33 Market) showed the following in the engine:
+  - the grocer was solid and opened its shop;
+  - the smith stayed closed until variable 20 was set, then sold;
+  - the inn took 10 G and healed a party member at 1 HP to full;
+  - the intro waited its 45 frames, ran once and switched itself off.
+
+  See [shops and inns](references/shops-and-inns.md) and [intros](references/intros.md).
+
 ## 1.32.0 — Tool hazards fixed
 
 - **Features overrides:** `features_add` and `features_remove` change single rows without retyping the template. A full replacement that drops the HIT row is refused (enemies, classes, and actors whose class lacks HIT) unless `allow_drop_hit` is set. Dropped template rows are listed as a warning.

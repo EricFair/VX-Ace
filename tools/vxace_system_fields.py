@@ -14,7 +14,7 @@ from pathlib import Path
 from vxace_index_query import execute, unlinked
 from vxace_staged_commands import check_text, plain_int, sha_text, load_array, load_mapinfos, load_map_size
 
-VERSION = '1.32.0'
+VERSION = '1.33.0'
 ACTION = 'set_system_fields'
 FIELDS = ('game_title', 'currency_unit', 'party_members', 'start', 'terms', 'switch_names', 'variable_names')
 NAME_FIELDS = {'switch_names': 'switches', 'variable_names': 'variables'}

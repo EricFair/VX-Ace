@@ -1,6 +1,6 @@
 # Guarded common event append — v1.21
 
-`append_common_event` appends **one new `RPG::CommonEvent`** to `Data/CommonEvents.rvdata2` at the next id. The command list uses the same bounded command language as [staged events](staged-events.md) (text, switches, variables, choices, if/else, battle, party, common event call, gold, item, weapon, armor, transfer, wait, and since v1.25 a player move route; `erase_event` and `this` routes are refused here); the language is reused from `tools/vxace_staged_commands.py`, not copied. The new event is either **call-only** (run by a Call Common Event command or an item/skill effect 44) or a **parallel process** gated by a switch. Autorun is refused: it has no termination proof.
+`append_common_event` appends **one new `RPG::CommonEvent`** to `Data/CommonEvents.rvdata2` at the next id. The command list uses the same bounded command language as [staged events](staged-events.md) (text, switches, variables, choices, if/else, battle, party, common event call, gold, item, weapon, armor, transfer, wait, since v1.25 a player move route, and since v1.33 `shop` and `recover_all`; `erase_event` and `this` routes are refused here); the language is reused from `tools/vxace_staged_commands.py`, not copied. The new event is either **call-only** (run by a Call Common Event command or an item/skill effect 44) or a **parallel process** gated by a switch. Autorun is refused: it has no termination proof.
 
 It is a copy-only operation on its own change kind, `common_event`. Python backend, mandatory re-indexing, one common event per transaction (the transaction holds exactly one change); the Ruby backend and `--no-reindex` are refused. Only `CommonEvents.rvdata2` changes. System and every referenced database are read only.
 
@@ -62,6 +62,7 @@ Each `RPG::EventCommand` has its ivars in the editor order `@indent`, `@code`, `
 - **Self switches are refused.** `set_self_switch` and the `self_switch` condition need an owning map event, which a common event does not have.
 - **`erase_event` is refused.** `214` erases the event that runs it (`Game_Interpreter#command_214` does nothing without an event id), and a common event has no owning event.
 - **`move_route` with `"target": "this"` is refused** for the same reason. `"target": "player"` is allowed (`205 [-1, RPG::MoveRoute]` plus the `505` lines, see [Move routes](staged-events.md#move-routes)); `repeat: true` with `wait: true` is refused everywhere because it would stall the interpreter forever.
+- **`shop` and `recover_all` are allowed (v1.33).** `shop` is `302`/`605` rows ([staged events](staged-events.md#shop-and-recover-all-v133), [shops and inns](shops-and-inns.md)): a common event that opens a shop is the way to share one shop between several events, or to sell from an item/skill effect 44. The shop is skipped in battle, so a common event called from a battle does nothing there, and the commands after the shop run when it closes. `recover_all` is `314 [0, 0]` (party) or `314 [0, actor]`; an actor id needs `expected_actors_sha256`, the goods need the items/weapons/armors hashes they use. A common event with `recover_all` is the reusable "heal the party" step (an inn, a spring, a save point).
 - **No call to the new id.** A `common_event` command whose id equals `new_id` is refused (direct recursion). Calls to other existing common events are allowed and are checked against the **pre-append** array.
 
 ### Referenced databases
@@ -145,7 +146,7 @@ Keys: `name`, `trigger`, `commands`, and `switch_id` for `parallel` only. Inside
 
 ## Limits
 
-- No autorun, no self switches, no erase_event, no event move routes (player routes only), no scripts, loops, labels, jumps, shops, variable operands or variable transfer destinations; the staged command language limits apply (depth 4, 40 operations per list, 200 generated commands).
+- No autorun, no self switches, no erase_event, no event move routes (player routes only), no scripts, loops, labels, jumps, variable operands or variable transfer destinations; the staged command language limits apply (depth 4, 40 operations per list, 200 generated commands).
 - A parallel process has no termination proof. It needs a `wait` and a switch, but whether it ever stops depends on when the switch is turned OFF.
 - Nothing calls the new event: wire it from an event, an item/skill effect 44, another common event or a script. The append never edits an existing event, item, skill or map.
 - A new static id can collide with runtime-created or custom-indexed common events, and existing events that already call the id will start running it (the impact report names those common events).

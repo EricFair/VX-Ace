@@ -20,7 +20,7 @@ from vxace_database_append import LIST_TABLES, DROP_TABLES, ref_field, required_
 from vxace_index_query import unlinked
 import vxace_adopt as adopt
 
-VERSION = '1.32.0'
+VERSION = '1.33.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -30,7 +30,7 @@ STEP_KEYS = {
     'append_key_item': ({'type', 'template_item', 'name', 'description'}, {'type', 'template_item', 'name', 'description'}),
     'append_learning': ({'type', 'class_id', 'skill_id', 'level'}, {'type', 'class_id', 'skill_id', 'level'}),
     'append_encounter': ({'type', 'map_id', 'troop_id', 'weight'}, {'type', 'map_id', 'troop_id', 'weight', 'region_ids', 'encounter_step'}),
-    'append_dialogue_event': ({'type', 'map_id', 'template_event', 'x', 'y', 'name', 'lines'}, {'type', 'map_id', 'template_event', 'x', 'y', 'name', 'lines'}),
+    'append_dialogue_event': ({'type', 'map_id', 'template_event', 'x', 'y', 'name', 'lines'}, {'type', 'map_id', 'template_event', 'x', 'y', 'name', 'lines', 'graphic', 'options'}),
     'append_staged_event': ({'type', 'map_id', 'template_event', 'x', 'y', 'name', 'pages'}, {'type', 'map_id', 'template_event', 'x', 'y', 'name', 'pages'}),
     'append_common_event': ({'type', 'name', 'trigger', 'commands'}, {'type', 'name', 'trigger', 'commands', 'switch_id'}),
     'append_blank_event': ({'type', 'map_id', 'donor_event', 'x', 'y'}, {'type', 'map_id', 'donor_event', 'x', 'y', 'name', 'donor_map_id'}),
@@ -44,6 +44,12 @@ STEP_KEYS = {
     'add_monster': ({'type', 'map_id', 'x', 'y', 'name', 'troop', 'graphic'},
                     {'type', 'map_id', 'x', 'y', 'name', 'troop', 'graphic', 'move', 'can_escape', 'can_lose', 'intro_text', 'win', 'escape', 'lose', 'condition', 'respawn',
                      'template_event', 'donor_event', 'blank_x', 'blank_y'}),
+    'add_shopkeeper': ({'type', 'map_id', 'x', 'y', 'name', 'graphic', 'lines', 'goods', 'purchase_only'},
+                       {'type', 'map_id', 'x', 'y', 'name', 'graphic', 'lines', 'goods', 'purchase_only', 'condition', 'closed_lines', 'template_event', 'donor_event', 'blank_x', 'blank_y'}),
+    'add_inn': ({'type', 'map_id', 'x', 'y', 'name', 'graphic', 'price'},
+                {'type', 'map_id', 'x', 'y', 'name', 'graphic', 'price', 'lines', 'wait', 'template_event', 'donor_event', 'blank_x', 'blank_y'}),
+    'add_intro': ({'type', 'map_id', 'x', 'y', 'name', 'commands'},
+                  {'type', 'map_id', 'x', 'y', 'name', 'commands', 'wait', 'template_event', 'donor_event', 'blank_x', 'blank_y'}),
     'add_shop': ({'type', 'map_id', 'event_id', 'goods', 'purchase_only'}, {'type', 'map_id', 'event_id', 'goods', 'purchase_only'}),
     'insert_script': ({'type', 'name', 'source_file'}, {'type', 'name', 'source_file'}),
     'set_map_display_name': ({'type', 'map_id', 'name'}, {'type', 'map_id', 'name'}),
@@ -176,26 +182,34 @@ def contains_ref_key(value):
     return False
 
 
-def shadow_command_refs(ops, number, steps):
-    """Check every allowed {"from_step": k} in staged commands (battle troop, item / has_item id, common_event id) and replace it with 0."""
+def shadow_command_refs(ops, number, steps, stand_in=0):
+    """Check every allowed {"from_step": k} in staged commands (battle troop, item / has_item id, common_event id, shop goods, recover_all actor) and replace it with `stand_in`."""
     for op in ops:
         if is_ref(op.get('battle')):
             check_ref(op['battle'], number, steps, 'troops', 'battle troop_id')
-            op['battle'] = 0
+            op['battle'] = stand_in
         if isinstance(op.get('transfer'), dict) and is_ref(op['transfer'].get('map_id')):
             check_ref(op['transfer']['map_id'], number, steps, 'maps', 'transfer map_id')
-            op['transfer']['map_id'] = 0
+            op['transfer']['map_id'] = stand_in
         if is_ref(op.get('common_event')):
             check_ref(op['common_event'], number, steps, 'common_events', 'common_event id')
-            op['common_event'] = 0
+            op['common_event'] = stand_in
         if 'party' in op and is_ref(op.get('actor')):
             check_ref(op['actor'], number, steps, 'actors', 'party actor')
-            op['actor'] = 0
+            op['actor'] = stand_in
+        if is_ref(op.get('recover_all')):
+            check_ref(op['recover_all'], number, steps, 'actors', 'recover_all actor')
+            op['recover_all'] = stand_in or 1
+        if isinstance(op.get('shop'), dict) and isinstance(op['shop'].get('goods'), list):
+            for position, good in enumerate(op['shop']['goods']):
+                if isinstance(good, dict) and is_ref(good.get('id')) and isinstance(good.get('type'), str) and good['type'] in GOODS_TABLE:
+                    check_goods_ref(good['id'], number, steps, good['type'])
+                    good['id'] = position + 1       # distinct stand-in id so the duplicate check still works on the shadow copy
         for holder, key, goods in ((op, 'item', 'item'), (op['if'] if isinstance(op.get('if'), dict) else {}, 'has_item', 'item'),
                                    (op, 'weapon', 'weapon'), (op, 'armor', 'armor')):
             if is_ref(holder.get(key)):
                 check_goods_ref(holder[key], number, steps, goods)
-                holder[key] = 0
+                holder[key] = stand_in
 
 
 CHEST_KINDS = ('item', 'weapon', 'armor')
@@ -345,6 +359,111 @@ def validate_monster(step, number, steps):
         staged_shape(expand_monster(shadow, None)[1]['pages'])
     except ValueError as error:
         raise RecipeError(f'step {number}: {error}')
+
+
+def check_lines(value, number, where, high=4):
+    """1..high literal text lines (the same text rules as a staged `text` command)."""
+    from vxace_staged_commands import check_text
+    if not isinstance(value, list) or not 1 <= len(value) <= high:
+        raise RecipeError(f'step {number}: {where} must be a list of 1..{high} literal lines')
+    try:
+        if not any([check_text(line, where + ' line', 500, True) for line in value]):
+            raise ValueError(where + ' must contain text')
+    except ValueError as error:
+        raise RecipeError(f'step {number}: {where}: {error}')
+
+
+def check_graphic(graphic, number, where='graphic'):
+    from vxace_character_graphics import graphic_schema
+    try:
+        graphic_schema(graphic)
+    except ValueError as error:
+        raise RecipeError(f'step {number}: {where}: {error}')
+
+
+def check_expansion(builder, shadow, number):
+    """Build a macro's expansion from the (reference-free) shadow step and run the staged-page validator on it, so every page rule applies."""
+    from vxace_map_events import staged_shape
+    try:
+        staged_shape(builder(shadow, None)[1]['pages'])
+    except ValueError as error:
+        raise RecipeError(f'step {number}: {error}')
+
+
+def shadow_of(step):
+    """Deep copy of a macro step with the map and template references replaced by 0."""
+    shadow = strip_map_ref(copymod.deepcopy(step))
+    if is_ref(shadow.get('template_event')):
+        shadow['template_event'] = 0
+    return shadow
+
+
+def validate_shopkeeper(step, number, steps):
+    """Structural rules of the add_shopkeeper macro: placement, a graphic, greeting lines, shop goods (ids may be {"from_step": k}), purchase_only and the
+    optional page condition with optional closed_lines. The expansion is checked with the staged-page validator."""
+    validate_placement(step, number, steps)
+    check_graphic(step['graphic'], number)
+    check_lines(step['lines'], number, 'lines')
+    if type(step['purchase_only']) is not bool:
+        raise RecipeError(f'step {number}: purchase_only must be a boolean')
+    goods = step['goods']
+    if not isinstance(goods, list) or not 1 <= len(goods) <= 32:
+        raise RecipeError(f'step {number}: goods must be a list of 1..32 entries')
+    for good in goods:
+        if not isinstance(good, dict) or set(good) != {'type', 'id', 'price'} or not isinstance(good['type'], str) or good['type'] not in GOODS_TABLE:
+            raise RecipeError(f'step {number}: each good needs exactly type (item/weapon/armor), id and price')
+        if is_ref(good['id']):
+            check_goods_ref(good['id'], number, steps, good['type'])
+    if 'condition' in step and not isinstance(step['condition'], dict):
+        raise RecipeError(f'step {number}: condition must be an object (switch1, switch2, variable or self_switch)')
+    if 'closed_lines' in step:
+        if not step.get('condition'):
+            raise RecipeError(f'step {number}: closed_lines needs a non-empty condition (the shop page is the conditional page 2)')
+        check_lines(step['closed_lines'], number, 'closed_lines')
+    shadow = shadow_of(step)
+    for position, good in enumerate(shadow['goods']):
+        if is_ref(good['id']):
+            good['id'] = position + 1
+    if contains_ref_key(shadow):
+        raise RecipeError(f'step {number}: from_step is only allowed for map_id, template_event and the goods ids')
+    check_expansion(expand_shopkeeper, shadow, number)
+
+
+def validate_inn(step, number, steps):
+    """Structural rules of the add_inn macro: placement, a graphic, a price, optional greeting lines (1..3) and an optional wait."""
+    validate_placement(step, number, steps)
+    check_graphic(step['graphic'], number)
+    if not is_int(step['price']) or not 1 <= step['price'] <= 99999999:
+        raise RecipeError(f'step {number}: price must be an integer 1..99999999')
+    if 'lines' in step:
+        check_lines(step['lines'], number, 'lines', 3)
+    if 'wait' in step and (not is_int(step['wait']) or not 1 <= step['wait'] <= 999):
+        raise RecipeError(f'step {number}: wait must be an integer 1..999')
+    shadow = shadow_of(step)
+    if contains_ref_key(shadow):
+        raise RecipeError(f'step {number}: from_step is only allowed for map_id and template_event')
+    check_expansion(expand_inn, shadow, number)
+
+
+INTRO_WAIT = 10
+
+
+def validate_intro(step, number, steps):
+    """Structural rules of the add_intro macro: placement plus 1..38 commands (a wait and the self-switch command are added around them). A transfer is
+    refused: it replaces the map, so the self-switch command after it would never run and the intro would repeat on every entry."""
+    from vxace_staged_commands import iter_ops
+    validate_placement(step, number, steps)
+    if not isinstance(step['commands'], list) or not 1 <= len(step['commands']) <= 38:
+        raise RecipeError(f'step {number}: commands must be a list of 1..38 operations (a wait and the self-switch command are added)')
+    if 'wait' in step and (not is_int(step['wait']) or not 1 <= step['wait'] <= 999):
+        raise RecipeError(f'step {number}: wait must be an integer 1..999')
+    shadow = shadow_of(step)
+    shadow_command_refs(iter_ops(shadow['commands']), number, steps, 1)
+    if any('transfer' in op for op in iter_ops(shadow['commands'])):
+        raise RecipeError(f'step {number}: transfer is refused in add_intro: it replaces the map, so the intro would never reach its self-switch command and would run again on every entry')
+    if contains_ref_key({**{k: v for k, v in shadow.items() if k != 'commands'}, 'commands': shadow['commands']}):
+        raise RecipeError(f'step {number}: from_step is only allowed for map_id, template_event, battle troop ids, item/weapon/armor ids and common event ids in commands')
+    check_expansion(expand_intro, shadow, number)
 
 
 BLANK_MAP_LIMITS = {'width': (17, 500), 'height': (13, 500), 'tileset_id': (1, 999), 'parent_id': (0, 999), 'fill_floor': (0, 127)}
@@ -618,8 +737,24 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: name must be a string of 1..100 characters')
             if not isinstance(step['lines'], list) or not 1 <= len(step['lines']) <= 4 or not all(isinstance(line, str) for line in step['lines']):
                 raise RecipeError(f'step {number}: lines must be a list of 1..4 strings')
+            if 'graphic' in step:
+                check_graphic(step['graphic'], number)
+            if 'options' in step:
+                from vxace_map_events import page_options_shape
+                if 'graphic' not in step:
+                    raise RecipeError(f'step {number}: options need a graphic')
+                try:
+                    page_options_shape(step['options'])
+                except ValueError as error:
+                    raise RecipeError(f'step {number}: options: {error}')
             if contains_ref_key({k: v for k, v in step.items() if k not in ('template_event', 'map_id')}):
                 raise RecipeError(f'step {number}: from_step is only allowed for map_id and template_event')
+        elif kind == 'add_shopkeeper':
+            validate_shopkeeper(step, number, steps)
+        elif kind == 'add_inn':
+            validate_inn(step, number, steps)
+        elif kind == 'add_intro':
+            validate_intro(step, number, steps)
         elif kind == 'append_staged_event':
             check_map_id(step['map_id'], number, steps)
             if is_ref(step['template_event']):
@@ -740,7 +875,7 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: csv must be a non-empty string')
             if 'allow_shorter' in step and type(step['allow_shorter']) is not bool:
                 raise RecipeError(f'step {number}: allow_shorter must be a boolean')
-        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest', 'add_touch_trigger', 'add_monster', 'set_system_fields', 'add_area', 'set_fields') \
+        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest', 'add_touch_trigger', 'add_monster', 'add_shopkeeper', 'add_inn', 'add_intro', 'set_system_fields', 'add_area', 'set_fields') \
                 and contains_ref_key(strip_map_ref(step)):
             raise RecipeError(f'step {number}: from_step is not allowed in a {kind} step')
         if kind == 'append_encounter' and contains_ref_key({k: v for k, v in step.items() if k not in ('troop_id', 'map_id')}):
@@ -856,6 +991,13 @@ def build_spec(title, number, step, snapshot, source=None):
                   'mutation': {'action': 'append_dialogue_event', 'template_id': step['template_event'], 'new_id': snapshot['next_event_id'],
                                'name': step['name'], 'x': step['x'], 'y': step['y'], 'text': step['lines'],
                                'expected_map_sha256': snapshot['map_sha256'], 'expected_template_sha256': snapshot['template_sha256']}}
+        if 'graphic' in step:
+            # v1.33: the graphic and its asset binding come only from the snapshot (which was taken for exactly this graphic)
+            if snapshot.get('proposed_graphic') != step['graphic'] or not isinstance(snapshot.get('asset'), dict):
+                raise RecipeError('snapshot lacks the character sheet binding of the dialogue graphic')
+            change['mutation'].update(graphic=snapshot['proposed_graphic'], expected_asset=snapshot['asset'])
+            if 'options' in step:
+                change['mutation']['options'] = step['options']
     elif kind == 'append_staged_event':
         change = {'kind': 'map_event', 'locator': {'map_id': step['map_id']},
                   'proposal': f'Recipe step {number}: append one {len(step["pages"])}-page staged event "{step["name"]}" to map {step["map_id"]}.',
@@ -1195,8 +1337,12 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
                 script, args, name = ('vxace_database_entries.py', [index, '--project', source, '--table', 'classes', '--class-id', resolved['class_id']],
                                       'item-entry-snapshot')
             elif kind == 'append_dialogue_event':
+                graphic = resolved.get('graphic')
                 script, args, name = ('vxace_map_events.py', [index, '--project', source, '--map', resolved['map_id'],
-                                                              '--template-event', resolved['template_event']], 'map-event-snapshot')
+                                                              '--template-event', resolved['template_event'],
+                                                              *(['--character', graphic['character_name'], '--character-index', graphic['character_index'],
+                                                                 '--direction', graphic['direction'], '--pattern', graphic['pattern'],
+                                                                 *(['--rtp', rtp] if rtp else [])] if graphic else [])], 'map-event-snapshot')
             elif kind == 'append_staged_event':
                 sheets = sorted(graphic_names(resolved['pages']))
                 script, args, name = ('vxace_map_events.py', [index, '--project', source, '--map', resolved['map_id'],
@@ -1247,6 +1393,7 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
         tool('patcher', 'vxace_copy_patcher.py', [index, '--project', source, '--spec', spec, '--copy', copy, '--audit', audit,
                                                   '--backend', 'python', *(['--ruby', ruby] if ruby else []),
                                                   *(['--rtp', rtp] if rtp and ((kind == 'append_staged_event' and graphic_names(resolved['pages']))
+                                                                               or (kind == 'append_dialogue_event' and 'graphic' in resolved)
                                                                                or (kind == 'append_entry' and resolved['table'] == 'actors' and any(actor_graphics(resolved['overrides'])))) else [])])
         record['audit'] = str(audit / 'audit.json')
         if not copy.is_dir():
@@ -1383,6 +1530,73 @@ def expand_monster(step, project):
     return blank, staged
 
 
+def blank_template(step):
+    """The optional append_blank_event step of a macro that builds its own template (donor_event, blank_x, blank_y), else None."""
+    if 'donor_event' not in step:
+        return None
+    return {'type': 'append_blank_event', 'map_id': step['map_id'], 'donor_event': step['donor_event'], 'x': step['blank_x'], 'y': step['blank_y']}
+
+
+def staged_step(step, pages):
+    return {'type': 'append_staged_event', 'map_id': step['map_id'], 'template_event': step.get('template_event'), 'x': step['x'], 'y': step['y'],
+            'name': step['name'], 'pages': pages}
+
+
+SAME = {'priority': 'same'}
+
+
+def expand_shopkeeper(step, project):
+    """Expand a resolved add_shopkeeper step (v1.33) into (blank-event step or None, staged-event step): one visible NPC page (character graphic, priority same
+    so the player bumps into it) with the greeting text and then the `shop` command. With a `condition` the page carries it; with closed_lines too, page 1
+    (no condition, same graphic) shows the closed text and page 2 is the conditional shop page. `project` is unused."""
+    graphic = step['graphic']
+    shop = {'condition': copymod.deepcopy(step.get('condition', {})), 'graphic': dict(graphic), 'options': dict(SAME),
+            'commands': [{'text': list(step['lines'])}, {'shop': {'goods': [dict(good) for good in step['goods']], 'purchase_only': step['purchase_only']}}]}
+    pages = [shop]
+    if step.get('closed_lines'):
+        pages = [{'condition': {}, 'graphic': dict(graphic), 'options': dict(SAME), 'commands': [{'text': list(step['closed_lines'])}]}, shop]
+    return blank_template(step), staged_step(step, pages)
+
+
+def currency_of(project):
+    """The project's currency unit when it is plain literal text, else "G" (names come from the step's source project, never guessed)."""
+    from vxace_staged_commands import check_text, load_native
+    try:
+        value = load_native(project, 'System.rvdata2').get('currency_unit')
+        candidate = value.data.decode('utf-8') if hasattr(value, 'data') else None
+        if candidate:
+            return check_text(candidate, 'currency unit', 20)
+    except (ValueError, UnicodeDecodeError, AttributeError):
+        pass
+    return 'G'
+
+
+def expand_inn(step, project):
+    """Expand a resolved add_inn step (v1.33) into (blank-event step or None, staged-event step): one visible NPC page (priority same) that shows the greeting and
+    the price, asks Yes / No; Yes with enough gold takes the price, recovers the entire party, optionally waits and says so, otherwise says the gold is short;
+    No says goodbye. The price line is always the last line of the question window (lines holds at most 3 greeting lines)."""
+    price, unit = step['price'], currency_of(project)
+    greeting = list(step['lines']) if step.get('lines') else ['Welcome, traveler.']
+    yes = [{'if': {'gold_at_least': price},
+            'then': [{'gold': -price}, {'recover_all': 'party'}] + ([{'wait': step['wait']}] if step.get('wait') else []) + [{'text': ['You feel rested.']}],
+            'else': [{'text': ['Not enough gold.']}]}]
+    commands = [{'text': greeting + [f'A night costs {price} {unit}. Stay?']},
+                {'choices': ['Yes', 'No'], 'cancel': 1, 'branches': [yes, [{'text': ['Come again soon.']}]]}]
+    pages = [{'condition': {}, 'graphic': dict(step['graphic']), 'options': dict(SAME), 'commands': commands}]
+    return blank_template(step), staged_step(step, pages)
+
+
+def expand_intro(step, project):
+    """Expand a resolved add_intro step (v1.33) into (blank-event step or None, staged-event step): "run once on map entry", the bounded substitute for autorun.
+    Page 1 is a parallel process (wait N, the commands, then self switch A ON); page 2 (self switch A, no commands) takes over so it never repeats. Both pages
+    have no graphic and priority below, so the event neither shows nor blocks. `project` is unused."""
+    wait = step.get('wait', INTRO_WAIT)
+    pages = [{'condition': {}, 'trigger': 'parallel', 'options': {'priority': 'below'},
+              'commands': [{'wait': wait}] + copymod.deepcopy(list(step['commands'])) + [{'set_self_switch': 'A', 'value': True}]},
+             {'condition': {'self_switch': 'A'}, 'options': {'priority': 'below'}, 'commands': []}]
+    return blank_template(step), staged_step(step, pages)
+
+
 def door_page(trigger, graphic, target, condition=None, locked_text=None):
     """One page, no self switch (a door works every time): a transfer to `target` {map_id, x, y, direction}. Touch doors sit below the characters so the
     player steps onto them; action doors are solid (same as characters) so the player faces them and presses the action button.
@@ -1447,7 +1661,8 @@ def expand_area(step, project=None):
     return steps
 
 
-MACROS = {'add_treasure_chest': expand_chest, 'add_touch_trigger': expand_touch_trigger, 'add_monster': expand_monster, 'add_area': expand_area}
+MACROS = {'add_treasure_chest': expand_chest, 'add_touch_trigger': expand_touch_trigger, 'add_monster': expand_monster, 'add_area': expand_area,
+          'add_shopkeeper': expand_shopkeeper, 'add_inn': expand_inn, 'add_intro': expand_intro}
 
 
 def failed_record(number, step_type, message, records):

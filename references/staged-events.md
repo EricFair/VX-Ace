@@ -59,6 +59,8 @@ The engine runs, on action-button interaction, the **highest-numbered page whose
 | `{"wait": 1..999}` | `230 [frames]` |
 | `{"erase_event": true}` (v1.25) | `214 []`. Refused in a common event (no owning event). The erase is temporary: the event returns when the map is reloaded |
 | `{"move_route": {"target": "player"/"this", "route": [...], "repeat": false, "skippable": bool, "wait": bool}}` (v1.25) | `205 [char_id, RPG::MoveRoute]` then one `505 [RPG::MoveCommand]` per route command; `char_id` is -1 for the player and 0 for this event. `this` is refused in a common event. See [Move routes](#move-routes) |
+| `{"shop": {"goods": [{"type": "item"/"weapon"/"armor", "id": id, "price": null or 0..9999999}, ...1..32], "purchase_only": bool}}` (v1.33) | `302 [type, id, price_type, price, purchase_only]` for the first good, then one `605 [type, id, price_type, price]` per further good, all at the block's indent. Type is 0 item, 1 weapon, 2 armor; `price: null` is price type 0 (database price, stored price 0), an integer is price type 1. The rows come from the same factory as `add_shop` (`vxace_map_shops.goods_rows`) and equal the editor's layout; goods follow the `add_shop` rules (ids 1..999, no duplicate `(type, id)`). See [shops and inns](shops-and-inns.md) |
+| `{"recover_all": "party"}` or `{"recover_all": actor_id}` (v1.33) | `314 [0, 0]` for the entire party, `314 [0, actor_id]` for one actor. The first parameter is the designation (0 fixed; variable designation `1` is not offered), the second the actor id, 0 meaning the whole party (`Game_Interpreter#iterate_actor_var`) |
 
 `COND` is exactly one of (the first key picks the form):
 
@@ -89,6 +91,13 @@ Troops, Actors, CommonEvents, Items and transfer destination maps are only read,
 Each hash is the SHA-256 of the Marshal dump of the file's root (array or hash). The `--staged` snapshot reports them as `troops_sha256`, `actors_sha256`, `common_events_sha256`, `items_sha256`, `weapons_sha256`, `armors_sha256`, `mapinfos_sha256` (null when the file is absent) plus counts, and `--transfer-map N` (repeatable) adds `destination_maps` with each map's `sha256`, `width` and `height`. The impact report additionally checks the ids against the fresh index and warns for battles, transfers, gold removal and weapon/armor removal (the engine clamps at zero; equipped copies stay). It also describes treasure chests (`staged.chests`: a page that gives gold/goods and turns a self switch ON, with the later page conditioned on it) and lists page graphics and options (`staged.graphic_changes`).
 
 Weapon and armor commands follow `Game_Interpreter#command_127` / `command_128`: `operate_value(params[1], params[2], params[3])` and `params[4]` as include-equipment. See [treasure chests](treasure-chests.md).
+
+### Shop and Recover All (v1.33)
+
+- `shop` is bound by the `expected_items_sha256` / `expected_weapons_sha256` / `expected_armors_sha256` of the goods types it uses (only those), and every listed good must exist; `recover_all` with an actor id is bound by `expected_actors_sha256` (and `recover_all: "party"` needs no hash). In a recipe, a good's `id` and a `recover_all` actor id may be `{"from_step": k}` (a weapon/armor `append_entry` step, an item `append_key_item`/`append_entry` step, an actors `append_entry` step).
+- **A shop ends the current command, not the event.** `Game_Interpreter#command_302` gathers the `302` row and the `605` rows after it, calls `Scene_Shop`, prepares it with the goods and `purchase_only`, and then `Fiber.yield`s. When the shop closes the interpreter resumes at the next command, so any text, switch or gold command written after the `shop` runs once the shop is closed (it is not skipped and it does not run first). It is skipped completely in battle (`return if $game_party.in_battle`). Put the greeting before the `shop`; put farewell lines after it only if you want them shown after leaving.
+- `recover_all` runs `Game_Battler#recover_all` (clears every state, including death, then HP = MHP and MP = MMP; TP is untouched). A fixed actor id works for actors that are not in the party (`$game_actors[id]`); the party designation covers all members, reserve included (`$game_party.members` outside battle).
+- Impact and `plan` describe a shop as `Shop: Potion (default price), Hunter's Dirk 600 G` (the currency unit comes from System; `[purchase only]` is appended when set), a recover as `Recover all: the entire party (HP, MP, states)`, and warn about the two notes above.
 
 ### System ids
 
@@ -178,7 +187,7 @@ The impact report lists every page's condition and command count (`staged.pages`
 
 ## Limits
 
-- No loops, labels, jumps, shops, scripts, autorun, item/actor page conditions or faces; move routes are limited to the bounded language above (no jump, graphic, script, switch, speed or frequency changes); page graphics are limited to character sheets (no tile graphics). No cancel branch (`403`) for choices, no variable operands, and no variable (indirect) transfer destinations.
+- No loops, labels, jumps, scripts, autorun, item/actor page conditions or faces; move routes are limited to the bounded language above (no jump, graphic, script, switch, speed or frequency changes); page graphics are limited to character sheets (no tile graphics). No cancel branch (`403`) for choices, no variable operands, and no variable (indirect) transfer destinations.
 - `battle` uses a fixed troop (no random encounter); a battle without `can_lose` and a `lose` branch ends in Game Over on defeat, as in the editor.
 - The page text is plain literal text; variable and switch semantics are not simulated. Check runtime behavior in the game.
 - Self-switch state of the new event id may pre-exist in old saves; an appended static id can collide with runtime-created events.

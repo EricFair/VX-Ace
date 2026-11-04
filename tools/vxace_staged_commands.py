@@ -15,7 +15,7 @@ VALUE_LIMIT = 99999999
 VARIABLE_OPS = {'set': 0, 'add': 1, 'sub': 2}
 CONDITION_OPS = {'==': 0, '>=': 1, '<=': 2, '>': 3, '<': 4, '!=': 5}
 KINDS = ('text', 'set_switch', 'set_variable', 'set_self_switch', 'choices', 'if', 'battle', 'party',
-         'common_event', 'gold', 'item', 'weapon', 'armor', 'transfer', 'wait', 'erase_event', 'move_route')
+         'common_event', 'gold', 'item', 'weapon', 'armor', 'transfer', 'wait', 'erase_event', 'move_route', 'shop', 'recover_all')
 # Event page triggers (RPG::Event::Page#trigger). Autorun (3) is refused: it has no termination proof.
 PAGE_TRIGGERS = {'action': 0, 'player_touch': 1, 'event_touch': 2, 'parallel': 4}
 TOUCH_TRIGGERS = ('player_touch', 'event_touch')
@@ -161,7 +161,61 @@ def command_notes(op):
         if moves and not spec.get('skippable', False):
             notes.append(f'A blocked step stalls the route of {who} (it retries the same step) and' + (', with wait, the event never continues.' if spec.get('wait', True) else ' keeps it from finishing.')
                          + ' Set skippable true if the path may be blocked.')
+    if 'shop' in op:
+        notes.append('Opens the shop scene (Game_Interpreter#command_302 calls Scene_Shop and yields): the commands after the shop run when the shop closes, and the shop is skipped in battle.'
+                     + (' Purchase only: the party cannot sell here.' if op['shop'].get('purchase_only') else ''))
+    if 'recover_all' in op:
+        who = 'the entire party' if op['recover_all'] == 'party' else f'actor {op["recover_all"]}'
+        notes.append(f'Recover All on {who} restores HP and MP and clears every state, including death (a fallen member is revived).')
     return notes
+
+
+def shop_shape(spec):
+    """Validate a shop command body {goods: [{type, id, price}, ...1..32], purchase_only} with the add_shop bounds. Raises ValueError."""
+    from vxace_map_shops import GOODS as SHOP_GOODS, MAX_GOODS, MAX_PRICE
+    if not isinstance(spec, dict) or set(spec) != {'goods', 'purchase_only'}:
+        raise ValueError('shop needs exactly goods and purchase_only')
+    boolean(spec['purchase_only'], 'shop purchase_only')
+    goods = spec['goods']
+    if not isinstance(goods, list) or not 1 <= len(goods) <= MAX_GOODS:
+        raise ValueError(f'shop needs 1..{MAX_GOODS} goods')
+    seen = set()
+    for good in goods:
+        if not isinstance(good, dict) or set(good) != {'type', 'id', 'price'} or not isinstance(good['type'], str) or good['type'] not in SHOP_GOODS:
+            raise ValueError('Each shop good needs exactly type (item/weapon/armor), id and price')
+        plain_int(good['id'], 'shop goods id', 1, 999)
+        if good['price'] is not None:
+            plain_int(good['price'], 'shop goods price', 0, MAX_PRICE)
+        if (good['type'], good['id']) in seen:
+            raise ValueError('Duplicate shop goods entry refused')
+        seen.add((good['type'], good['id']))
+
+
+def describe_shop(spec, name_of, unit='G'):
+    """'Shop: Potion (default price), Hunter's Dirk 600 G' for a validated shop body; name_of(kind, id) returns a database name or None."""
+    parts = []
+    for good in spec['goods']:
+        name = name_of(good['type'], good['id']) or f'{good["type"]} {good["id"]} (unnamed)'
+        parts.append(f'{name} (default price)' if good['price'] is None else f'{name} {good["price"]} {unit}')
+    return 'Shop: ' + ', '.join(parts) + (' [purchase only]' if spec['purchase_only'] else '')
+
+
+def describe_recover(who, name_of=None):
+    if who == 'party':
+        return 'Recover all: the entire party (HP, MP, states)'
+    name = name_of('actor', who) if name_of else None
+    return f'Recover all: actor {who}' + (f' "{name}"' if name else '') + ' (HP, MP, states)'
+
+
+def extra_descriptions(commands, name_of, unit='G'):
+    """Description lines of the shop and recover_all commands of a (possibly nested) command list, for the plan and impact summaries."""
+    lines = []
+    for op in iter_ops(commands):
+        if isinstance(op.get('shop'), dict):
+            lines.append(describe_shop(op['shop'], name_of, unit))
+        elif 'recover_all' in op:
+            lines.append(describe_recover(op['recover_all'], name_of))
+    return lines
 
 
 def move_route_shape(spec):
@@ -183,7 +237,7 @@ def op_shape(op, indent=0):
         raise ValueError('Staged command must be an object')
     kinds = [kind for kind in KINDS if kind in op]
     if len(kinds) != 1:
-        raise ValueError('Unsupported staged command; use text, set_switch, set_variable, set_self_switch, choices, if, battle, party, common_event, gold, item, weapon, armor, transfer, wait, erase_event or move_route with exact keys')
+        raise ValueError('Unsupported staged command; use text, set_switch, set_variable, set_self_switch, choices, if, battle, party, common_event, gold, item, weapon, armor, transfer, wait, erase_event, move_route, shop or recover_all with exact keys')
     kind = kinds[0]
     if kind == 'text':
         exact_keys(op, {'text'});lines = op['text']
@@ -263,6 +317,15 @@ def op_shape(op, indent=0):
             raise ValueError('erase_event must be true')
     elif kind == 'move_route':
         exact_keys(op, {'move_route'});move_route_shape(op['move_route'])
+    elif kind == 'shop':
+        exact_keys(op, {'shop'});shop_shape(op['shop'])
+    elif kind == 'recover_all':
+        exact_keys(op, {'recover_all'})
+        if isinstance(op['recover_all'], str):
+            if op['recover_all'] != 'party':
+                raise ValueError('recover_all must be "party" or an actor id')
+        else:
+            plain_int(op['recover_all'], 'recover_all actor id', 1, 2**31 - 1)
     else:
         exact_keys(op, {'wait'});plain_int(op['wait'], 'wait frames', 1, 999)
 
@@ -312,6 +375,10 @@ def staged_refs(pages):
         elif 'armor' in op:add('armors', op['armor'])
         elif isinstance(op.get('if'), dict) and 'has_item' in op['if']:add('items', op['if']['has_item'])
         elif isinstance(op.get('transfer'), dict):add('maps', op['transfer'].get('map_id'))
+        elif isinstance(op.get('shop'), dict):
+            for good in op['shop'].get('goods') if isinstance(op['shop'].get('goods'), list) else []:
+                if isinstance(good, dict) and isinstance(good.get('type'), str) and good['type'] in GOODS:add(GOODS[good['type']][0], good.get('id'))
+        elif 'recover_all' in op:add('actors', op['recover_all'])
     return refs
 
 
@@ -462,6 +529,13 @@ def plain_rows(commands, indent=0):
         elif 'transfer' in op:
             move = op['transfer'];rows.append((201, indent, [0, move['map_id'], move['x'], move['y'], move['direction'], move['fade']]))
         elif 'erase_event' in op:rows.append((214, indent, []))
+        # Shop Processing: 302 [type, id, price_type, price, purchase_only] then one 605 [type, id, price_type, price] per further good, all at the block indent
+        # (the code of vxace_map_shops.goods_rows, shared with add_shop). Game_Interpreter#command_302 reads the following 605 rows regardless of indent.
+        elif 'shop' in op:
+            from vxace_map_shops import goods_rows
+            rows += [(code, indent, params) for code, params in goods_rows(op['shop']['goods'], op['shop']['purchase_only'])]
+        # Recover All: 314 [designation 0 = fixed, actor id or 0 for the entire party] (Game_Interpreter#iterate_actor_var); variable designation is not offered.
+        elif 'recover_all' in op:rows.append((314, indent, [0, 0 if op['recover_all'] == 'party' else op['recover_all']]))
         # Set Move Route: 205 [character id, RPG::MoveRoute] then one 505 [RPG::MoveCommand] per route command (the terminator has no line).
         elif 'move_route' in op:
             spec = op['move_route'];route = plain_route(spec['route'], spec.get('repeat', False), spec.get('skippable', False), spec.get('wait', True))

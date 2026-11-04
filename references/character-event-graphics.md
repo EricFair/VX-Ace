@@ -1,4 +1,4 @@
-# Asset-bound character graphics on new dialogue events — v0.27
+# Asset-bound character graphics on new dialogue events — v0.27, options and priority v1.33
 
 The [stationary dialogue append](map-event-creation.md) still requires an exact blank native template. An optional character graphic may now be supplied for the **new detached record only**. Existing event/page graphics, tile graphics, movement routes, copied logic and arbitrary field writes are outside this operation.
 
@@ -28,6 +28,10 @@ Either both fields appear or neither does. The graphic dictionary has exactly `c
 Stage through the normal planner and Python copy patcher, adding `--rtp EXPLICIT_RTP_ROOT` only when required. Low-level graphical writes require the actual canonical map source path and explicit asset context; adjacent actual project/RTP files are independently rechecked. Candidate verification reconstructs the approved new record from the exact template and real bound asset. A final asset-resolution/hash recheck must pass or the whole copy is rolled back. Existing source/assets stay untouched. Blank dialogue append remains supported with its original schema.
 
 All base full-map/template/identity/cell/command/version/impact/re-index/semantic/post-project gates still apply. This does not authorize modifying an existing NPC, adding a resource or changing asset files.
+
+## Options and priority (v1.33)
+
+The recipe step `append_dialogue_event` exposes the graphic (`graphic`, bound through the snapshot above and `--rtp`) and an optional `options` object (a non-empty subset of `walk_anime`, `step_anime`, `direction_fix`, `through` and `priority` = `below`/`same`/`above`, allowed only with a graphic; on the mutation it appears as `options` next to `graphic` and `expected_asset`). A dialogue event with a graphic is now stored with priority **same** unless `options.priority` says otherwise, so the player bumps into it; a dialogue event without a graphic keeps the template page's priority as before. The remaining page fields still come from the blank template. `add_shop` works on such an event (see [shops and inns](shops-and-inns.md)).
 
 ## Verification
 

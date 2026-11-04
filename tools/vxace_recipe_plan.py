@@ -18,7 +18,7 @@ import vxace_recipe as R
 from vxace_copy_patcher import current_inventory, normalize_changes
 from vxace_index_query import unlinked
 
-VERSION = '1.32.0'
+VERSION = '1.33.0'
 PREDICTED = 'predicted, verify after run'
 EXACT = 'exact'
 HASHES = 'bound at run time'
@@ -28,7 +28,7 @@ FILES = {'actors': 'Actors', 'classes': 'Classes', 'enemies': 'Enemies', 'items'
          'weapons': 'Weapons', 'armors': 'Armors', 'troops': 'Troops'}
 ID_KIND = {'item': 'items', 'weapon': 'weapons', 'armor': 'armors', 'actor': 'actors', 'troop': 'troops', 'common event': 'common_events'}
 RESTRICTED_RECOMMEND = {'append_blank_map', 'add_area', 'append_blank_event', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest', 'add_touch_trigger', 'add_monster',
-                        'add_shop', 'append_encounter', 'insert_script', 'set_system_fields', 'append_learning'}
+                        'add_shop', 'add_shopkeeper', 'add_inn', 'add_intro', 'append_encounter', 'insert_script', 'set_system_fields', 'append_learning'}
 
 
 class PlanRefusal(Exception):
@@ -121,6 +121,14 @@ def text_of(value):
     return value.data.decode('utf-8', 'replace') if hasattr(value, 'data') else None
 
 
+def currency_unit(sim):
+    """The simulated project's currency unit (plain text), else "G"."""
+    try:
+        return text_of(sim.get('Data/System.rvdata2').get('currency_unit')) or 'G'
+    except Exception:
+        return 'G'
+
+
 def entry_name(sim, table, number):
     """Name of a database entry in the simulated state (None when absent or unnamed)."""
     try:
@@ -180,6 +188,9 @@ def take_snapshot(sim, step, recipe_dir, source_text):
             donor_root = sim.get(f'Data/Map{step["donor_map_id"]:03d}.rvdata2') if 'donor_map_id' in step else None
             return {'map_id': step['map_id'], **events.blank_snapshot(root, step['donor_event'], donor_root)}
         result = {'map_id': step['map_id'], **events.snapshot(root, step['template_event'])}
+        if kind == 'append_dialogue_event' and 'graphic' in step:
+            from vxace_character_graphics import binding
+            result.update(proposed_graphic=step['graphic'], asset=binding(project, rtp, step['graphic']))
         if kind == 'append_staged_event':
             info = events.system_info(project)
             result.update(system_sha256=info['system_sha256'], switch_count=len(info['switches']) - 1, variable_count=len(info['variables']) - 1,
@@ -554,7 +565,14 @@ def describe_step(sim, step, snapshot, mutation, number, plan_links):
         donor = f'donor event {step["donor_event"]}' + (f' of map {step["donor_map_id"]}' if 'donor_map_id' in step else '')
         return [f'Map {step["map_id"]}: append blank event {snapshot["next_event_id"]} "{step.get("name", snapshot["default_name"])}" at ({step["x"]},{step["y"]}) ({donor} for schema only).'], warnings
     if kind == 'append_dialogue_event':
-        return [f'Map {step["map_id"]}: append dialogue event {snapshot["next_event_id"]} "{step["name"]}" at ({step["x"]},{step["y"]}), template event {step["template_event"]}.'] + [f'  "{line}"' for line in step['lines']], warnings
+        lines = [f'Map {step["map_id"]}: append dialogue event {snapshot["next_event_id"]} "{step["name"]}" at ({step["x"]},{step["y"]}), template event {step["template_event"]}.']
+        if 'graphic' in step:
+            graphic = step['graphic'];priority = (step.get('options') or {}).get('priority', 'same')
+            lines.append(f'  Graphic: {graphic["character_name"]} #{graphic["character_index"]} (direction {graphic["direction"]}, pattern {graphic["pattern"]}), priority {priority}'
+                         + (f', options {json.dumps(step["options"], sort_keys=True)}' if step.get('options') else ''))
+            if priority != 'same':
+                warnings.append(f'The dialogue event has a character graphic with priority {priority}: it will not collide and must be walked onto. Use priority same so the player bumps into it.')
+        return lines + [f'  "{line}"' for line in step['lines']], warnings
     if kind == 'append_staged_event':
         from vxace_impact import staged_page_report
         from vxace_staged_commands import chest_summary, iter_ops, monster_summary, describe_monster
@@ -565,6 +583,10 @@ def describe_step(sim, step, snapshot, mutation, number, plan_links):
             lines.append(f'  page {row["page"]}: condition {json.dumps(row["condition"])}, {row["commands"]} command(s){extra}')
         for monster in monster_summary(step['pages']):
             lines.append(f'  Page {monster["page"]}: {describe_monster(monster, entry_name(sim, "troops", monster["troop"]))}')
+        from vxace_staged_commands import extra_descriptions
+        for number, page in enumerate(step['pages'], 1):      # v1.33 shop / recover_all
+            for line in extra_descriptions(page['commands'], lambda kind, found: entry_name(sim, ID_KIND[kind], found), currency_unit(sim)):
+                lines.append(f'  Page {number}: {line}')
         for chest in chest_summary(step['pages']):
             gives = []
             for op in chest['gives']:
@@ -583,6 +605,8 @@ def describe_step(sim, step, snapshot, mutation, number, plan_links):
             if what in ('switch', 'variable'):
                 names = snapshot['switch_names' if what == 'switch' else 'variable_names']
                 return names[number - 1] or None if 1 <= number <= len(names) else None
+            if what == 'currency':
+                return currency_unit(sim)
             if what == 'map':
                 from vxace_staged_commands import load_mapinfos
                 try:
@@ -952,7 +976,7 @@ def summarize(plan, sim, project, steps, in_place=False, backup_root=None):
 def smoke_advice(steps):
     kinds = {step['type'] for step in steps}
     reasons = sorted(kinds & RESTRICTED_RECOMMEND)
-    custom = sorted(kinds & {'append_staged_event', 'add_treasure_chest', 'add_touch_trigger', 'add_monster', 'add_area', 'append_common_event', 'insert_script'})
+    custom = sorted(kinds & {'append_staged_event', 'add_treasure_chest', 'add_touch_trigger', 'add_monster', 'add_area', 'add_shopkeeper', 'add_inn', 'add_intro', 'append_common_event', 'insert_script'})
     return {'recommended': bool(reasons), 'reason_steps': reasons,
             'suite_needed': bool(custom),
             'note': ('A --smoke-mode run boots the final copy; a --smoke-suite is needed to exercise the new behavior (' + ', '.join(custom) + ') in the engine.'

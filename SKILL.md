@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.32.0
+Version: 1.33.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -99,6 +99,7 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | New area (map) with a door in and out | `add_area` ([references/new-areas.md](references/new-areas.md)) |
 | Enemy AI (skill conditions, ratings), drops, weaknesses | [references/database-append.md](references/database-append.md) |
 | Treasure chest | recipe step `add_treasure_chest` ([references/treasure-chests.md](references/treasure-chests.md)) |
+| Visible shopkeeper (optionally closed until a condition), inn that heals, one-time map intro | `add_shopkeeper`, `add_inn`, `add_intro` ([references/shops-and-inns.md](references/shops-and-inns.md), [references/intros.md](references/intros.md)) |
 | Sell items/weapons/armors from a shopkeeper | [references/map-shops.md](references/map-shops.md) |
 | Make a troop appear as a random encounter | [references/map-encounters.md](references/map-encounters.md) |
 | Add an actor, class, enemy, skill, state, weapon, armor, usable item, troop or class skill learning; set item/skill effects or equipment/state features | [references/database-append.md](references/database-append.md) |
@@ -136,7 +137,7 @@ Only these structural writes exist; everything else is proposal/manual-only. Eac
 - ordinary upper-layer B-E tile painting ([upper-tile-painting.md](references/upper-tile-painting.md));
 - one blank event from an existing schema donor, or one stationary literal-dialogue event, per map ([map-event-creation.md](references/map-event-creation.md)) with optional character graphic ([character-event-graphics.md](references/character-event-graphics.md));
 - one-time constant gold/item map rewards ([one-time-event-rewards.md](references/one-time-event-rewards.md));
-- one quest-stage event: 1..8 action-button pages with switch/variable/self-switch conditions, literal dialogue, Control Switch/Variable/Self Switch, nested choices, if/else and battles, plus party, common event, gold, item, weapon, armor, transfer, wait, Set Move Route and Erase Event commands, optional page graphics, touch/parallel triggers and autonomous movement ([staged-events.md](references/staged-events.md));
+- one quest-stage event: 1..8 action-button pages with switch/variable/self-switch conditions, literal dialogue, Control Switch/Variable/Self Switch, nested choices, if/else and battles, plus party, common event, gold, item, weapon, armor, transfer, wait, Set Move Route, Erase Event, Shop Processing and Recover All commands, optional page graphics, touch/parallel triggers and autonomous movement ([staged-events.md](references/staged-events.md));
 - one existing-entry edit (`edit_database_entry`, recipe `set_fields`) with the same whitelisted overrides as appends, including `features_add`/`features_remove`; full feature replacements that drop HIT are refused;
 - one System fields edit: starting party, start position, game title, currency unit, menu terms and switch/variable names ([system-fields.md](references/system-fields.md));
 - one common event (call-only or switch-gated parallel process with a wait) using the same command language ([common-event-append.md](references/common-event-append.md));
