@@ -2,6 +2,12 @@
 
 Writes land on a disposable copy behind exact native guards; the project changes only through adopt or a confirmed in-place recipe run. Operation details and limits are in the linked references.
 
+## 2.0.1 — Docs cleanup
+
+- Removed outdated and contradictory statements across the references, workflows and root docs: every doc now describes the three ways a change reaches a project (copy chain, adopt, confirmed in-place run).
+- Removed development-only detail (test counts, CI, private test-project names) and duplicate sections; `tools/README.md` is a current tool index.
+- No tool behaviour changed.
+
 ## 2.0.0 — Hardening
 
 - **Faster recipes:** a content-hash cache (`tools/vxace_cache.py`) skips re-decoding and re-round-tripping files that did not change. One step went from about 43 s to about 10 s. The cache lives in the work folder and is deleted after the run. Failed gates are never cached.

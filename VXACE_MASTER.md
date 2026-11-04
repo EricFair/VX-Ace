@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v2.0.0
+# VX Ace Masterfile — v2.0.1
 
 Reference for this specialist toolchain: recommended settings, available features, commands and remaining limits. [SKILL.md](SKILL.md) holds the agent rules and task routing. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
