@@ -1,6 +1,6 @@
-# Project Validation Harness — v0.22 (introduced in v0.9)
+# Project Validation Harness
 
-`tools/vxace_project_validator.py` is the read-only gate used before treating a real VX Ace project as eligible for v0.8+ copy mutation.
+`tools/vxace_project_validator.py` is the read-only gate used before treating a real VX Ace project as eligible for guarded mutation (copy chain, adopt and in-place recipe runs use the same gate).
 
 ## What it proves
 

@@ -1,4 +1,4 @@
-# Guarded existing-map region cells — v0.19
+# Guarded existing-map region cells
 
 Use this for a small, reviewed change to region IDs on an existing native VX Ace map. It does not paint graphic tiles, change shadows, resize/create/delete maps, modify encounters, author scripts or write save files.
 
@@ -51,7 +51,7 @@ The impact report requires a clean selected-map tile audit and complete encounte
 
 The explicit Python copy backend is mandatory. A new disposable copy is created only after fresh source/index checks, exact native preconditions, complete selected-backend project validation and immediate target byte gates. The Ruby backend, disabled re-indexing and duplicate operations on the same map are refused. A transaction containing region and/or guarded event structure edits advances `System.version_id` exactly once, so the default engine reloads the current map from disk when an older save is loaded. This can reset map-event state according to normal engine behavior; review custom persistence hooks and do not promise lossless general save migration.
 
-After staging, require normalized and semantic diffs, complete post-copy byte validation and clean selected-map tile audits. The audit includes before/after region snapshots, approved-byte/other-field checks, dependency impact and rollback evidence. Any apply/re-index/post-check failure removes the whole partial copy while retaining the failure audit. Originals remain unchanged. The master and MCP interface remain read-only and do not invoke this writer.
+After staging, require normalized and semantic diffs, complete post-copy byte validation and clean selected-map tile audits. The audit includes before/after region snapshots, approved-byte/other-field checks, dependency impact and rollback evidence. Any apply/re-index/post-check failure removes the whole partial copy while retaining the failure audit. The copy chain never changes the original (an in-place recipe run restores from its backup on failure). The master and MCP interface remain read-only and do not invoke this writer.
 
 ## Required native checks
 
@@ -62,6 +62,4 @@ After staging, require normalized and semantic diffs, complete post-copy byte va
 - Test affected encounter sets and custom region consumers where applicable. Absence of consumers in a small seed is not evidence about arbitrary customized projects.
 - Confirm source hashes, all unapproved Table bytes and other map fields remain unchanged; preserve a tested delivery copy separately from harnesses.
 
-Public tests use original synthetic data, including an independently Ruby-produced map fixture. They cover fingerprints, shape/bounds/types, no-ops/duplicates, lower-byte and unknown-alias preservation, exact candidate postconditions, copy-only gating, one version advancement for mixed region/event edits, impact evidence, snapshot safety and complete rollback. Proprietary projects, raw native saves and test harnesses stay private.
-
-Fourteen new tests passed with the complete 294-test runner. In private native copies, editor overlay and `Game_Map.region_id` agreed on three edited cells (7,63,1). An unchanged older save triggered the default project-version map reload while preserving player position, gold and health. A separate new-game harness invoked the actual engine `DataManager.save_game` once, then the Game process was fully closed and restarted; normal Continue/File1 loaded the same region Table and position without another map setup or save rewrite. This is native engine persistence evidence; it does not claim that UI-menu Save was exercised for this region fixture. The small seed has no encounter entries, so custom encounter/region consumers still require project-specific tests.
+On private native copies, editor overlay and `Game_Map.region_id` agreed on three edited cells (7,63,1). An unchanged older save triggered the default project-version map reload while preserving player position, gold and health. A separate new-game harness invoked the actual engine `DataManager.save_game` once, then the Game process was fully closed and restarted; normal Continue/File1 loaded the same region Table and position without another map setup or save rewrite. This is native engine persistence evidence; it does not claim that UI-menu Save was exercised for this region fixture. The small seed has no encounter entries, so custom encounter/region consumers still require project-specific tests.

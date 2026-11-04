@@ -58,7 +58,7 @@ python tools/vxace_copy_patcher.py PROJECT_INDEX --project PROJECT --spec encoun
 
 The impact report lists the existing encounters, the chosen troop with its member enemies and page count, and region usage: for each selected region how many cells of the map are painted with it (a region-restricted encounter on an unpainted region can never fire). It adds bounded literal script mentions of `encounter_list`, `make_encounter_list`, `encounter_step` and related classes. Remember that a random battle also needs the player to walk on the map with encounters enabled; events or scripts may disable them, and custom encounter logic is invisible to literal search.
 
-After staging, the copy gets normalized and semantic diffs, complete post-copy byte validation and a clean selected-map tile audit. The audit records the before/after encounter lists and rollback evidence. Any apply, re-index or post-check failure removes the whole partial copy and keeps the failure audit. Originals stay unchanged.
+After staging, the copy gets normalized and semantic diffs, complete post-copy byte validation and a clean selected-map tile audit. The audit records the before/after encounter lists and rollback evidence. Any apply, re-index or post-check failure removes the whole partial copy and keeps the failure audit. The copy chain never changes the original (an in-place recipe run restores from its backup on failure).
 
 ## Version and old-save behaviour
 
@@ -72,8 +72,6 @@ The engine keeps `encounter_list` inside the map object stored in `$game_map`, s
 - Review the troop's enemies and battle events, and any scripts that disable or replace encounters.
 - Confirm source hashes, the map Table/events and Troops stay unchanged.
 
-Public tests use original synthetic data, including an independently Ruby-produced map and dense Troops fixture, and cover bounds, duplicates, schema refusals, stale guards, candidate tampering, snapshot safety, the complete copy chain with version advance, backend/combination refusals and rollback. Native evidence is recorded below.
-
-## Native evidence (v1.12)
+## Native evidence
 
 On an editor-created project copy holding appended troop 31, one `append_encounter` (whole map, weight 10, `encounter_step` 5) passed the planner/copy-patcher postgates and advanced `System.version_id`. A smoke run confirmed the live `encounter_list`/step and that `Game_Player#make_encounter_troop_id` returned 31; walking with virtual input started a random battle against troop 31. Starting from a save written before the change reloaded the map with the new encounter, confirming the version-advance rule. Editor display was not inspected.

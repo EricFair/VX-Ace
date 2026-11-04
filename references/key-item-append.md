@@ -1,4 +1,4 @@
-# Guarded native key-item append — v0.20
+# Guarded native key-item append
 
 Use this narrow operation to add one inert quest key item to an existing native Items database. It does not create other database objects, reuse holes/IDs, delete/reorder entries, author usable effects or edit saves.
 
@@ -48,16 +48,14 @@ python tools/vxace_impact.py PROJECT_INDEX --spec key-item-patch.json --json NEW
 python tools/vxace_copy_patcher.py PROJECT_INDEX --project PROJECT --spec key-item-patch.json --copy NEW_COPY --audit NEW_AUDIT --backend python
 ```
 
-The explicit Python backend, fresh source/index, complete project/target byte gates, new copy/audit paths, mandatory re-index/semantic diff and complete post-copy validation are required. Failed apply/extraction/post-checks remove the whole partial copy and retain the failure audit. Existing Items entries are verified unchanged. Appending only a database entry does not advance `System.version_id`; the database reloads on normal startup. If the transaction separately changes guarded map regions/event structure, their normal single version advance still applies. This is not general save migration.
+The explicit Python backend, fresh source/index, complete project/target byte gates, new copy/audit paths, mandatory re-index/semantic diff and complete post-copy validation are required. Failed apply/extraction/post-checks remove the whole partial copy and retain the failure audit (an in-place recipe run restores from its backup instead). Existing Items entries are verified unchanged. Appending only a database entry does not advance `System.version_id`; the database reloads on normal startup. If the transaction separately changes guarded map regions/event structure, their normal single version advance still applies. This is not general save migration.
 
 The high-risk impact report verifies indexed IDs/template identity and lists bounded literal item/inventory mentions in ordered scripts and event content. Exact native hashes/schema are checked separately by the snapshot/copy backend. Review runtime-created IDs, inventory extensions, note consumers and custom save behavior. A statically unused append ID may already be created dynamically; absence of literal mentions does not prove compatibility.
 
-In particular, the public Oakfall example intentionally creates runtime item17 and asserts that slot is free. Do not append static item17 to that project and leave its helper unchanged. This tool's acceptance tests use a separate blank seed copy; they do not silently migrate the known-good playable example.
+In particular, the Oakfall example (`examples/oakfall/quest.rb`) intentionally creates runtime item 17 and asserts that slot is free. Do not append a static item 17 to a project that uses that script unchanged.
 
 ## Native verification
 
 Inspect the new entry in the editor, confirm an existing template item still has its original behavior, and test actual native inventory categorization/counts and engine save/full-process-restart loading on a disposable copy. Keep all runtime harnesses, saves and raw project evidence private. The normal master/MCP interface remains read-only and never appends entries automatically.
 
-Thirteen new public tests cover native schema/types, exact hashes/IDs, inert defaults, deep independence, unchanged existing records, candidate tampering, text/encoding limits, array capacity, external/stale snapshots, explicit backend/postgates and complete rollback. The independent Ruby fixture defines original native-shaped objects; proprietary engine scripts or databases are not distributed.
-
-The complete 307-test runner passed locally. In a private disposable blank-seed copy, the native editor displayed appended item 017 as Key Item, Never usable, nonconsumable, no scope/damage/effects/note and zero price; the original Potion retained its healing effect. Native `Game_Party.gain_item` and `Window_ItemList`'s Key Item category showed exactly one new item. A private harness called actual engine saving once, then normal Continue/File1 after a full Game-process restart restored the same item/count/filter and unchanged save bytes. All existing Items entries and System data matched the source. This is native engine inventory/persistence evidence, not a claim that arbitrary custom inventory extensions or UI-menu Save were tested.
+On a disposable blank-seed copy, the native editor displayed appended item 017 as Key Item, Never usable, nonconsumable, no scope/damage/effects/note and zero price; the original Potion retained its healing effect. Native `Game_Party.gain_item` and `Window_ItemList`'s Key Item category showed exactly one new item. A private harness called actual engine saving once, then normal Continue/File1 after a full Game-process restart restored the same item/count/filter and unchanged save bytes. All existing Items entries and System data matched the source. This is native engine inventory/persistence evidence, not a claim that arbitrary custom inventory extensions or UI-menu Save were tested.

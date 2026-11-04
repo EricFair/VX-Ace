@@ -1,4 +1,4 @@
-# Player-text import — v1.10
+# Player-text import
 
 `tools/vxace_text_import.py` turns an edited [text-export](text-export.md) CSV into a reviewed **patch spec** that uses only change kinds the copy patcher already guards. It adds no mutation backend and is read-only: it reads a fresh Project Reader index and the CSV, and writes only the spec file(s) and a report outside the project and index. Nothing is applied until you run the normal planner and copy patcher.
 
@@ -21,7 +21,7 @@ python tools/vxace_patch_planner.py PROJECT_INDEX --project PROJECT --spec NEW\s
 python tools/vxace_copy_patcher.py PROJECT_INDEX --project PROJECT --spec NEW\spec.json --copy NEW\copy --audit NEW\audit --backend python
 ```
 
-5. Open the copy in the editor and do a smoke run (see [in-engine smoke tests](smoke-testing.md)) before replacing anything.
+5. Open the copy in the editor and do a smoke run (see [in-engine smoke tests](smoke-testing.md)) before adopting anything (see [adopt](adopt.md)).
 
 Outputs must be new files outside the project and the index. A stale index, a changed source, a malformed CSV or an existing output refuses with exit code 2 and writes nothing.
 
@@ -64,10 +64,10 @@ A message (`101`+`401`) or scrolling text (`105`+`405`) translation is split on 
 ## Limits
 
 - Heuristic lint only; no font metrics, no custom message systems.
-- System database text (game title, currency, terms, type names) is `unsupported`: the guarded database edit addresses id-based rows only.
+- System database text (game title, currency, terms) is not imported; the `set_system_fields` operation edits it (see [system fields](system-fields.md)). Rows for it are reported `unsupported`.
 - Script-generated or plugin text, picture text, notes and command insertion/deletion are out of scope.
 - Staleness is checked twice: the CSV fingerprint against the fresh index here, and the copy patcher's own source and round-trip gates afterwards. Always review in the editor and run the game before adopting a copy.
 
-## Native evidence (v1.10)
+## Native evidence
 
 On an editor-created project, an exported CSV with two edited cells (a map Show Text line and actor 1's nickname) produced a two-change spec; the planner and Python copy patcher applied it with all postgates. A [smoke run](smoke-testing.md) of the copy confirmed both values in the loaded data, started the event and found the imported line in the live message window. Editor display was not inspected in this run.

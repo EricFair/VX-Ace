@@ -1,4 +1,4 @@
-# Map monsters: the `add_monster` macro — v1.30
+# Map monsters: the `add_monster` macro
 
 `add_monster` places a visible monster on a map that starts a battle when it touches the player. It adds no mutation logic: like `add_treasure_chest` and `add_touch_trigger` it expands, identically in `run` and in `plan`, into ordinary guarded transactions: an `append_blank_event` at `blank_x`,`blank_y` (only with `donor_event`), then one `append_staged_event`. Records carry `macro` `add_monster` and `part` (`a`, `b`); `from_step` afterwards means the monster event id.
 
@@ -26,18 +26,18 @@ Page 2 (unless `respawn`): condition `{"self_switch": "A"}` only, no graphic, pr
 
 With `respawn: true` there is only page 1 and the monster stays after every battle (the win branch gets no self switch). Because the monster is still there after the fight, a player who ends the battle next to it can be caught again straight away.
 
-## Engine behaviour (Project3 scripts)
+## Engine behaviour (default RGSS3 scripts)
 
 - Priority **same** (`priority_type` 1) is `normal_priority?`. `Game_CharacterBase#collide_with_events?` blocks movement only for events with normal priority, so a below-priority graphic event neither collides nor can be bumped into, and a touch trigger on it starts only when the player walks onto its cell (`check_touch_event` starts triggers 1 and 2 of events that are *not* normal priority).
 - When the player's step is blocked, `Game_CharacterBase#move_straight` calls `check_event_trigger_touch_front`, and `Game_Player#check_event_trigger_touch` starts every priority-same event with trigger 1 or 2 on the faced cell. So a same-priority `player_touch` monster that is fixed in place **does start when the player bumps into it** (verified in the sources; same for `event_touch`).
 - A moving same-priority `event_touch` monster also starts the battle when it is blocked by the player (`Game_Event#check_event_trigger_touch`, `normal_priority?` required). That happens only for movement that steps with `turn_ok`: `approach` (`move_toward_character`) and custom routes do; **random movement does not** (`move_random` calls `move_straight(d, false)`). A random wanderer therefore starts its battle when the player walks into it, not by itself. Use `{"type": "approach"}` for a monster that chases and attacks.
 - An event does not start while the interpreter is running.
 
-Impact and `plan` describe the monster in plain words ("Wandering monster, battles troop 3 "Slime" on touch, disappears after victory") and warn about a graphic page with priority below or above.
+Impact and `plan` describe the monster in plain words ("Chasing monster, battles troop 3 "Slime" on touch, disappears after victory"; "Wandering" for random movement, "Stationary" for fixed) and warn about a graphic page with priority below or above.
 
 ## Examples
 
-### A wandering slime that respawns
+### A chasing slime that respawns
 
 ```json
 {"title": "Slime meadow", "steps": [
@@ -70,9 +70,9 @@ Page 1 appears only while switch 9 is ON, fixed in place (`player_touch`, bump t
 - `win` holds at most 39 commands (40 with `respawn`); `escape` and `lose` at most 40. The generated page is also bound by the 200 native-command limit.
 - The self-switch state of the new event id may pre-exist in old saves.
 
-## Native evidence (v1.30)
+## Native evidence
 
-The check ran in place on the test project, on the "Test: v1.30 Events" map. Results in the real engine:
+Checked in the real engine on a small editor-made test project:
 - **NPC:** a sprite NPC with no priority option defaulted to priority same.
 - **Fixed slime:** it used same priority and `player_touch`. When the player bumped into it, its battle started, and the slime vanished after the win.
 - **Chasing bat:** it used `approach` and `event_touch`, and moved toward the player.

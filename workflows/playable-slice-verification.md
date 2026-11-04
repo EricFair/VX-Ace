@@ -6,7 +6,7 @@ Use this when moving from tooling tests to a small playable VX Ace feature. Seri
 
 Retain the source snapshot, a guarded delivery copy, and any instrumented test copy as separate directories. A test harness may arrange a rare condition, such as starting a battle at 1 HP, but record that arrangement and exclude it from the delivered game. Exercise the real interpreter, battle and save/load paths after arranging the condition; a stubbed result does not verify those paths.
 
-Use fresh indexes and the normal copy patcher's byte gates for script replacements as well as native data edits. Keep proprietary default scripts, RTP art, saves and raw project reports local. Public evidence should describe scenarios and results without redistributing those files.
+Use fresh indexes and the normal copy patcher's byte gates for script replacements as well as native data edits. Keep proprietary default scripts, RTP art, saves and raw project reports local.
 
 ## Verify the state transitions
 
@@ -39,4 +39,4 @@ If scenery/events exist only at runtime, explain that clearly: they will not app
 
 ## Record the limits
 
-List which scenarios ran in native VX Ace, which passed only automated checks, which use a harness, and which remain untested. Link each result to the corresponding local audit/build, and verify the original project inventory after testing. Publish skill/tool changes only after their relevant checks pass; do not call a playable prototype a complete engine-compatibility certification.
+List which scenarios ran in native VX Ace, which passed only automated checks, which use a harness, and which remain untested. Verify the original project inventory after testing. Do not call a playable prototype a complete engine-compatibility certification.

@@ -1,4 +1,4 @@
-# Guarded blank-map append — v1.2
+# Guarded blank-map append
 
 Append one root-level map from a verified inert native template through the explicit Python disposable-copy workflow. The new map inherits the template's dimensions, tiles, tileset and permitted inert settings; its event hash is empty. Existing maps and map-tree entries are preserved. This is a bounded map creation operation, not a general map editor.
 
@@ -53,7 +53,7 @@ The `append_blank_map` mutation also accepts optional `width`, `height` (17..500
 
 ### Fresh-map mode (v1.26)
 
-If `width`, `height` and `tileset_id` are all given, the template need not be inert: it is used only for the native field set, ivar order and audio-object shape, and the new map gets the editor's new-map defaults (no events, no encounters, `encounter_step` 30, no automatic audio, empty names/notes/backgrounds, scroll 0). Nothing from the template's content is copied, so a map with events, encounters, regions, notes or audio can be the template. The defaults were verified against the editor-created map in `Projects/project2.zip`; the table is in [new areas](new-areas.md#fresh-map-mode-any-map-can-be-the-template). Without all three keys, the strict inert-template rules of this document apply unchanged.
+If `width`, `height` and `tileset_id` are all given, the template need not be inert: it is used only for the native field set, ivar order and audio-object shape, and the new map gets the editor's new-map defaults (no events, no encounters, `encounter_step` 30, no automatic audio, empty names/notes/backgrounds, scroll 0). Nothing from the template's content is copied, so a map with events, encounters, regions, notes or audio can be the template. The defaults were verified against an editor-created map; the table is in [new areas](new-areas.md#fresh-map-mode-any-map-can-be-the-template). Without all three keys, the strict inert-template rules of this document apply unchanged.
 
 ## Native verification and saves
 
@@ -61,8 +61,6 @@ Open the staged copy in VX Ace and inspect its new root tree entry, dimensions, 
 
 System/version is intentionally unchanged because no existing map is changed. Default older saves on existing maps should not be forced to reconstruct them. Custom loaders, runtime-created maps and save hooks require separate review; a next static ID does not prove it is free in custom runtime state.
 
-On 16 October 2026, a private editor-produced default seed passed the full copy/postgate chain. Native VX Ace loaded the unchanged older save on map1 without an extra setup, transferred to new map2, checked 17×13 dimensions/ground and zero events, walked down onto the removed inert placeholder cell and back through ordinary `Game_Player.move_straight` collision checks, saved, then loaded that new-map save after full Game-process restart. Automated private hashes confirmed all prior Data files except MapInfos, System/version, old Save01 and restart Save02 preservation; pure candidate verification bound the new map/tree. A separate inspection copy displayed the new root map and blank event grid in the native editor. Input injection was unreliable, so a private authored driver invoked native transfer/movement/save APIs; this evidence does not establish keyboard input behavior.
+On a copy of a default editor project the full copy/postgate chain passed. The real engine loaded the unchanged older save, transferred to the new map, checked its dimensions, ground and zero events, walked on it with ordinary collision checks, saved, and loaded that save after a full Game-process restart. Only MapInfos and the new map files changed; the editor displayed the new root map and a blank event grid. A test driver invoked the transfer, movement and save APIs, so keyboard input is not established, nor is compatibility with arbitrary customized games.
 
-All 420 automated tests passed locally, including 11 map candidate/copy/planner/refusal/rollback cases. Check the release commit's actual CI before claiming online success. Proprietary defaults, project data, saves, test drivers and raw reports are not distributed.
-
-No deletion, reparenting of existing maps, ID reuse, template logic cloning, transfer authoring in this operation, autotile painting (v1.26 allows only the single-tile A5 floor fill) or general save migration is enabled; v1.26 adds the optional new-map size within the editor's limits. This limited default-project evidence does not establish compatibility with arbitrary customized games.
+No deletion, reparenting of existing maps, ID reuse, template logic cloning, transfer authoring in this operation, autotile painting (only the single-tile A5 floor fill is allowed) or general save migration is enabled; the new map size is optional within the editor's limits.

@@ -1,4 +1,4 @@
-# Baseline-relative observed schema comparison — v1.3
+# Baseline-relative observed schema comparison
 
 Use this standalone read-only report to find classes, fields and normalized type sets that differ from an explicitly selected baseline project. It complements the existing single-index observed schema report. It does not supply a universal VX Ace schema, classify new fields as invalid, or authorize writing them.
 
@@ -23,12 +23,10 @@ Choose a baseline with relevant content coverage. A field/class absent from one 
 
 ## Fixed bounds
 
-Each index retains the shared 16MiB/file, 128MiB total read, 4,096 read and 500,000 charged-step budgets. Traversal depth is at most128 and evidence/class keys at most256 characters. Each side allows at most2,048 classes, 50,000 distinct class-field pairs and512KiB serialized evidence samples. Each source integrity inventory allows20,000 filesystem entries,64MiB/file and512MiB total bytes. The JSON report is capped at2MiB. Exceeding any budget refuses the whole comparison without a partial report; source integrity reads use bounded chunks. These are fixed safety/resource limits, not pagination.
+Each index retains the shared 16MiB/file, 128MiB total read, 4,096 read and 500,000 charged-step budgets. Traversal depth is at most 128 and evidence/class keys at most 256 characters. Each side allows at most 2,048 classes, 50,000 distinct class-field pairs and 512KiB serialized evidence samples. Each source integrity inventory allows 20,000 filesystem entries, 64 MiB/file and 512MiB total bytes. The JSON report is capped at 2MiB. Exceeding any budget refuses the whole comparison without a partial report; source integrity reads use bounded chunks. These are fixed safety/resource limits, not pagination.
 
 ## Evidence and limits
 
-Eleven focused tests cover baseline-relative classes/fields/types and exact evidence, nested classes, primitive/container types, sample caps, count-only differences, both stale/incomplete inputs, both source/index changes, containment/link refusal, resource limits and report-write cleanup without input changes. Platform-dependent symlink creation can be skipped where unavailable; CI reports the actual result.
-
-A private fresh comparison of the editor-produced seed and v1.2's native-tested map copy reported no class/field/type-set differences while recording increased map/map-info counts. An independent authored Ruby Marshal fixture with one added `RPG::Actor.custom_schema_flag` reported exactly one target-only field with a boolean observation and exact normalized evidence. Neither comparison executed project scripts or modified either source. Proprietary project/index/report content remains private. Check the release commit's actual full-suite and CI results before claiming it passed online.
+A comparison of an editor-made seed project and a copy with an added map reported no class/field/type-set differences while recording the increased map counts. An authored Ruby Marshal fixture with one added `RPG::Actor.custom_schema_flag` reported exactly one target-only field with a boolean observation. Neither comparison executed project scripts or modified either source.
 
 This standalone tool does not change master policy, mutation gates, existing inspection results, literal/regex search or MCP. Further schema classification or authoring needs separate evidence and scope.

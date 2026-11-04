@@ -1,4 +1,4 @@
-# Read-only MCP adapter — v0.18
+# Read-only MCP adapter
 
 Use this optional adapter when an MCP-compatible client needs our existing indexed VX Ace diagnostics. Using the installed skill's normal command-line tools does not require MCP. This adapter does not import the upstream MCP writer and never provides mutations.
 
@@ -72,8 +72,6 @@ Implementation references: official MCP [stdio transport](https://modelcontextpr
 
 ## Verification
 
-The 26-test protocol suite uses an actual Python subprocess client as well as direct tests of handshake/version negotiation, fixed capabilities, tools/resources, notifications, UTF-8/JSON errors, strict schemas, unknown write/path requests, stale manifests, source changes, byte/call/output budgets, deadlines and linked paths. No proprietary engine data is used by the public tests.
+A subprocess client completed the handshake, all five tools, the fixed resource and explicit write refusal against a native-tested disposable project; game and index hashes remained unchanged. This verifies the stdio interface against that project's indexed editor content, not client-specific GUI registration or broader runtime coverage.
 
-A private subprocess client also completed the handshake, all five tools, the fixed resource and explicit write refusal against the native-tested Oakfall copy. It resolved all 290 indexed assets and observed 155 PNG headers; full game/index hashes remained unchanged. Raw replies stay private. This verifies our stdio interface against that project's indexed editor content, not client-specific GUI registration or broader runtime coverage.
-
-Before publishing, run the complete suite and the adapter against a fresh index of a native-tested disposable project. Keep raw replies private because searches may return proprietary project text. Client-specific GUI setup is separate from stdio protocol verification; do not claim all third-party clients were tested merely because the subprocess client passed.
+Keep raw replies private because searches may return proprietary project text. Client-specific GUI setup is separate from stdio protocol verification; do not claim all third-party clients were tested merely because the subprocess client passed.

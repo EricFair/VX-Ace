@@ -1,6 +1,6 @@
 # Adopting a reviewed staged copy (`vxace_adopt.py`)
 
-`tools/vxace_adopt.py` is the only tool in this skill that writes to a real working project. Everything else edits disposable copies. Run it yourself, explicitly, after you have reviewed the result.
+`tools/vxace_adopt.py` copies a reviewed staged copy into your real project, with a backup and an undo. Everything else edits disposable copies; the only other path that changes the project is a confirmed in-place recipe run on a project you designated as a working/test project (see `references/recipes.md`). Run adopt yourself, explicitly, after you have reviewed the result.
 
 ## When to use it
 
@@ -18,7 +18,7 @@ Only after all of these are done for the staged copy (or recipe result):
    python tools/vxace_adopt.py plan PROJECT --copy STAGED_COPY --audit AUDIT_DIR [--audit AUDIT_DIR2 ...] --output PLAN_DIR
    python tools/vxace_adopt.py plan PROJECT --recipe WORK/recipe-report.json --output PLAN_DIR
    ```
-   For chained copies pass the audits in step order (the copy is the last one). With `--recipe` the report supplies every step audit and the final copy. Since v1.29 a report stores its paths relative to its own folder and `plan --recipe` resolves them against the report file's location, so the whole recipe work folder can be moved or renamed before planning; reports with absolute paths from older versions still work (as long as the folders they name are still there). The default recipe cleanup keeps the audits and the final copy and deletes the other step copies, which is all this command reads. A report from `vxace_recipe.py run --in-place` has no staged copy and is refused: that run already wrote the project and has its own undo record (`vxace_recipe.py undo`, or `undo` below). Read `PLAN_DIR/adopt-plan.md`; it lists each file (replace/create), sizes and hashes, and prints the `plan_id`.
+   For chained copies pass the audits in step order (the copy is the last one). With `--recipe` the report supplies every step audit and the final copy. A report stores its paths relative to its own folder and `plan --recipe` resolves them against the report file's location, so the whole recipe work folder can be moved or renamed before planning; reports with absolute paths still work as long as the folders they name are still there. The default recipe cleanup keeps the audits and the final copy and deletes the other step copies, which is all this command reads. A report from `vxace_recipe.py run --in-place` has no staged copy and is refused: that run already wrote the project and has its own undo record (`vxace_recipe.py undo`, or `undo` below). Read `PLAN_DIR/adopt-plan.md`; it lists each file (replace/create), sizes and hashes, and prints the `plan_id`.
 3. **Apply**:
    ```
    python tools/vxace_adopt.py apply PROJECT --plan PLAN_DIR/adopt-plan.json --backup-root BACKUP_ROOT --confirm PLAN_ID
@@ -52,6 +52,6 @@ Exit codes: 0 success, 3 deliberate refusal (JSON on stderr with `reason` and th
 - Backups are plain file copies kept by you under BACKUP_ROOT; keep them until you are happy with the result.
 - Existing save files are not migrated; structural changes advance the project version so old saves reload maps, as the copy audit describes.
 
-## Native evidence (v1.17)
+## Native evidence
 
-On a stand-in copy of an editor-created project, the `example_cave.json` recipe staged four changes; `plan` listed exactly Enemies, Skills, Troops, Map001 and System. `apply` refused with the real editor process detected (`rpgvxace.exe`, open on a different project). With only that process check stubbed in a test harness, `apply` backed up and replaced the five files and `status` reported `adopted`; a smoke run of the adopted project found the new encounter and a random battle against the new troop in the real engine; `undo` then restored every `Data` file byte-identically.
+On a copy of an editor-created project, a recipe staged four changes and `plan` listed exactly the five changed files. `apply` refused while the real editor process was running. With that check stubbed, `apply` backed up and replaced the files, a smoke run of the adopted project found the new encounter and a random battle against the new troop in the real engine, and `undo` restored every `Data` file byte-identically.

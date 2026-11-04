@@ -1,12 +1,10 @@
-# Verified Copy Mutation — v0.8
+# Verified Copy Mutation
 
-Historical foundation: v0.11 adds an explicit Python backend and v0.12 adds [guarded command/page structure edits](event-structure.md) through that backend. The v0.8 limitations below describe that original release; the linked workflow defines the current structural subset and mandatory gates.
-
-v0.8 introduces the first mutation-capable layer, but it is intentionally restricted to **disposable project copies**.
+This is the base contract of the copy patcher (`tools/vxace_copy_patcher.py`): scripts, existing database fields and existing event command parameters. Later operations such as [guarded command/page structure edits](event-structure.md) add their own schemas and gates through the Python backend; this page describes only the base layer, which writes to **disposable project copies**.
 
 ## Safety contract
 
-The source VX Ace project is never a write target.
+The copy patcher never writes to the source project. Every write lands on a new copy; the project changes only through [adopt](adopt.md) or a confirmed in-place recipe run (see [recipes](recipes.md)).
 
 Before any mutation, the copy patcher must:
 
@@ -19,9 +17,9 @@ Before any mutation, the copy patcher must:
 7. mutate only files in the clone;
 8. confirm the source file inventory/hashes are unchanged afterward.
 
-This is stricter than merely proving that Ruby can read and rewrite the file. Exact binary identity is the v0.8 admission requirement.
+This is stricter than merely proving that Ruby can read and rewrite the file. Exact binary identity is the admission requirement.
 
-This reference retains the v0.8 baseline contract. Current separately gated additions are [event structure](event-structure.md), [existing-map regions](map-region-editing.md), [inert key-item append](key-item-append.md), [one native slot before canonical Main](script-slot-insertion.md), [ordinary upper B-E tiles](upper-tile-painting.md), and [stationary dialogue-event append](map-event-creation.md) with [optional bound character graphics](character-event-graphics.md). Those references define their narrower native schemas, Python-only selection and mandatory postgates; the historical v0.8 refusal list below does not enable or describe those later operations.
+Separately gated additions to this base layer are [event structure](event-structure.md), [existing-map regions](map-region-editing.md), [inert key-item append](key-item-append.md), [one native slot before canonical Main](script-slot-insertion.md), [ordinary upper B-E tiles](upper-tile-painting.md), and [stationary dialogue-event append](map-event-creation.md) with [optional bound character graphics](character-event-graphics.md). Those references define their narrower native schemas, Python-only selection and mandatory postgates; the refusal list below describes the base layer only and does not cover those operations.
 
 ## Supported mutations
 
@@ -37,28 +35,28 @@ This is suitable for tightly scoped fields such as a name or numeric property. I
 
 ### Event command parameters
 
-v0.8 can modify parameters on an existing event command in:
+The base layer can modify parameters on an existing event command in:
 
 - a map event page;
 - a common event;
 - a troop event page.
 
-It does not yet insert/delete event commands or pages. Existing structure must already exist and be addressable by verified IDs/page/command indexes.
+It does not insert or delete event commands or pages (see [event structure](event-structure.md) for that). Existing structure must already exist and be addressable by verified IDs/page/command indexes.
 
 ## Transactional failure behavior
 
 The copy patcher is fail-closed. If mutation, verification, or re-indexing fails after the staged copy is created, the staged copy is deleted automatically. The audit directory remains and records `failure.json` so a partial copy is not mistaken for a usable build.
 
-## What v0.8 still refuses
+## What the base layer refuses
 
-- direct mutation of the original project;
+- writing to the original project;
 - any target that cannot round-trip byte-identically first;
 - stale Project Reader indexes;
 - output or audit paths inside the source project;
 - nested copy/audit destinations;
 - ambiguous script replacements;
 - arbitrary Ruby execution from project scripts;
-- structural insertion/deletion of events/pages/commands;
+- structural insertion/deletion of events/pages/commands (base layer; see event structure);
 - creation of unknown database instance variables;
 - unverified writers for unknown/custom serialized classes;
 - save-file migration or modification;
@@ -77,10 +75,10 @@ The copy patcher produces an audit containing:
 - optional post-copy Project Reader index;
 - optional normalized index diff.
 
-The staged project should still be opened and tested in RPG Maker VX Ace before any human decides to replace a working project with it.
+The staged project should still be opened and tested in RPG Maker VX Ace before you decide to replace a working project with it.
 
 ## Why byte-identical no-op round trips matter
 
 Ruby Marshal is a serialization format, not a schema-aware database. A writer can produce a file that appears semantically similar to an external parser while still differing in details important to the real runtime. Requiring an exact no-op byte match greatly reduces that risk.
 
-It is not a complete proof of game correctness. It is a precondition for v0.8 mutation.
+It is not a complete proof of game correctness. It is a precondition for mutation.

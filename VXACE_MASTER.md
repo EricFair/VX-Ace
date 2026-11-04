@@ -1,68 +1,8 @@
 # VX Ace Masterfile — v2.0.0
 
-The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
+Reference for this specialist toolchain: recommended settings, available features, commands and remaining limits. [SKILL.md](SKILL.md) holds the agent rules and task routing. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
-v1.7 adds three standalone read-only analyses that run on a fresh index outside the master workflow: [balance](references/balance-analysis.md), [notetag registry](references/notetag-registry.md) and [text export/lint](references/text-export.md) (commands in [tools/README.md](tools/README.md)). They enable no write operation.
-
-v1.8 adds standalone [in-engine smoke tests](references/smoke-testing.md): `vxace_smoke.py stage` installs an env-nonce-gated harness slot in a new disposable copy through the existing guarded chain, and `run` launches that copy's `Game.exe` and validates its results. The master workflow never launches the game.
-
-v1.9 adds a separate guarded [template-clone database append](references/database-append.md) for enemies, skills, states, weapons and armors (one per Python copy transaction; no master setting invokes it) and a [release checklist](workflows/release-checklist.md).
-
-v1.10 adds read-only [text import](references/text-import.md): an edited text-export CSV becomes a spec of existing guarded edits, applied only through the normal plan/copy chain.
-
-v1.11 extends the database append to troops: a blank one-page template troop with 1..8 reviewed existing enemies, bound to the Enemies array hash. Encounter lists and Battle Processing are not wired automatically.
-
-v1.12 adds one guarded [random-encounter append](references/map-encounters.md) per map transaction (existing troop, weight, optional regions and step), advancing the reload version so older saves pick it up.
-
-v1.13 adds [recipes](references/recipes.md): `vxace_recipe.py` chains existing operations as separate guarded transactions on successive disposable copies (hashes from fresh snapshots, `from_step` id references), with an optional final smoke run. The original project is hash-checked unchanged.
-
-v1.14 adds one guarded class skill learning per transaction (existing static skill bound by the Skills hash, level 1..99) and the matching `append_learning` recipe step. Existing actors learn it on a later level-up only.
-
-v1.15 adds guarded [Shop Processing](references/map-shops.md) on a blank or single-dialogue action-button event (existing goods bound by the Items/Weapons/Armors hashes, reload version advanced) and the `append_dialogue_event` / `add_shop` recipe steps.
-
-v1.16 adds a guarded [blank-event append](references/map-event-creation.md) that uses an existing event only as a schema donor and forces editor defaults, so dialogue/shop recipes work on maps without a hand-made blank template.
-
-v1.17 adds [adopt](references/adopt.md): the only path that writes to a working project. `plan` is read-only; `apply` requires the plan id, a closed editor and matching hashes, backs up replaced files and records an undo. The master workflow never adopts.
-
-v1.18 adds guarded [quest-stage events](references/staged-events.md): one new event with 1..8 conditional action-button pages, literal dialogue and switch/variable/self-switch commands (no branches, autorun or parallel), bound to the System hash.
-
-v1.19 lets quest-stage pages nest [choices, if/else conditions and battles](references/staged-events.md) (depth 4) and adds party, common-event, gold, item, transfer and wait commands; every referenced Troops/Actors/CommonEvents/Items/MapInfos file and destination map is bound by its own hash.
-
-v1.20 adds usable [items](references/database-append.md) to the database append and bounded overrides for skill/item **effects** (recover, states, buffs, grow, learn skill, common event) and weapon/armor/state **features** (element/state rates, param rates, attack element/state, add skill); each referenced States/Skills/CommonEvents/System file is bound by its own hash.
-
-v1.21 adds a guarded [common event append](references/common-event-append.md): one call-only or switch-gated parallel common event using the staged-event command language, callable from staged events and item/skill effect 44.
-
-v1.22 adds weapon/armor commands and page graphics/options to the command language and an `add_treasure_chest` [recipe macro](references/treasure-chests.md) (closed and opened chest pages, self switch A).
-
-v1.23 adds actors to the database append (class, levels, graphics, slot-checked equipment) and a guarded [System fields](references/system-fields.md) edit for the starting party, start position, title, currency and menu terms.
-
-v1.24 adds `vxace_recipe.py plan`, a read-only [recipe dry-run](references/recipes.md): it simulates the whole chain in memory and reports each step's predicted id, resolved `from_step` links, summary and warnings without making any project copy.
-
-v1.25 adds page triggers (player/event touch, parallel with a wait), autonomous movement (random, approach, bounded custom routes), Set Move Route (205/505) and Erase Event (214) commands, and an `add_touch_trigger` [recipe macro](references/touch-triggers.md).
-
-v1.26 adds a fresh-map mode to the blank-map append (any existing map as schema template, editor new-map defaults, size, tileset and an optional passable A5 floor), a cross-map blank-event donor, map ids via `from_step`, and an `add_area` [recipe macro](references/new-areas.md) with a door in and a return door out.
-
-v1.27 adds enemy `actions` (skill, rating and always/turn/HP/MP/state/party-level/switch conditions), `drop_items` (three editor slots) and `features` overrides to the [database append](references/database-append.md), with per-reference hashes and `from_step` for new skills and drops.
-
-v1.28 adds classes to the [database append](references/database-append.md): EXP parameters, generated stat curves (linear, early or late between level-1 and level-99 values), learnings and class features (skill, weapon and armor types, equip fixes, dual wield, action plus, special flags).
-
-v1.29 adds in-place recipes (`--in-place --confirm-in-place NAME`: one verified backup, every gate per step, promotion of verified files only, rollback on failure, one-command undo, no retained copies), default cleanup of per-step indexes and intermediate copies in the copy chain, and relative report paths.
-
-v1.30 makes staged pages with a character graphic default to priority same (they collide and are triggered by facing; impact warns about graphic events below the player), adds the `add_monster` [macro](references/monsters.md) (battle on touch, one-time or respawning), and lets `add_area` doors be locked behind a condition.
-
-v1.31 adds a `layout` option for fresh maps and `add_area` ([map layouts](references/map-layouts.md)): A5 floor, impassable border wall, visible paths from the anchor, B-E landmarks, stock-tileset presets, and plan/impact reachability warnings for placed events.
-
-v1.32 adds `features_add`/`features_remove` and a HIT guard for features overrides, a `set_fields` recipe step (guarded `edit_database_entry` on existing entries), switch/variable names in `set_system_fields`, and hit/evasion in the balance analysis.
-
-v1.33 adds Shop Processing and Recover All to the shared command language, graphics on dialogue events, and the `add_shopkeeper`, `add_inn` and `add_intro` recipe macros.
-
-2.0 hardens the toolchain: a content-hash cache makes each recipe step about four times faster, `plan` estimates every new troop against the starting party, `set_fields` can change actor graphics (hash-bound), `add_monster` chases by default, graphic-less touch pages default to priority below (no invisible walls), and smoke reports record the game's frame rate. Tests no longer read the live test project.
-
-v1.34 adds RTP auto-detection (registry, Steam libraries, common files), a one-page project overview, an RTP sprite catalogue with `graphic: {"sprite": ...}` lookup, troop-level balance (hit/eva, damage per turn, survival estimate), and smoke helpers: `vxace_smoke.py check`, a scripted DSL (goto, step, talk, wait_until, auto_battle) and in-engine PNG screenshots.
-
-v1.4.1 corrects static passage observations in the [ordinary upper-tile snapshot](references/upper-tile-painting.md). Recreate previous snapshots; the native uppermost non-star tile now takes priority over lower flags. Mutation capabilities and copy safety gates remain as documented.
-
-v1.0 is the validated specialist release. v1.1 adds [bounded read-only regex search](references/regex-search.md). v1.2 separately adds [one guarded blank-map append](references/blank-map-append.md), with native movement/save/restart and editor evidence; broader authoring remains separately scoped.
+Version 2.0 is the hardening release. A content-hash cache makes recipe steps several times faster, `vxace_recipe.py plan` estimates every new troop against the starting party, smoke reports record the game's frame rate, and behaviour defaults come from playtests (`add_monster` chases and battles on touch; graphic-less touch pages have priority below). The per-release history is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Recommended setup
 
@@ -71,11 +11,11 @@ v1.0 is the validated specialist release. v1.1 adds [bounded read-only regex sea
 - Master settings: [`vxace-master.json`](vxace-master.json). The master workflow selects the pinned **Python** data backend explicitly. Standalone validator and copy-patcher commands retain their historical Ruby default unless `--backend python` is supplied.
 - Default workflow: **read-only** validation, extraction, compatibility analysis, Project Codex, observed schema, and conservative reference lint.
 - All outputs: a **new external directory**, physically outside the game. Do not use junctions/symlinks to route output into the source.
-- Mutation: **new disposable copy only**, after fresh evidence, a reviewed concrete plan, project-wide validation and immediate per-target byte/semantic gates.
+- Mutation: **a new disposable copy** by default, after fresh evidence, a reviewed concrete plan, project-wide validation and immediate per-target byte/semantic gates. The project itself changes only through [adopt](references/adopt.md) (after you review the copy and confirm the plan) or `vxace_recipe.py run --in-place --confirm-in-place NAME` on a project you designate as a working or test project ([recipes](references/recipes.md)).
 - Failure: refuse; never downgrade a mismatch, warning, ambiguous target or stale source to a permissive warning.
 - Preserve original game files and private/proprietary scripts. Do not commit user projects, extracted defaults, saves, or raw private reports.
 
-The master runner does not perform mutations. Its safety settings are validated against a fixed policy; a configuration file cannot enable original-project writes or unrestricted structural editing. The legacy `structural_writes: "guarded-events-only"` label describes the event-structure subset. Regions, inert key-item append, canonical-Main script-slot insertion and ordinary upper scenery painting and stationary dialogue-event append and guarded blank-map append have separate documented copy operations; no master setting invokes or authorizes them.
+The master runner does not perform mutations. Its safety settings are validated against a fixed policy; a configuration file cannot enable original-project writes or unrestricted structural editing. The legacy `structural_writes: "guarded-events-only"` label describes the event-structure subset. Every write operation listed in SKILL.md "Enabled copy operations" is a separate documented copy operation; no master setting invokes or authorizes them.
 
 Optional [native compile-only syntax diagnostics](references/native-syntax-diagnostics.md) are separate from this unattended workflow: prepare a private exact-byte bundle, use a different trusted blank disposable VX Ace host through existing copy gates, observe the actual native run and collect its complete report. The inspected custom game must never be used as the host. No source is evaluated, and a compile pass never establishes gameplay/save compatibility or mutation authorization.
 
@@ -91,7 +31,7 @@ With an explicit host Ruby:
 python tools/vxace_master.py "C:/Games/MyVXACEProject" --output "C:/VXACE-Reports/MyGame-run-001" --ruby "C:/Ruby32/bin/ruby.exe"
 ```
 
-For a game using installed RTP, add `--rtp "C:/Explicit/Path/To/rtp"` to check indexed graphics/audio references against that known directory. Without it, unresolved references are reported as uncertain and may require review. No RTP is installed or copied automatically.
+For a game using installed RTP, add `--rtp "C:/Explicit/Path/To/rtp"` to override the RTP location. The RTP is auto-detected (registry, Steam libraries, common files; set `VXACE_NO_RTP_AUTODETECT=1` to disable); if none is found, unresolved references are reported as uncertain and may require review. No RTP is installed or copied automatically.
 
 Use a project folder or `.rvproj2` file. Do not run the placeholders literally. The default settings file is resolved relative to the installed toolchain, not the current directory. Override it with `--config PATH`; fixed safety constraints remain mandatory.
 
@@ -149,7 +89,7 @@ Master exit codes: `0` all enabled stages passed and original inventory is uncha
 | Optional stdio MCP interface | Five read-only indexed tools and one fixed summary resource; explicit roots, fresh source/index checks, bounded workers; no writes, arbitrary file API or HTTP listener |
 | Patch proposals | Freshness, exact unique script anchors, structured database/event proposals, regression checks and rollback guidance |
 | Dependency impact | Exact target review, event graph relationships, script collision and save-hook evidence; incomplete dependency coverage is disclosed |
-| Verified copy patching | Existing scalar database fields, existing map/common/troop command parameters and unique script replacements; backend-specific limits apply |
+| Verified copy patching | Existing database fields, existing map/common/troop command parameters and unique script replacements; backend-specific limits apply |
 | Guarded event structure | Python copy backend: atomic command insertion/deletion and conditioned same-owner map/troop page cloning/deletion; exact native hashes, repeating-trigger refusal, native project-version advancement, mandatory post-copy validation |
 | Guarded existing-map regions | Python copy backend: 1..256 unique cells, editor IDs0..63, exact native Table/current-region preconditions; preserve graphics/lower metadata/other fields, review encounter/script consumers, version advance and mandatory postgates |
 | Guarded map display name | Python copy backend: one existing map's plain UTF-8 display_name, exact native map/current-name guards and schema; preserve tree/editor name and other fields/aliases, advance reload version, require postgates/final whole-copy hashes and native editor/window/save checks |
@@ -261,7 +201,7 @@ Review the patcher's normalized diff and semantic diff, then test the clone in V
 
 An actual editor-produced project exposed a host-version mismatch: modern Ruby serializes some legacy floating values differently (`500` becomes `5e2`). Those files correctly fail the Ruby byte-identity gate. Do not waive that failure because the numeric values match.
 
-The explicit Python backend preserves existing float records and other retained serialized values. It passes the tested real project's complete 16-file snapshot and supports our narrow writer through the same copy-only gate chain. It is not a general-purpose schema editor. Python database mutations are scalar-only and type checked; identity fields, unknown fields, arbitrary object replacement, non-finite numbers and unsupported encoding edits are refused.
+The explicit Python backend preserves existing float records and other retained serialized values. It passes the tested real project's complete 16-file snapshot and supports our narrow writer through the same guarded gate chain. It is not a general-purpose schema editor. Python database mutations are type checked and limited to whitelisted fields, appends and bounded overrides (features, effects, actions, curves); identity fields, unknown fields, arbitrary object replacement, non-finite numbers and unsupported encoding edits are refused.
 
 The standalone experimental audit remains separate: its `mutation_authorized=false` result never substitutes for the production selected-backend validator. The master settings choose the production Python backend deliberately; there is no automatic fallback.
 
@@ -277,7 +217,7 @@ Never invent switch meanings, event IDs, APIs, load order, quest-stage semantics
 
 ## Tests and completion criteria
 
-The published skill does not include its development test suite. Every release is validated locally with the full suite (Python 3.12+, Ruby 3.2, Windows) and, for each guarded operation, a native run in actual VX Ace on disposable copies; each reference records that native evidence.
+The published skill does not include its development test suite. Every release is validated locally and, for each guarded operation, a native run in actual VX Ace on disposable copies; each reference records that native evidence.
 
 A release is complete when its documented scope is implemented, tests pass, real-project evidence is recorded honestly, original hashes are unchanged, staged edits are reviewed/tested, and the repository is updated. This is not a claim that every upstream feature or all possible VX Ace projects are supported.
 
@@ -287,11 +227,11 @@ For custom class/field/type observations relative to an explicit baseline projec
 
 ## Direct transfer from a blank event
 
-Read [the guarded direct-transfer workflow](references/direct-map-transfer.md) to connect an existing blank stationary action-button event to a different verified inert empty map. Capture exact native evidence, review impact and stage one201 insertion through the Python copy chain; mandatory version reload, both-map audits and final complete-copy preservation apply. Test actual event execution and old/save/restart behavior. Broader transfer authoring stays deferred.
+Read [the guarded direct-transfer workflow](references/direct-map-transfer.md) to connect an existing blank stationary action-button event to a different verified inert empty map. Capture exact native evidence, review impact and stage one201 insertion through the Python copy chain; mandatory version reload, both-map audits and final complete-copy preservation apply. Test actual event execution and old/save/restart behavior. Staged events can also contain Transfer Player commands, and `add_area` builds doors and return doors ([new areas](references/new-areas.md)).
 
 ## Blank-map creation
 
-For one new empty root map, read [the guarded blank-map workflow](references/blank-map-append.md). Capture fresh read-only native evidence with `vxace_maps.py`, bind every guard and use one reviewed `map_entry` transaction through the explicit Python copy backend. Existing maps/tree entries/System are preserved. Review dynamic IDs/loaders/save hooks and verify native editor, transfer, collision-aware movement, old save, saving and process restart. No transfers are authored automatically.
+For one new empty root map, read [the guarded blank-map workflow](references/blank-map-append.md). Capture fresh read-only native evidence with `vxace_maps.py`, bind every guard and use one reviewed `map_entry` transaction through the explicit Python copy backend. Existing maps/tree entries/System are preserved. Review dynamic IDs/loaders/save hooks and verify native editor, transfer, collision-aware movement, old save, saving and process restart. The blank-map append itself authors no transfers; `add_area` and staged events add them.
 
 ## Existing-map display name
 
@@ -301,7 +241,7 @@ Read [the guarded display-name workflow](references/map-display-names.md). Captu
 
 For an existing map's editor/tree label, read [the separate guarded map-name workflow](references/map-tree-names.md). Capture exact native evidence with `vxace_map_labels.py`, use one reviewed `map_label` change through the explicit Python copy chain and preserve all maps, display names, System/version and saves. Review custom name caches and verify new-process existing-save behavior. Reparent/delete/resize and general tree/property writes remain outside this operation.
 
-Structural edits outside [guarded commands/pages](references/event-structure.md) and [stationary dialogue-event append](references/map-event-creation.md), map creation beyond [one guarded blank-map append](references/blank-map-append.md), map resizing, tile painting beyond [ordinary upper-layer cells](references/upper-tile-painting.md), database entry creation beyond [inert key-item append](references/key-item-append.md), entry deletion/ID reuse, arbitrary raw writes, general save migration, encrypted archives, and VX/RGSS2 remain outside this release. Writable MCP tools, full asset decoding and deeper control-flow/termination analysis remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
+Structural edits outside [guarded commands/pages](references/event-structure.md) and [stationary dialogue-event append](references/map-event-creation.md), map resizing and reparenting, free-form tile painting beyond [upper-layer cells](references/upper-tile-painting.md) and [layout presets](references/map-layouts.md), entry deletion/ID reuse, arbitrary raw writes, general save migration, encrypted archives, and VX/RGSS2 remain outside this release. Writable MCP tools, full asset decoding and deeper control-flow/termination analysis remain in the staged adoption backlog. The archived upstream source is retained; it is not installed wholesale or exposed as an unrestricted game writer.
 
 Do not run broad unsupported writes merely because one project passed validation. The recorded native scenarios establish limited evidence. Further changes need their own fixtures, type/schema checks, dependency review and runtime scenarios. For supported event insertion/deletion, use [references/event-structure.md](references/event-structure.md), including exact snapshot commands, transaction fields and old-save behavior.
 
@@ -309,7 +249,7 @@ Do not run broad unsupported writes merely because one project passed validation
 
 - [`SKILL.md`](SKILL.md): specialist instructions and mandatory constraints.
 - [`vxace-master.json`](vxace-master.json): machine-readable default policy/features.
-- [`references/upstream-adoption.md`](references/upstream-adoption.md): full staged capability inventory.
+- [`references/upstream-adoption.md`](references/upstream-adoption.md): provenance of the vendored Python Marshal codec.
 - [`tools/_vendor/NOTICE.md`](tools/_vendor/NOTICE.md): pinned codec provenance and license declarations.
 - [`references/event-structure.md`](references/event-structure.md): supported event edits, exact commands, preconditions and refusal rules.
 - [`references/search-and-event-diagnostics.md`](references/search-and-event-diagnostics.md): fresh-index search, lint, coverage and resource limits.

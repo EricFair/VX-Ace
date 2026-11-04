@@ -1,6 +1,6 @@
 # Changelog
 
-Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
+Writes land on a disposable copy behind exact native guards; the project changes only through adopt or a confirmed in-place recipe run. Operation details and limits are in the linked references.
 
 ## 2.0.0 — Hardening
 
@@ -164,7 +164,7 @@ See [monsters](references/monsters.md).
 ## 1.17.0 — Adopt and daily workflow
 
 - `vxace_adopt.py plan/apply/undo/status` brings a reviewed staged copy (single audit or recipe) into the working project: drift, undeclared-difference and smoke-harness refusals, editor/game-running refusal, per-file backup, atomic writes with rollback, verified undo. Verified on a stand-in project: recipe → plan → apply → real-engine smoke run → byte-identical undo. See [adopt](references/adopt.md).
-- New [daily game development](workflows/daily-game-dev.md) guide and a rewritten [getting started](GETTING_STARTED.md) with Claude Code and Codex installs; SKILL.md boundary 8 now names adopt as its only exception.
+- New [daily game development](workflows/daily-game-dev.md) guide and a rewritten [getting started](GETTING_STARTED.md) with Claude Code and Codex installs; SKILL.md boundary 8 named adopt as its exception (in-place recipe runs were added in 1.29).
 
 ## 1.16.1 — Clean skill repository
 

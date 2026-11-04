@@ -1,6 +1,6 @@
 # Project Codex — Evidence-First Knowledge Layer
 
-v0.6 adds a derived knowledge layer on top of the normalized Project Reader output.
+The Codex is a derived knowledge layer on top of the normalized Project Reader output.
 
 ## Purpose
 

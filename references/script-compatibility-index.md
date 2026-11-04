@@ -1,6 +1,6 @@
 # Script Compatibility Index
 
-v0.4 introduces a machine-generated compatibility index for extracted RGSS3 scripts.
+The Project Reader produces a machine-generated compatibility index for extracted RGSS3 scripts.
 
 ## Why this exists
 

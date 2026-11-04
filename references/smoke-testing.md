@@ -1,4 +1,4 @@
-# In-engine smoke testing — v1.8 (suite helpers, screenshots and `check`: v1.34)
+# In-engine smoke testing
 
 Use `tools/vxace_smoke.py` to run a project's own game inside the real RGSS3 runtime, in a **disposable copy**, with one test-harness script inserted before canonical Main. The harness drives a fresh boot (or a save), advances a bounded number of frames, catches uncaught errors, runs optional authored checks and writes a nonce-bound results file. The tool validates that file and reports.
 
@@ -136,7 +136,7 @@ The JSON report holds status (`pass`, `failed`, `incomplete`, `timeout`, `integr
 - Windows only for the real launch; the process runs as the current user with no sandbox. Only stage projects the user already trusts to run.
 - One script-slot transaction per staged copy. Scripts that replace `SceneManager`, the first scene, `Graphics.update` or `Input` may conflict with or disable the harness; a harness that fails to start shows as a missing or incomplete results file.
 - Battle test (`$BTEST`) does not use the boot override.
-- v1.34 helpers are verified under host Ruby with RGSS3 stand-ins (unit level) and need a real engine run to confirm: the engine's `Zlib` availability (the stored-block fallback covers its absence), `Bitmap#get_pixel` speed, and the `Game_Event`/`Scene_Battle` internals the helpers read (`@interpreter`, `@starting`, the battle command windows). Scripts, `step` and `talk` use `Fiber`; a script that replaces the main loop or calls `Graphics.update` itself can break the scheduler.
+- The suite helpers have run in the real engine (2.0; a `check` run passed at 54 fps with a normal window). They rely on the `Game_Event`/`Scene_Battle` internals (`@interpreter`, `@starting`, the battle command windows); a custom scene or battle system may break them. Scripts, `step` and `talk` use `Fiber`; a script that replaces the main loop or calls `Graphics.update` itself can break the scheduler.
 - `auto_battle :attack` presses confirm on the party, actor and enemy windows (Fight, first command, first target); classes whose first command is not Attack, or battles with custom command windows, need a hand-written driver. `:win` and `:lose` change HP directly and prove nothing about difficulty; use `:attack` to measure a fight.
 - Passing proves only that these frames ran without the recorded failures. It does not prove compatibility, save safety or correct gameplay.
 

@@ -1,4 +1,4 @@
-# Run-once map intros — v1.33
+# Run-once map intros
 
 `add_intro` is a recipe macro for "do this once when the player first enters the map": an opening line, a switch that starts a quest, a cutscene made of waits and text. It is the **bounded substitute for autorun**. Autorun (trigger 3) stays refused everywhere because it has no termination proof; this macro uses a parallel process that is proved to stop (a self switch turned ON by its last command).
 
@@ -39,4 +39,4 @@ Checked against `Game_Event` and `Game_Interpreter` of the default scripts:
 
 ## Limits
 
-No autorun, no graphic, no condition on the intro itself (nest `if` in `commands`), no repetition. Impact warns that page 1 is a parallel process and reminds that it stops through the self-switch page. Native in-engine verification is left to the first run of a game that uses it.
+No autorun, no graphic, no condition on the intro itself (nest `if` in `commands`), no repetition. Impact warns that page 1 is a parallel process and reminds that it stops through the self-switch page. In the real engine an intro waited its 45 frames, ran once and switched itself off; test your own intro text and timing in a smoke run or playtest of the copy.

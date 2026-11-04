@@ -1,6 +1,6 @@
 # Release checklist — shipping a VX Ace game
 
-Use this before handing a build to players. Every step runs against a fresh index or a disposable copy; the working project is never modified by the tools. Items marked *manual* need the editor or a person.
+Use this before handing a build to players. Every step runs against a fresh index or a disposable copy; the tools write only to disposable copies unless you adopt a copy or run a recipe in place on a designated project. Items marked *manual* need the editor or a person.
 
 ## 1. Freeze and snapshot
 

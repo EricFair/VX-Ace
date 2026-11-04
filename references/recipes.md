@@ -1,6 +1,6 @@
-# Recipes — v1.15 (classes: v1.28, set_fields: v1.32)
+# Recipes
 
-`tools/vxace_recipe.py` chains existing guarded operations. A recipe is a JSON list of high-level steps. Each step is run as its own normal single-change transaction through the existing tools, on a chain of disposable copies: step 1 reads the original project, step *k* reads step *k-1*'s copy. The original project is never written. The runner adds **no mutation logic**: it only drives the Project Reader, the operation's read-only snapshot CLI, the patch planner, the impact report and the Python copy patcher.
+`tools/vxace_recipe.py` chains existing guarded operations. A recipe is a JSON list of high-level steps. Each step is run as its own normal single-change transaction through the existing tools, on a chain of disposable copies: step 1 reads the original project, step *k* reads step *k-1*'s copy. In the default copy-chain mode the original project is never written; in-place mode (below) is an explicit opt-in for a designated working project. The runner adds **no mutation logic**: it only drives the Project Reader, the operation's read-only snapshot CLI, the patch planner, the impact report and the Python copy patcher.
 
 ```powershell
 python tools/vxace_recipe.py run tools/recipes/example_cave.json --project PROJECT --work NEW_WORK_DIR [--ruby RUBY] `
@@ -139,7 +139,7 @@ Example: a new sword on sale in a new shopkeeper.
 ]}
 ```
 
-`append_dialogue_event` needs an existing blank one-page stationary event on the map as `template_event`, or a preceding `append_blank_event` step (`"template_event": {"from_step": k}`) when the map has none; the created event has a blank graphic. The shop step reads Items, Weapons and Armors of the previous copy.
+`append_dialogue_event` needs an existing blank one-page stationary event on the map as `template_event`, or a preceding `append_blank_event` step (`"template_event": {"from_step": k}`) when the map has none; the created event has a blank graphic unless the step gives a `graphic` (see the table). The shop step reads Items, Weapons and Armors of the previous copy.
 
 ## How a step maps to the guarded chain
 
@@ -156,7 +156,7 @@ Before step 1 the runner runs `vxace_project_validator.py --backend python` on t
 
 ## Outputs
 
-- `WORK/recipe-report.json` and `.md`: per step the type, resolved parameters (with `from_step` replaced, script/CSV hashes), created id, spec/snapshot/plan/impact/audit/copy paths, each tool's exit code and any error; plus the validation result, `final_copy`, smoke summary, `original_unchanged` (inventory hash comparison of every original file before and after) and `mutation_performed_on_original: false`.
+- `WORK/recipe-report.json` and `.md`: per step the type, resolved parameters (with `from_step` replaced, script/CSV hashes), created id, spec/snapshot/plan/impact/audit/copy paths, each tool's exit code and any error; plus the validation result, `final_copy`, smoke summary, `original_unchanged` (inventory hash comparison of every original file before and after) and `mutation_performed_on_original` (`false` in the copy chain; `true` in in-place mode once a step was promoted).
 - `final_copy` is the path of the last successful step's `copy/` (for example `WORK/step-04/copy`). It is not duplicated; there is no `WORK/final` directory.
 - Smoke (optional): giving `--smoke-mode` stages the last copy with `vxace_smoke.py stage ... --work WORK/smoke [--suite SUITE]`, then runs it with `--mode/--frames/--auto-confirm`. The result is in `WORK/smoke-result.json`/`.md` and summarized in the report; a non-pass status makes the recipe exit `3`. See [in-engine smoke tests](smoke-testing.md).
 
@@ -202,7 +202,7 @@ With `"repeatable": true` only page 1 is emitted and it has no self-switch comma
 
 ## Monster macro (v1.30)
 
-`add_monster` places a visible monster that starts a battle on touch. It expands like `add_treasure_chest` and `add_touch_trigger`: an `append_blank_event` (only with `donor_event`), then one `append_staged_event` with a same-priority graphic page and, unless `respawn`, an empty defeated page. Records carry `macro` `add_monster`; `from_step` afterwards means the monster event id; `plan` predicts both ids exactly. See [monsters](monsters.md).
+`add_monster` expands like `add_treasure_chest`: an `append_blank_event` (only with `donor_event`), then one `append_staged_event`. Records carry `macro` `add_monster`, `from_step` afterwards means the monster event id, and `plan` predicts both ids exactly. Pages, movement defaults and examples are in [monsters](monsters.md).
 
 ## Shopkeeper, inn and intro macros (v1.33)
 
@@ -214,28 +214,11 @@ A staged page with a character `graphic` and no `options.priority` is stored wit
 
 ## New areas (v1.26)
 
-`append_blank_map` creates a map (optionally resized, retiled, parented and floor-filled with one passable A5 tile) and `add_area` wraps it with a door on a source map and a return door on the new map. Both are documented in [new areas](new-areas.md). The new map id is predicted exactly by `plan` (next maximum `MapInfos` key + 1), and the dry run simulates the new map's existence and size so later steps' bounds, occupancy and transfer checks see it. `add_area` runs as `step-NNa` (blank map), `step-NNb` (door blank event, only when the door has no `template_event`), `step-NNc` (door), `step-NNd` (blank event on the new map, schema donor from the door map) and `step-NNe` (return door); sub-step letters follow the sub-steps that exist.
-
-```json
-{"title": "Moss cave", "steps": [
-  {"type": "add_area", "template_map_id": 2, "name": "Moss Cave", "width": 25, "height": 20, "tileset_id": 4, "fill_floor": 1, "donor_event": 1,
-   "door": {"map_id": 1, "x": 7, "y": 7, "blank_x": 2, "blank_y": 2}, "arrival": {"x": 3, "y": 17, "direction": 8},
-   "return_door": {"x": 3, "y": 18}, "back_to": {"x": 7, "y": 8, "direction": 2}},
-  {"type": "set_system_fields", "start": {"map_id": {"from_step": 1}, "x": 3, "y": 17}}]}
-```
+`append_blank_map` creates a map and `add_area` wraps it with a door on a source map and a return door on the new map. `plan` predicts the new map id exactly (next maximum `MapInfos` key + 1) and simulates the new map's size so later steps see it. `add_area` runs as up to five sub-steps (`step-NNa` blank map, `NNb` door blank event, `NNc` door, `NNd` blank event on the new map, `NNe` return door); letters follow the sub-steps that exist, and `from_step` afterwards is the new **map** id. The parameters, a worked example and the door and arrival rules are in [new areas](new-areas.md).
 
 ### Readable starter maps and reachability warnings (v1.31)
 
-`append_blank_map` and `add_area` take an optional `layout` (fresh-map mode only, not with `fill_floor`): a one-tile wall border, a floor, L-shaped paths from an anchor (the arrival cell for `add_area`) and B-E landmark tiles, with `exterior` / `interior` / `dungeon` presets for the stock RTP tilesets. `add_area` joins the arrival to the return door automatically and leaves the border open at the return-door cell; path points for events placed later are explicit. The format, the preset tile table and examples (a tavern, a forest clearing) are in [map layouts](map-layouts.md); it is a readable starter map, not level design (no autotiles, one bordered rectangle).
-
-```json
-{"type": "add_area", "template_map_id": 2, "name": "Tavern", "width": 20, "height": 15, "tileset_id": 3, "donor_event": 1,
- "door": {"map_id": 1, "x": 7, "y": 7, "blank_x": 2, "blank_y": 2}, "arrival": {"x": 10, "y": 12, "direction": 8},
- "return_door": {"x": 10, "y": 14}, "back_to": {"x": 7, "y": 8, "direction": 2},
- "layout": {"preset": "interior", "paths": [[10, 4]], "landmarks": [{"x": 6, "y": 6, "tile": "table"}]}}
-```
-
-`plan` and the impact report also check every staged or dialogue event placed on a map (chests, touch triggers, monsters, doors): a breadth-first search over passable cells from the map's arrival/start cells must reach the event's own cell (below/above-priority and touch floor events) or a neighbouring cell (same-priority events such as chests and monsters). An event with no reachable cell is reported as a **warning** in the step's `warnings` (plan) and `warnings` (impact); nothing is refused.
+`append_blank_map` and `add_area` take an optional `layout` (fresh-map mode only, not with `fill_floor`). The format, presets and examples are in [map layouts](map-layouts.md). `plan` and the impact report also warn (nothing is refused) when an event placed on a map cannot be reached from the map's arrival or start cells; the search rules are in [map layouts](map-layouts.md) and [new areas](new-areas.md).
 
 ## Actors and System fields (v1.23)
 
@@ -313,13 +296,13 @@ The copy-chain `run` (the default) now cleans up after itself, so a long recipe 
 ## In-place mode (v1.29)
 
 ```
-python tools/vxace_recipe.py run RECIPE --project P --work WORK --in-place --backup-root BACKUPS --confirm-in-place Project3
-python tools/vxace_recipe.py undo --record BACKUPS/<stamp>-recipe-<hash>/adopt-record.json --confirm-in-place Project3
+python tools/vxace_recipe.py run RECIPE --project P --work WORK --in-place --backup-root BACKUPS --confirm-in-place NAME
+python tools/vxace_recipe.py undo --record BACKUPS/<stamp>-recipe-<hash>/adopt-record.json --confirm-in-place NAME
 ```
 
 Use it only for a project the user designates as the working or test project, when the copy chain's cost (a copy per step, a folder tree to move around, an adopt step at the end) is not wanted. For a real game, keep using the copy chain plus `vxace_adopt.py`.
 
-- **Explicit opt-in.** `--confirm-in-place` must equal the project folder's name (`Project3`); `--backup-root` is required and must be outside the project. The run refuses without them, and refuses while `RPGVXAce.exe` or `Game.exe` is running (adopt's process check; no bypass). Nothing is created when it refuses.
+- **Explicit opt-in.** `--confirm-in-place` must equal the project folder's name (`NAME` below); `--backup-root` is required and must be outside the project. The run refuses without them, and refuses while `RPGVXAce.exe` or `Game.exe` is running (adopt's process check; no bypass). Nothing is created when it refuses.
 - **One backup.** Before step 1 every `Data/*.rvdata2` and `Game.ini` is copied to `BACKUPS/<UTC stamp>-recipe-<recipe hash>/files/` with `manifest.json` (hashes, verified after copying). `adopt-record.json` in that folder is an adopt-compatible undo record; it is rewritten after each promoted step, so it always describes the project's current state.
 - **Per step, every gate is kept.** The Project Reader, the operation snapshot, spec, planner, impact report and copy patcher all run with the live project as the source, so each step sees the previous steps' result. The patcher clones the project into one temp working copy (`WORK/tmp-copy`); that copy is checked against the audit and the project exactly as `vxace_adopt.py plan` does (declared files only, recorded before and after hashes). Only the changed files are then written into the project with adopt's atomic writer and rolled back with adopt's rollback if any write or post-write hash check fails. The temp copy is deleted at once, on success or failure, so there is never more than one and none is left at the end. Design choice: the project itself is the source and the working copy is rebuilt per step, rather than one long-lived working copy kept in sync, because the copy patcher refuses an existing destination and always clones its source; this keeps its byte-exact verification unchanged, at the cost of a project clone (time, not retained disk) per step.
 - **Evidence kept per step:** `spec.json`, `plan/`, `impact.json` / `impact.md`, `audit/audit.json`, `logs/`. The pre and post indexes and the snapshot are deleted once the step's gates pass. One index of the finished project is written to `WORK/final-index/`.
@@ -335,12 +318,12 @@ Use it only for a project the user designates as the working or test project, wh
 - Each step is a separate transaction with its own plan, impact report, audit and semantic diff. Review every step's `plan/`, `impact.md` and audit before using the final copy; chaining does not merge or replace those reviews.
 - Database appends do not wire the new entry anywhere; a new skill reaches a class only through an explicit `append_learning` step (for example `{"type": "append_learning", "class_id": 1, "skill_id": {"from_step": 2}, "level": 3}`), and the `from_step` links in a recipe are the only automatic connections. An `append_learning` step does not teach existing save-game actors; they learn the skill on a later level-up. Each `append_learning` step also reads `Skills.rvdata2` of the previous copy, so the skills step must come first. Map encounters, region sets and version-advance rules of each operation still apply (each map encounter or display-name step advances `System.version_id` once, as documented).
 - In copy-chain mode a recipe is not a rollback: nothing is undone if a later step fails, the last good copy simply remains for inspection and the original is untouched. In-place mode rolls back by default (see above).
-- Only the step types above are supported; map region painting, general event authoring and the other guarded operations are not available as steps yet.
+- Only the step types above are supported; map region painting and general event authoring are not recipe steps.
 - A passing run, including smoke, is evidence and not proof of runtime behavior; test the final copy in the editor and engine before adopting any of it.
 
-## Native evidence (v1.13)
+## Native evidence
 
-The example recipe ran unchanged against an editor-created project: four transactions created enemy 31, skill 127, troop 31 (members resolved to the new enemy) and a map 1 encounter (resolved to the new troop); the original project's files were unchanged. The attached smoke run on the final copy confirmed the encounter list, the engine's troop choice and a random battle against Cave Bat A/B after walking.
+The example recipe ran unchanged against an editor-created project: four transactions created the enemy, skill, troop (members resolved to the new enemy) and a map 1 encounter (resolved to the new troop), and the original's files were unchanged. The smoke run on the final copy confirmed the encounter and a random battle after walking.
 
 ## Bundled examples
 

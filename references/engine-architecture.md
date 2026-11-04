@@ -1,6 +1,6 @@
 # Engine Architecture — Foundation Map
 
-This file defines the architecture areas the skill must learn in detail. It is intentionally conservative until the default script corpus is ingested and verified.
+This file is a high-level map of the engine's architecture areas. For concrete classes and methods see [core class map](core-class-map.md); verify details against the project's actual scripts before relying on them.
 
 ## 1. Data layer
 
@@ -27,7 +27,7 @@ Key categories in the engine map:
 
 ## 2. Runtime game-state layer
 
-The default script corpus contains `Game_*` classes representing live game state. The reference expansion should document ownership boundaries such as:
+The default scripts define `Game_*` classes that represent live game state. Ownership boundaries:
 
 - global/system state;
 - message state;

@@ -1,4 +1,4 @@
-# VX Ace Project Reader — v0.6 Architecture
+# VX Ace Project Reader — Architecture
 
 ## Goal
 
@@ -48,7 +48,7 @@ The bridge must not:
 
 Every event-derived reference retains a normalized command path. Map event references additionally expose map ID, event ID, page number, and command index when the standard data shape is present.
 
-## Event commands indexed in v0.5
+## Event commands indexed
 
 High-value relationships currently include:
 
@@ -82,19 +82,19 @@ Extraction is best-effort per file. If one `.rvdata2` file cannot be decoded:
 - `project.json` records the error;
 - CLI exit code indicates partial extraction.
 
-## Future backend
+## Backends
 
 The orchestration/index format should remain independent of the Marshal backend.
 
-A future pure-Python Ruby Marshal 4.8 backend can replace the Ruby bridge without changing the project-index contract. The target backend should preserve unknown objects/user-defined payloads and ultimately enable proven round-trip fidelity before any write capability is considered.
+The pure-Python Ruby Marshal 4.8 backend (`vxace_python_mutator.py`) can replace the Ruby bridge without changing the project-index contract. It preserves unknown objects/user-defined payloads; writers run only after the byte-identical round-trip gate passes (see [project validation](project-validation.md)).
 
-## v0.6 additions
+## Operand metadata and transfers
 
-The reader now preserves additional Control Variables / Conditional Branch operand metadata so downstream analysis can distinguish an observed constant assignment/comparison from a generic read/write.
+The reader preserves additional Control Variables / Conditional Branch operand metadata so downstream analysis can distinguish an observed constant assignment/comparison from a generic read/write.
 
 For direct map transfers, the index preserves `source_map_id` separately from the destination `map_id`. This avoids treating the destination map as the event context that initiated the transfer.
 
-Unless `--no-codex` is supplied, ingestion now runs `tools/vxace_codex.py` after deterministic indexes and compatibility analysis are generated.
+Unless `--no-codex` is supplied, ingestion runs `tools/vxace_codex.py` after deterministic indexes and compatibility analysis are generated.
 
 ## Project overview (v1.34)
 

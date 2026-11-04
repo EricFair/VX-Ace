@@ -1,4 +1,4 @@
-# Touch triggers, movement and move routes — v1.25
+# Touch triggers, movement and move routes
 
 Staged event pages can start from a touch instead of the action button, can walk on their own, and the shared command language can move the player or erase the event. The pieces:
 
@@ -7,17 +7,11 @@ Staged event pages can start from a touch instead of the action button, can walk
 - Commands `{"erase_event": true}` and `{"move_route": {...}}` (staged pages and [common events](common-event-append.md); `erase_event` and `this` routes are refused in a common event).
 - A parallel, run-once variant ("run this once on map entry") is the `add_intro` macro, see [intros](intros.md).
 - The `add_touch_trigger` [recipe](recipes.md) macro: a one-time (or repeatable) step-on trigger.
-- The `add_monster` macro (v1.30): a visible monster that starts a battle on touch. See [monsters](monsters.md).
+- The `add_monster` macro: a visible monster that starts a battle on touch. See [monsters](monsters.md).
 
-## How a touch trigger starts (Project3 scripts)
+## How a touch trigger starts
 
-| Page | Starts when |
-| --- | --- |
-| `player_touch` / `event_touch`, priority `below` or `above` | the player steps **onto** the event's cell (`Game_Player#check_touch_event`, triggers 1 and 2, priority not "same") |
-| `player_touch` / `event_touch`, priority `same` (the default when the page has a graphic) | the player walks into the event (`check_event_trigger_touch`, triggers 1 and 2) or presses the action button facing it; the event blocks movement unless `through` |
-| `event_touch`, priority `same`, with a move type other than `fixed` | additionally when the event walks into the player (`Game_Event#check_event_trigger_touch`) |
-
-A below-priority touch page therefore needs the player to step on it; it cannot be bumped from the side. Impact says so for every touch page. A touch page with no commands never starts (`Game_Event#start` returns for an empty list).
+The start rules per trigger and priority (below/above: the player steps onto the cell; same: the player bumps into the event) are in [staged events, Triggers](staged-events.md#triggers). A below-priority touch page therefore needs the player to step on it; it cannot be bumped from the side. Impact says so for every touch page. A touch page with no commands never starts (`Game_Event#start` returns for an empty list).
 
 ## Examples
 
@@ -68,11 +62,11 @@ The command language has no "Change HP" command, so HP damage has to live in a c
 - `{"erase_event": true}` is `214`; the erase is temporary (`Game_Event#erase` sets `@erased`, and the event returns when the map is reloaded), so use a self-switch page for a permanent disappearance.
 - Route entries are `down left right up random toward_player away_from_player forward backward`, `{"wait": n}` and `{"turn": direction}`; everything else is refused. `repeat: true` with `wait: true` is refused (deadlock).
 - A `parallel` page repeats from the top every frame while its conditions hold; give it a condition that its own commands turn off (for example a self switch).
-- Nothing here is Native-evidence tested in the engine; the move-route layout has no editor-saved example in Project3 (see [staged events](staged-events.md#move-routes)).
+- The move-route layout has no editor-saved example; it follows `Game_Interpreter#command_205` (see [staged events](staged-events.md#move-routes)). The engine run is under Native evidence below.
 
-## Native evidence (v1.25)
+## Native evidence
 
-A six-step recipe ran on the editor-saved Project3, which the user had rebuilt as a 100x100 map with five events. It added:
+A six-step recipe ran on an editor-saved test project rebuilt as a 100x100 map with five events. It added:
 - a blank event;
 - a Villager (random move, speed 4, frequency 5, through);
 - a Guard (custom repeat route left, left, right, right);
@@ -88,4 +82,4 @@ In a real-engine smoke run:
 - Over 650 frames the Villager wandered from 10,20 to 9,24, and the Guard's x took exactly the values 10, 11 and 12.
 - The Vanisher was erased.
 
-An existing save loaded with all five events. The 205/505 layout follows `Game_Interpreter#command_205`, because the project had no editor-saved Set Move Route to compare against. Check one in the editor after first use.
+An existing save loaded with all five events. The 205/505 layout follows `Game_Interpreter#command_205`, because the test project had no editor-saved Set Move Route to compare against. Check one in the editor after first use.

@@ -1,12 +1,12 @@
 # Reversible project-aware patch planning
 
-v0.7 adds a proposal-only patch-planning layer on top of a fresh Project Reader index and Codex.
+The patch planner is a proposal-only layer on top of a fresh Project Reader index and Codex. The guarded copy patcher and the recipe runner apply a plan to a disposable copy (see [recipes](recipes.md)).
 
 ## Safety invariant
 
 The planner never modifies the VX Ace source project.
 
-Outputs must be a new unlinked directory outside both source project and index; existing output directories are refused. v0.24 [script-slot proposals](script-slot-insertion.md) include the complete new-source diff/hash and native archive/anchor preconditions after verifying the current canonical Main snapshot. Planning still never inserts or executes code.
+Outputs must be a new unlinked directory outside both source project and index; existing output directories are refused. [Script-slot proposals](script-slot-insertion.md) include the complete new-source diff/hash and native archive/anchor preconditions after verifying the current canonical Main snapshot. Planning still never inserts or executes code.
 
 It may:
 
@@ -16,12 +16,12 @@ It may:
 - describe event and database changes using structured locators and proposals;
 - emit regression and rollback guidance.
 
-It may **not**:
+The planner itself may **not**:
 
 - rewrite `.rvdata2`;
 - inject scripts into `Scripts.rvdata2`;
 - modify source project files;
-- apply an event/database proposal automatically.
+- apply a proposal; applying is a separate, guarded step.
 
 ## Freshness rule
 
@@ -50,11 +50,11 @@ The output includes:
 - unified diff;
 - proposal-only apply mode.
 
-A human or later verified writer can use that diff while respecting Script Editor load order and compatibility findings.
+A human or the guarded copy patcher can use that diff while respecting Script Editor load order and compatibility findings.
 
 ## Event/database changes
 
-Until binary round-trip writing is proven, event and database changes are represented structurally only.
+The planner describes event and database changes structurally; the guarded copy patcher writes them.
 
 Examples of event locators:
 
@@ -72,7 +72,7 @@ Database locator:
 {"table": "states", "id": 14}
 ```
 
-The proposal explains the intended mutation, but v0.7 does not serialize it back into VX Ace data.
+The proposal explains the intended mutation; the planner does not serialize it into VX Ace data.
 
 ## Regression generation
 
@@ -80,11 +80,11 @@ The planner adds baseline checks plus domain-specific checks for scripts, events
 
 ## Rollback
 
-Because the planner does not apply anything, rollback at planning time is trivial. When a human later applies the proposal, preserve a restorable project/script backup and revert immediately if regression testing fails.
+Because the planner does not apply anything, rollback at planning time is trivial. Writers work on a disposable copy; the project changes only through `vxace_adopt.py` (backup and undo) or a confirmed in-place recipe run (one verified backup). If you apply a proposal by hand, keep a restorable backup and revert if regression testing fails.
 
-## Future writer gate
+## Writer gate
 
-Automatic project mutation remains blocked until all of these are demonstrated:
+A change reaches the project only after all of these hold; the copy patcher, adopt and the in-place recipe run enforce them:
 
 1. parse -> serialize round-trip fidelity on copies;
 2. unchanged-project byte or semantic equivalence where expected;
