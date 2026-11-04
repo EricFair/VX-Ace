@@ -24,19 +24,7 @@ Then:
 
 ## B. Event logic bug
 
-Trace:
-
-`trigger -> page conditions -> event commands -> switch/variable/self-switch mutations -> common events -> resulting page refresh/transfer/battle state`
-
-Check especially:
-
-- wrong switch/variable ID;
-- self-switch on the wrong event/map;
-- page priority/order;
-- autorun condition never cleared;
-- parallel process resetting state repeatedly;
-- common event trigger conditions;
-- map transfer causing assumptions about local event state to fail.
+Follow [event-debugging.md](event-debugging.md): active page, trigger, state, writers, transfers, common events.
 
 ## C. Feature works in new game but not old save
 
@@ -51,10 +39,4 @@ Add safe default/migration logic rather than requiring players to restart unless
 
 ## D. Script compatibility bug
 
-Build a method collision table:
-
-| Class | Method | Script A | Script B | Type | Order-sensitive? |
-|---|---|---|---|---|---|
-| ... | ... | alias/replace | alias/replace | collision | yes/no |
-
-Then reason about call order and side effects. Do not solve compatibility by randomly changing script order without explaining why.
+Follow [script-compatibility-review.md](script-compatibility-review.md) (method collision table, load order, persistence). Do not solve compatibility by randomly changing script order without explaining why.

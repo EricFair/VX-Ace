@@ -1,4 +1,4 @@
-# Optional PNG header and layout observations — v0.17
+# Optional PNG header and layout observations
 
 Use this to review graphics sizes before native playtesting. These read-only checks extend the [asset reference audit](asset-audit.md), retaining its fresh-index, external-report and explicit RTP rules.
 
@@ -36,6 +36,4 @@ A header-only file can pass these observations despite having no valid pixels, I
 
 The header fields/checksum follow the [W3C PNG specification](https://www.w3.org/TR/PNG-Chunks). Character division/prefix behavior was checked against legally installed default RGSS3 scripts; those proprietary scripts are not distributed here.
 
-Sixteen focused tests cover malformed/truncated headers, CRC/field/range errors, legal palette/interlace headers, bounded reads, prefix semantics, uneven grids, all nine standard tileset roles, unsupported formats, opt-in behavior, same-metadata header changes, provenance limits and source immutability. Two master tests cover flags/dependencies and older settings.
-
-On a private disposable editor-produced project, native `Bitmap`/`Sprite_Character` observations matched four authored PNG cases: ordinary 13×9 → 1×1 frames; `$` 96×128 → 32×32; `!$` 96×128 → 32×32; nested `.../$` 96×128 → 8×16. Native A1, A2 and B measurements also matched. The deliberately uneven referenced actor sheet produced exactly one grid warning. Guarded staging and 16/16 post-copy byte gates passed. Separately, the private Oakfall index resolved 290 assets, observed 155 PNG headers and found 25 standard layouts. Raw projects, RTP, harnesses and reports remain private.
+On a disposable editor-produced project, native `Bitmap`/`Sprite_Character` observations matched four authored PNG cases: ordinary 13×9 → 1×1 frames; `$` 96×128 → 32×32; `!$` 96×128 → 32×32; nested `.../$` 96×128 → 8×16. Native A1, A2 and B measurements also matched, and a deliberately uneven actor sheet produced exactly one grid warning.

@@ -1,8 +1,8 @@
-# Dependency Impact and Semantic Codex Diff — v0.10
+# Dependency Impact and Semantic Codex Diff
 
 ## Purpose
 
-v0.10 improves understanding before and after a staged VX Ace change without increasing binary write power.
+Impact analysis improves understanding before and after a staged VX Ace change without increasing binary write power.
 
 `vxace_impact.py` consumes a fresh Project Reader/Codex index plus an existing patch specification. It verifies the direct target and surfaces one-hop evidence from the Codex graph, script ownership/collision metadata, save hooks, and database identity.
 
@@ -14,7 +14,7 @@ It is a **review aid**, not proof that no hidden dependency exists. Dynamic Ruby
 - Common event: require an indexed `common_event_id`; report callers/readers/writers represented in the graph.
 - Troop: require an indexed `troop_id`; report known battle-gate relationships, with an explicit completeness warning.
 - Script: require exact extracted script path; report classes, methods, aliases, `$imported` metadata, save hooks, and collision candidates.
-- Database: require exact table + ID and verify the object exists. Full database dependency edges are not yet available, so this remains a verified direct target.
+- Database: require exact table + ID and verify the object exists. The Codex has no full database dependency edges, so an existing entry stays a verified direct target. Database appends additionally list where the template is referenced (for example troops using the template enemy) and the referenced-database hashes; see [database append](database-append.md).
 
 ## Semantic diff
 
@@ -30,4 +30,4 @@ A semantic diff can show that a patch changed project meaning even when the expe
 
 ## Safety interpretation
 
-Impact analysis and semantic diffing never authorize broader mutation. Real-project v0.9 validation is still required before enabling structural event/page insertion or arbitrary binary editing.
+Impact analysis and semantic diffing never authorize broader mutation. Structural event/page insertion has its own gates ([event structure](event-structure.md)); arbitrary binary editing is not offered.

@@ -1,4 +1,4 @@
-# Compile-only native syntax diagnostics — v0.23
+# Compile-only native syntax diagnostics
 
 Use this optional workflow when modern host parsing cannot answer a Ruby 1.9.2 syntax question. It prepares a **private** source bundle and validates a report from the actual VX Ace runtime. It never launches an application, changes a game, evaluates inspected source or authorizes mutation. The master and MCP remain read-only and do not automatically run this workflow.
 
@@ -16,7 +16,7 @@ python tools/vxace_native_syntax.py prepare INSPECTED_INDEX --project INSPECTED_
 
 Use `--ruby HOST_RUBY` when needed. Preparation requires a complete fresh hashed index, a bounded full source inventory and independent native archive extraction. Every indexed entry must match the native order, identity/name and exact UTF-8 source/hash/byte count. It rechecks index/source integrity before writing a new external bundle. Old newline-normalized indexes must be regenerated.
 
-The bundle contains `manifest.json`, `native-syntax-harness.rb` and privacy/staging notes. **The harness embeds exact project source as hexadecimal data. It can contain proprietary/default/custom scripts even though it looks like authored Ruby. Never publish or commit generated bundles, staging specs, native reports or game copies.** The public template and regression fixtures contain authored code only.
+The bundle contains `manifest.json`, `native-syntax-harness.rb` and privacy/staging notes. **The harness embeds exact project source as hexadecimal data. It can contain proprietary/default/custom scripts even though it looks like authored Ruby. Never publish or commit generated bundles, staging specs, native reports or game copies.** The shipped template contains authored code only.
 
 ## Stage and observe the trusted disposable host
 
@@ -58,4 +58,4 @@ Collection independently rechecks the current source/index and exact regenerated
 
 Support is limited to 1..4096 UTF-8 entries, 256 KiB each and 4 MiB total source; labels <=512 characters, manifest <=4 MiB, generated scaffold <=9 MiB, result <=16 MiB, each diagnostic <=2048 bytes. These are diagnostic admission limits, not engine limits. Source extraction uses the existing 30-second bridge deadline; native compilation has no per-entry deadline or OS sandbox. Use only disposable hosts and stop/investigate an unresponsive native process. Output collection does not run or stop applications.
 
-The private native seed probe confirmed Ruby1.9.2 compiler availability and modern syntax rejection. All126 seed entries compiled through the generated scaffold and collected successfully. Separate authored trap/error fixtures verify failure reporting and non-execution in native testing. CI checks public scaffold/protocol/refusal behavior with host Ruby and deliberately refuses that host report as native evidence; CI cannot replace the private VX Ace observation.
+The native seed probe confirmed Ruby 1.9.2 compiler availability and modern syntax rejection. All 126 seed entries compiled through the generated scaffold and collected successfully. Separate authored trap/error fixtures verify failure reporting and non-execution in native testing. A host-Ruby run of the scaffold is refused as native evidence; only an observation in VX Ace counts.

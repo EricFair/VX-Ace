@@ -40,15 +40,15 @@ A failed byte-identical check blocks all staging for that project until it is in
 
 ## Making changes
 
-Describe what you want; the agent picks native features first and stages the change on a **copy**, never on your project:
+Describe what you want; the agent picks native features first and stages the change on a **copy** (it reaches your project only through adopt, below, or an in-place recipe run on a project you designate as a working or test project):
 
-- single additions — party members, classes, enemies, skills, states, weapons, armors, usable items, troops, class learnings, encounters, shops, dialogue NPCs, quest NPCs, moving NPCs, step-on triggers, common events, new areas with doors, treasure chests, transfers, rewards, starting party and game settings ([database append](references/database-append.md), [map shops](references/map-shops.md), [encounters](references/map-encounters.md));
+- single additions — database entries, encounters, shops, NPCs, triggers, common events, new areas with doors, treasure chests, transfers, rewards, starting party and game settings; macros such as `add_monster`, `add_shopkeeper`, `add_inn`, `add_intro` and `add_area` with `layout` presets build whole pieces ([database append](references/database-append.md), [map shops](references/map-shops.md), [encounters](references/map-encounters.md));
 - several at once — a [recipe](references/recipes.md), for example `tools/recipes/example_cave.json` (enemy → skill → troop → encounter) or `example_smith.json` (weapon → NPC → shop);
 - text — [export](references/text-export.md) to CSV, edit in Excel, [import](references/text-import.md).
 
 Each staged copy is smoke-tested in the real engine ([smoke testing](references/smoke-testing.md)); you can also open it in the editor and play it. When you are satisfied, the agent prepares an [adopt plan](references/adopt.md); after you confirm, the reviewed files are copied into your project with a backup and an undo record.
 
-The full loop is described in [daily game development](workflows/daily-game-dev.md). Drawing maps and fine-tuning in the editor stay manual on purpose.
+The full loop is described in [daily game development](workflows/daily-game-dev.md). Fine-tuning and anything beyond the supported operations stay manual in the editor.
 
 ## Where to look next
 

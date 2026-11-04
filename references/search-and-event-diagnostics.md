@@ -1,10 +1,10 @@
-# Read-only search and event diagnostics — v0.13
+# Read-only search and event diagnostics
 
-v1.1 adds a separate [bounded Python-regex CLI](regex-search.md), with fixed-deadline matching and distinct case semantics. The literal commands and MCP interface below retain their behavior.
+A separate [bounded Python-regex CLI](regex-search.md) has fixed-deadline matching and distinct case semantics; the literal commands and MCP interface below behave as described here.
 
-v0.16 extends the same event linter with [direct common-event call-cycle diagnostics](common-event-cycles.md). Cycles are possible recursion, including conditional or unused calls; no termination proof or automatic fix is implied.
+The event linter also reports [direct common-event call-cycle diagnostics](common-event-cycles.md). Cycles are possible recursion, including conditional or unused calls; no termination proof or automatic fix is implied.
 
-This batch adapts two missing upstream capabilities to our external Project Reader index. It adds no game writer, automatic fix, MCP transport or Ruby execution. The commands require the current source project for freshness/integrity checks and write only new external reports.
+These diagnostics work on the external Project Reader index. They add no game writer, automatic fix, MCP transport or Ruby execution. The commands require the current source project for freshness/integrity checks and write only new external reports.
 
 ## Generate a fresh index
 
@@ -54,7 +54,7 @@ Exit codes: lint `0` no warning/error findings (informational runtime-review fin
 
 ## Master integration and safety
 
-`vxace-master.json` enables `event_logic_lint: true`; the read-only master invokes it after successful indexing. A warning changes the master status to `review_required`. `copy_mutation_ready` still describes the independent serialization gate, not clean logic, an approval, or a passing playtest. Turning off an optional diagnostic does not weaken the fixed copy-only mutation policy.
+`vxace-master.json` enables `event_logic_lint: true`; the read-only master invokes it after successful indexing. A warning changes the master status to `review_required`. `copy_mutation_ready` still describes the independent serialization gate, not clean logic, an approval, or a passing playtest. Turning off an optional diagnostic does not weaken the mutation policy (writes go to a disposable copy; the project changes only through adopt or a confirmed in-place recipe run, see [adopt.md](adopt.md)).
 
 Both CLIs require a hashed fresh Project Reader manifest, recheck source inventory and all read index bytes, reject linked/escaping input and output paths, and refuse existing output directories. The lower-level Python analysis functions operate on an already-selected index; callers needing source freshness must use the shared `execute` transaction or the CLI. These hash checks detect change; they are not filesystem locks or an OS sandbox.
 

@@ -128,6 +128,20 @@ save/load with both features
 battle transition with both features
 ```
 
+## Analyzer run and triage
+
+Extract scripts in their real Script Editor order (do not alphabetize), then run the analyzer:
+
+```bash
+python tools/rgss3_analyzer.py scripts/   --order scripts/order.json   --json analysis/script-compatibility.json   --markdown analysis/script-compatibility.md
+```
+
+- Do not "fix" a collision merely because it is flagged: inspect the earlier definition, every later definition and the aliases, work out the call chain, and check whether a full replacement intentionally supersedes another framework.
+- `$imported` findings: a missing definition may mean an absent dependency or a dynamically set key; a key defined later is likely a load-order problem; a duplicate key means two scripts may claim the same identity.
+- Note parsers: when several scripts parse notes, compare their tags and regexes for overlapping syntax and confirm database objects are parsed once.
+- Patch minimally: prefer a documented extension point, an alias that preserves the chain, a shim loaded after the involved scripts, or configuration over rewrites. Re-run the analyzer; the post-patch report is part of the change record.
+- Static analysis is necessary but not sufficient; exercise the exact scene, battle, map and save paths in the real VX Ace runtime.
+
 ## Output format
 
 A useful final report:

@@ -33,7 +33,7 @@ Use the smallest relevant reference first.
 - `text-export.md` — dialogue/database text export and message lint.
 - `text-import.md` — edited text CSV to a guarded patch spec.
 - `impact-analysis.md` — patch impact and semantic before/after diff.
-- `smoke-testing.md` — in-engine smoke runs of a staged disposable copy.
+- `smoke-testing.md` — in-engine smoke runs of a staged disposable copy; the game window must stay visible and active.
 - `mcp-read-only.md` — optional read-only MCP adapter.
 
 ## Planning and copy mutation
@@ -46,7 +46,7 @@ Use the smallest relevant reference first.
 - `map-region-editing.md` — region cells on an existing map.
 - `map-encounters.md` — one random-encounter entry on an existing map.
 - `key-item-append.md` — inert key-item append.
-- `database-append.md` — template-clone append of enemies, skills, states, weapons, armors and troops.
+- `database-append.md` — template-clone append of actors, classes, enemies, skills, states, items, weapons, armors and troops, class learnings and `set_fields` edits.
 - `script-slot-insertion.md` — one script slot before Main.
 - `upper-tile-painting.md` — upper-layer B-E tile painting.
 - `map-event-creation.md` — blank-event (schema donor) and stationary dialogue-event append.
@@ -54,17 +54,16 @@ Use the smallest relevant reference first.
 - `one-time-event-rewards.md` — one-time gold/item rewards.
 - `map-shops.md` — Shop Processing on a blank or single-dialogue event.
 - `staged-events.md` — quest-stage events with conditional pages and switch/variable/self-switch commands.
-- `common-event-append.md` — call-only or parallel common events using the staged-event command language (v1.21).
-- `system-fields.md` — guarded System edit: starting party, start position, title, currency and terms (v1.23).
-- `touch-triggers.md` — moving NPCs and the `add_touch_trigger` one-time step-on macro (v1.25).
-- `new-areas.md` — fresh-map append with A5 floor fill and the `add_area` two-way door macro (v1.26).
-- `map-layouts.md` — readable generated maps: walls, paths, landmarks, presets, reachability (v1.31).
-- `shops-and-inns.md` — `add_shopkeeper`, `add_inn`, shop/recover commands, dialogue graphics (v1.33).
-- `intros.md` — `add_intro`: run-once map intro instead of autorun (v1.33).
-- `smoke-testing.md` also covers game speed and why the window must stay visible (2.0).
-- `rtp-sprites.md` — stock RTP character sprite catalogue; `graphic: {sprite: ...}` lookup (v1.34).
-- `monsters.md` — `add_monster`: touch-battle map monsters, fixed/wandering/chasing, one-time or respawning (v1.30).
-- `treasure-chests.md` — `add_treasure_chest` recipe macro: a two-page chest event (v1.22).
+- `common-event-append.md` — call-only or parallel common events using the staged-event command language.
+- `system-fields.md` — guarded System edit: starting party, start position, title, currency and terms.
+- `touch-triggers.md` — moving NPCs and the `add_touch_trigger` one-time step-on macro.
+- `new-areas.md` — fresh-map append with A5 floor fill and the `add_area` two-way door macro.
+- `map-layouts.md` — readable generated maps: walls, paths, landmarks, presets, reachability.
+- `shops-and-inns.md` — `add_shopkeeper`, `add_inn`, shop/recover commands, dialogue graphics.
+- `intros.md` — `add_intro`: run-once map intro instead of autorun.
+- `rtp-sprites.md` — stock RTP character sprite catalogue; `graphic: {sprite: ...}` lookup.
+- `monsters.md` — `add_monster`: touch-battle map monsters, fixed/wandering/chasing, one-time or respawning.
+- `treasure-chests.md` — `add_treasure_chest` recipe macro: a two-page chest event.
 - `blank-map-append.md` — blank map append.
 - `direct-map-transfer.md` — direct transfer to a blank map.
 - `map-display-names.md` — player-visible map name.

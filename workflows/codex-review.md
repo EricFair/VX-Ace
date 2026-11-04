@@ -1,6 +1,6 @@
 # Workflow — Project Codex Review
 
-Use this workflow when a v0.6 codex is available.
+Use this workflow when a project codex is available.
 
 ## 1. Start with the high-level candidate
 

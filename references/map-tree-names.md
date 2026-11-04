@@ -27,7 +27,7 @@ spec = {"changes": [{
 }]}
 ```
 
-Keep all four guard fields: `expected_infos_sha256`, `expected_entry_sha256`, `expected_inventory_sha256` and `expected_name`. Both old and new selected labels must be plain single-line UTF-8 text, at most64 characters/256 bytes, without control/format characters or surrounding whitespace. No-op changes refuse. Labels are not IDs: duplicate labels are valid, and the exact map ID selects the target. The new native string is detached so shared old strings on other entries remain unchanged. Legacy code pages are never guessed.
+Keep all four guard fields: `expected_infos_sha256`, `expected_entry_sha256`, `expected_inventory_sha256` and `expected_name`. Both old and new selected labels must be plain single-line UTF-8 text, at most 64 characters/256 bytes, without control/format characters or surrounding whitespace. No-op changes refuse. Labels are not IDs: duplicate labels are valid, and the exact map ID selects the target. The new native string is detached so shared old strings on other entries remain unchanged. Legacy code pages are never guessed.
 
 ## Review and stage a disposable copy
 
@@ -42,10 +42,8 @@ System/version does not advance because no map data changes. Default `DataManage
 
 ## Verification evidence and limits
 
-Twelve independent authored Ruby fixture tests cover child metadata/order, shared strings/duplicate labels, exact native guards/schema/inventory, low-level context, planner, copy/refusal and rollback. The complete465-test suite passed locally.
+On disposable native copies, an existing save from before the label edit loaded with the new startup tree label “Oakfall Forêt,” the same player-visible “Oakfall Café,” unchanged position and no additional map setup. Ordinary collision-aware left/right movement, a new native Save03 and a full Game-process restart passed. All three save hashes stayed unchanged across restart, and every map file/System/version/other Data file matched the source exactly. Source/RTP and the 20 recorded original-project hashes were preserved.
 
-On disposable native copies, an existing save from before the label edit loaded with the new startup tree label “Oakfall Forêt,” the same player-visible “Oakfall Café,” unchanged position and no additional map setup. Ordinary collision-aware left/right movement, a new native Save03 and a full Game-process restart passed. All three save hashes stayed unchanged across restart, and every map file/System/version/other Data file matched the source exactly. Source/RTP and20 recorded original-project hashes were preserved.
-
-The actual editor displayed “Oakfall Forêt” in the tree and Name field while Display Name remained “Oakfall Café,” with the same Field tileset and17×13 map. Properties were cancelled without saving; all33 separate inspection-copy files remained unchanged. This is limited evidence on a small default-project fixture, not a guarantee about custom name consumers/caches or every font. Proprietary projects, engine scripts, RTP, saves, private observers and raw reports stay private.
+The actual editor displayed “Oakfall Forêt” in the tree and Name field while Display Name remained “Oakfall Café,” with the same Field tileset and 17×13 map. Properties were cancelled without saving; all 33 separate inspection-copy files remained unchanged. This is limited evidence on a small default-project fixture, not a guarantee about custom name consumers/caches or every font. 
 
 No resize/delete/reparent/ID reuse, other map properties, display-name change or general raw-field writer is enabled by this operation.

@@ -1,4 +1,4 @@
-# Map layouts: readable starter maps and the reachability check (v1.31)
+# Map layouts: readable starter maps and the reachability check
 
 A map made with `fill_floor` ([new areas](new-areas.md)) is one flat tile: no border, no path, nothing to steer by. A **layout** turns the new map into a readable starter room, so a generated test or starter map shows where the edges are, where to walk from the entrance to the doors and targets, and where a few landmarks stand.
 

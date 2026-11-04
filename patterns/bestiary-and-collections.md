@@ -5,7 +5,7 @@
 ## Native-first design
 
 - **Small collections (up to roughly 30 entries):** one switch per entry, set by the event that grants or encounters it. A "collected count" variable is updated by that same event.
-- **Bestiary via troop events:** each troop's battle event page (Span: Battle, condition: Turn 0) sets the "seen" switch; a page conditioned on enemy defeat (or Battle End logic in the post-battle map event) sets the "defeated" switch.
+- **Bestiary via troop events:** each troop's battle event page (Span: Battle, condition: Turn 0) sets the "seen" switch; the "defeated" switch is set after the battle (see step 2 below), because troop pages have no defeat condition.
 - Display with a **common event** that lists entries using Conditional Branches and Show Text, or Show Picture of a checklist.
 - Rewards by milestone use a Conditional Branch on the count variable plus a one-time switch.
 

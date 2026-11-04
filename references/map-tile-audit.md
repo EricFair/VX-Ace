@@ -1,4 +1,4 @@
-# Read-only map tile audit — v0.14
+# Read-only map tile audit
 
 Use this to inspect editor map geometry, native tile IDs, tileset sheet routing, passage flags, regions and shadows before planning scenery or investigating a blocked tile. This adds no map/tile writer.
 
@@ -26,10 +26,8 @@ For each direction, the cell estimate checks the static graphic layers from top 
 
 The default engine also prepends tile events to passage checks. Page conditions, event priority, moving characters, vehicles, through/debug-through, custom movement methods and runtime map replacements can change the result. This report excludes those systems and is not reachability/pathfinding analysis.
 
-The index reflects editor data. A game can generate a different map during setup or restore saved map data on load. For example, the Oakfall demonstration's editor seed is Field while its runtime extension builds Exterior scenery. This tool correctly reports the seed; it does not evaluate that extension or treat its static output as the running village. Inspect such hooks and test movement in native VX Ace.
+The index reflects editor data. A game can generate a different map during setup or restore saved map data on load. For example, a script can replace the map's tiles at runtime (the Oakfall example in `examples/oakfall/quest.rb` builds its village scenery that way). This tool correctly reports the seed; it does not evaluate that extension or treat its static output as the running village. Inspect such hooks and test movement in native VX Ace.
 
 ## Evidence
 
-Thirteen automated map tests cover sheet boundaries/right halves, autotiles, directional flags/star priority, XY/plane layout, regions/shadows, malformed data, uncertainty, source freshness, output constraints, budgets and changing input. An independent synthetic Ruby Marshal fixture passes through the Ruby Project Reader before audit, without executing game scripts.
-
-The helper also inspected a private editor-produced 17×13 seed. Its low-level tile/flag calculations were compared read-only with a native save from the tested Oakfall scenery: shrine path and paved square have passable static layers; the tree trunk and cottage wall have blocking static layers. Native playtesting observed the shrine-to-elder route and tree boundary. This bounded evidence does not certify every tile or custom runtime. No proprietary data or saves are distributed.
+The helper inspected an editor-made 17×13 seed. Its low-level tile/flag calculations were compared read-only with a native save from the Oakfall example's runtime scenery: shrine path and paved square have passable static layers; the tree trunk and cottage wall have blocking static layers. Native playtesting observed the shrine-to-elder route and tree boundary. This bounded evidence does not certify every tile or custom runtime.

@@ -1,4 +1,4 @@
-# Workflow — Project Ingestion (v0.5)
+# Workflow — Project Ingestion
 
 ## Objective
 
@@ -12,7 +12,7 @@ Before analysis:
 - do not edit `Scripts.rvdata2`;
 - do not put generated output inside the source project;
 - do not execute extracted scripts;
-- keep the original project backed up independently when later editing is introduced.
+- keep the original project backed up independently before any change is applied.
 
 ## 2. Run the reader
 

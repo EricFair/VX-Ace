@@ -1,6 +1,6 @@
-# Shopkeepers and inns — v1.33
+# Shopkeepers and inns
 
-Three pieces that close the gaps of the old shop workflow (an invisible counter event in front of a visible NPC, a full-heal item for an inn):
+Three pieces for visible shopkeepers and inns:
 
 1. the **`shop`** and **`recover_all`** commands of the [staged command language](staged-events.md) (staged pages and [common events](common-event-append.md));
 2. an optional **`graphic` and `options`** on the `append_dialogue_event` recipe step, so a dialogue event can be visible and `add_shop` still works on it;
@@ -14,35 +14,11 @@ Nothing here creates items, weapons, armors or actors; the goods and actors must
 {"shop": {"goods": [{"type": "item", "id": 1, "price": null}, {"type": "weapon", "id": 3, "price": 600}], "purchase_only": false}}
 ```
 
-`goods`: 1..32 entries, each exactly `type` (`item`/`weapon`/`armor`), `id` (1..999) and `price` (`null` = the database price, or 0..9999999 for a fixed price; 0 is free). No duplicate `(type, id)`. The rows are `302 [type, id, price_type, price, purchase_only]` then `605 [type, id, price_type, price]` per further good, built by the same function as `add_shop` and identical to the editor's layout (Shop Processing: type 0 item / 1 weapon / 2 armor; price type 0 database / 1 constant).
-
-Bound hashes: `expected_items_sha256`, `expected_weapons_sha256` and `expected_armors_sha256` only for the goods types used; every id must exist. In a recipe a good's `id` may be `{"from_step": k}`.
-
-**What the engine does** (`Game_Interpreter#command_302` of the default scripts):
-
-```ruby
-def command_302
-  return if $game_party.in_battle
-  goods = [@params]
-  while next_event_code == 605
-    @index += 1
-    goods.push(@list[@index].parameters)
-  end
-  SceneManager.call(Scene_Shop)
-  SceneManager.scene.prepare(goods, @params[4])
-  Fiber.yield
-end
-```
-
-- The shop scene ends the *command*, not the event: after the shop closes, the interpreter continues with the next command. Text written after a `shop` is shown after the player leaves the shop; commands that must happen before the shop (greeting, a switch) go before it.
-- `purchase_only` is `@params[4]` of the `302` row; `Window_ShopCommand` hides the sell command when it is true. Prices come from `Window_ShopBuy` (`goods[2] == 0 ? item.price : goods[3]`).
-- In battle (a common event called from a troop page or a skill) the shop is skipped.
+The `goods` rules, bound hashes, the `302`/`605` row layout and the engine behavior (a shop ends the *command*, not the event; it is skipped in battle) are defined in [staged events, Shop and Recover All](staged-events.md#shop-and-recover-all-v133). Put the greeting before the `shop`; text after it shows once the player leaves.
 
 ## The `recover_all` command
 
-`{"recover_all": "party"}` is `314 [0, 0]` and `{"recover_all": 3}` is `314 [0, 3]` (actor id 1..2147483647, bound by `expected_actors_sha256`). `Game_Interpreter#command_314` calls `iterate_actor_var(@params[0], @params[1])`: the first parameter is the designation (0 fixed, 1 variable; variable designation is not offered here) and the second the actor id, 0 meaning the whole party. The engine runs `Game_Battler#recover_all`: it clears every state (a fallen member is revived), then HP = MHP, MP = MMP. The party designation covers every member including reserve ones.
-
-Project3 holds no editor-saved Recover All, so this layout rests on the engine script; verify one in the editor after first use.
+`{"recover_all": "party"}` or `{"recover_all": 3}` (an actor id); see the same section. The party designation covers every member including reserve ones and revives fallen members.
 
 ## Dialogue event with a graphic
 

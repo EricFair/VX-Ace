@@ -1,6 +1,6 @@
-# New areas: blank maps with a floor, doors and `add_area` — v1.26
+# New areas: blank maps with a floor, doors and `add_area`
 
-A "new area" is a new map plus a way in and a way out. v1.26 adds three pieces, all built on the existing guarded operations (no new mutation kind):
+A "new area" is a new map plus a way in and a way out. It has three pieces, all built on the existing guarded operations (no new mutation kind):
 
 1. `append_blank_map` is now a [recipe](recipes.md) step, and its created map id can be used as `{"from_step": k}` in later steps.
 2. The [blank-map append](blank-map-append.md) operation takes optional `width`, `height`, `tileset_id`, `parent_id` and a bounded `fill_floor`.
@@ -215,9 +215,9 @@ The door is an action-button event with priority "same as characters": the playe
 - Nothing changes the existing maps' tiles. The source map gains one blank template event (unless `door.template_event` is used) and the door; `System.version_id` advances as for any map event append.
 - A passing run, including all gates, is evidence and not proof of runtime behavior. Test the final copy in the editor and the engine.
 
-## Native evidence (v1.26)
+## Native evidence
 
-The test ran on the editor-saved Project3, whose only map is a 100x100 Map001 with five logic events, three encounters and its own audio. In fresh mode that map served as the template.
+The test ran on a small editor-saved project whose only map is a 100x100 Map001 with logic events, encounters and its own audio. In fresh mode that map served as the template.
 
 A recipe ran `add_area` "Moss Cave" with these settings:
 - 25x20, tileset 4, `fill_floor` 1;

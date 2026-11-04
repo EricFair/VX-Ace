@@ -25,7 +25,7 @@ Scenery is runtime RPG::Map/Table data, using Exterior passage flags. On load, o
 
 ## Native evidence
 
-On 15 October 2026, the actual installed VX Ace F12 runtime verified:
+The actual installed VX Ace F12 runtime verified:
 
 - cottages, trees, flowers, paved square and shrine path rendering;
 - walking from shrine to elder across the path and square;

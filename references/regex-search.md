@@ -11,7 +11,7 @@ Output is `regex-search.json`. Require a fresh complete Project Reader index and
 
 ## Matching and evidence
 
-Patterns use Python's `re` syntax, not RGSS3 Ruby regex syntax. The pattern must be nonempty, single-line and at most512 characters. Default matching uses Python `IGNORECASE`; `--case-sensitive` removes that base flag. Inline flags can override the base behavior. Python regex case matching differs from the literal tool's Unicode case folding: `STRASSE` does not match `Straße` under this regex mode.
+Patterns use Python's `re` syntax, not RGSS3 Ruby regex syntax. The pattern must be nonempty, single-line and at most 512 characters. Default matching uses Python `IGNORECASE`; `--case-sensitive` removes that base flag. Inline flags can override the base behavior. Python regex case matching differs from the literal tool's Unicode case folding: `STRASSE` does not match `Straße` under this regex mode.
 
 The selected scopes, command filter, one-based page/script line and zero-based command/JSON locations follow [literal search](search-and-event-diagnostics.md). The count is the number of matching text fields or script lines, not individual occurrences. Empty matches are allowed. Scripts are searched per line; other normalized text fields can contain multiple lines. `--limit`1..1000 and `--offset`0..100000 bound returned hits while preserving the complete selected-scope total. Excerpts retain the first300 characters and disclose clipping; the match can occur later. Every page rescans the same fresh snapshot.
 
@@ -19,14 +19,14 @@ The selected scopes, command filter, one-based page/script line and zero-based c
 
 The parent collects text and evidence through the existing bounded read-only index walker. Only the text strings and pattern enter a separate Python `-I -B` matching worker; the worker receives no project/index paths. It does not import project modules or evaluate text as code. This process boundary is a matching deadline and import-isolation control, not a general OS sandbox.
 
-- Fixed10-second worker deadline, including startup, parsing, compilation and matching. The parent terminates/reaps the worker on timeout. Narrow scope/pattern instead of disabling the deadline.
-- At most50,000 text candidates,65,536 characters per field/line and4MiB total JSON input, including escaped text/pattern and protocol overhead.
-- At most512KiB worker output, with exactly one boolean per input text; malformed, partial or failed responses refuse.
-- At most2MiB complete serialized report. Reduce the returned limit for large evidence paths.
-- Shared index budgets still apply:500,000 charged steps, depth128,4,096 reads,16MiB/file and128MiB total reads.
+- Fixed 10-second worker deadline, including startup, parsing, compilation and matching. The parent terminates/reaps the worker on timeout. Narrow scope/pattern instead of disabling the deadline.
+- At most 50,000 text candidates, 65,536 characters per field/line and 4 MiB total JSON input, including escaped text/pattern and protocol overhead.
+- At most 512 KiB worker output, with exactly one boolean per input text; malformed, partial or failed responses refuse.
+- At most 2 MiB complete serialized report. Reduce the returned limit for large evidence paths.
+- Shared index budgets still apply: 500,000 charged steps, depth 128, 4,096 reads, 16 MiB/file and 128 MiB total reads.
 
 Pagination bounds output, not matching work. Exhausting any limit refuses the entire search instead of returning a partial count. Matching finishes before report creation, so a matching timeout creates no report directory. There is no regex option in MCP or automatic diagnostic scans.
 
 ## Evidence
 
-Nine focused tests cover exact locations, scope/code/pagination counts, case differences/literal preservation, invalid syntax/strict options, actual catastrophic-pattern termination without a report, text/IPC/output budgets, malformed worker masks, stale/output-path/changed-index refusal and PYTHONPATH import isolation. A fresh private native-project index returned exactly Map1/Event1/Page2/command1/parameters0 for `Already\s+rewarded[.]`; the actual disposable VX Ace game displayed `Already rewarded.` at that event. Existing save/repeat-state assertions and original-project hashes remained unchanged. Keep native projects, extracted text and raw reports private. This is bounded normalized-text coverage, not dynamic/opaque text discovery or gameplay correctness proof.
+A fresh native-project index returned exactly map 1, event 1, page 2, command 1, parameter 0 for `Already\s+rewarded[.]`; the actual disposable VX Ace game displayed `Already rewarded.` at that event. Saves and original-project hashes remained unchanged. Keep extracted text and raw reports private. This is bounded normalized-text coverage, not dynamic/opaque text discovery or gameplay correctness proof.

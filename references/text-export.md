@@ -1,6 +1,6 @@
-# Player-text export and lint — v1.7
+# Player-text export and lint
 
-`tools/vxace_text_export.py` exports the player-facing text of a project for proofreading or localization and runs a heuristic lint over it. It is read-only: it reads a fresh Project Reader index, never executes project code, and writes only new report files outside the project and index. No import or write-back is enabled.
+`tools/vxace_text_export.py` exports the player-facing text of a project for proofreading or localization and runs a heuristic lint over it. It is read-only: it reads a fresh Project Reader index, never executes project code, and writes only new report files outside the project and index. It does not write back; edited CSVs go through [text import](text-import.md).
 
 ```powershell
 python tools/vxace_text_export.py PROJECT_INDEX --project PROJECT `

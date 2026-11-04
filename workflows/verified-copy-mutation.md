@@ -1,6 +1,6 @@
 # Workflow — Verified Copy Mutation
 
-Use this only after generating a fresh Project Reader index and reviewing a v0.7 patch plan.
+Use this only after generating a fresh Project Reader index and reviewing a patch plan.
 
 ## 1. Re-index the source project
 
@@ -46,8 +46,8 @@ Use only IDs and locations verified from the current index/codex.
 python tools/vxace_copy_patcher.py MyGame-project-index \
   --project "C:/Games/MyGame" \
   --spec patch.json \
-  --copy "C:/Games/MyGame-v08-test" \
-  --audit "C:/Games/MyGame-v08-audit"
+  --copy "C:/Games/MyGame-test" \
+  --audit "C:/Games/MyGame-audit"
 ```
 
 The tool refuses to proceed if:
@@ -87,4 +87,4 @@ Open the **copy**, never the original, and test:
 
 Delete the staged copy. The source project was not modified.
 
-Do not automatically promote the staged copy over the original. Human review and backup remain required in v0.8.
+The staged copy never replaces the original on its own. To promote it after review, use `vxace_adopt.py apply` (backup and undo; see [references/adopt.md](../references/adopt.md)); human review stays required.

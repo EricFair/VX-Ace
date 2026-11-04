@@ -1,8 +1,8 @@
-# Guarded common event append — v1.21
+# Guarded common event append
 
 `append_common_event` appends **one new `RPG::CommonEvent`** to `Data/CommonEvents.rvdata2` at the next id. The command list uses the same bounded command language as [staged events](staged-events.md) (text, switches, variables, choices, if/else, battle, party, common event call, gold, item, weapon, armor, transfer, wait, since v1.25 a player move route, and since v1.33 `shop` and `recover_all`; `erase_event` and `this` routes are refused here); the language is reused from `tools/vxace_staged_commands.py`, not copied. The new event is either **call-only** (run by a Call Common Event command or an item/skill effect 44) or a **parallel process** gated by a switch. Autorun is refused: it has no termination proof.
 
-It is a copy-only operation on its own change kind, `common_event`. Python backend, mandatory re-indexing, one common event per transaction (the transaction holds exactly one change); the Ruby backend and `--no-reindex` are refused. Only `CommonEvents.rvdata2` changes. System and every referenced database are read only.
+It runs on a disposable copy, as its own change kind, `common_event`. Python backend, mandatory re-indexing, one common event per transaction (the transaction holds exactly one change); the Ruby backend and `--no-reindex` are refused. Only `CommonEvents.rvdata2` changes. System and every referenced database are read only.
 
 ## Snapshot
 
@@ -57,12 +57,12 @@ Each `RPG::EventCommand` has its ivars in the editor order `@indent`, `@code`, `
 
 ### Commands
 
-`commands` is the staged command list: 1..40 operations, nesting depth 4, 40 operations per nested list and at most 200 generated native commands. The operation tables, condition forms and generated native commands are in [staged events](staged-events.md#page-fields); they are the same here. Two rules are specific to common events:
+`commands` is the staged command list: 1..40 operations, nesting depth 4, 40 operations per nested list and at most 200 generated native commands. The operation tables, condition forms and generated native commands are in [staged events](staged-events.md#page-fields); they are the same here. These rules are specific to common events:
 
 - **Self switches are refused.** `set_self_switch` and the `self_switch` condition need an owning map event, which a common event does not have.
 - **`erase_event` is refused.** `214` erases the event that runs it (`Game_Interpreter#command_214` does nothing without an event id), and a common event has no owning event.
 - **`move_route` with `"target": "this"` is refused** for the same reason. `"target": "player"` is allowed (`205 [-1, RPG::MoveRoute]` plus the `505` lines, see [Move routes](staged-events.md#move-routes)); `repeat: true` with `wait: true` is refused everywhere because it would stall the interpreter forever.
-- **`shop` and `recover_all` are allowed (v1.33).** `shop` is `302`/`605` rows ([staged events](staged-events.md#shop-and-recover-all-v133), [shops and inns](shops-and-inns.md)): a common event that opens a shop is the way to share one shop between several events, or to sell from an item/skill effect 44. The shop is skipped in battle, so a common event called from a battle does nothing there, and the commands after the shop run when it closes. `recover_all` is `314 [0, 0]` (party) or `314 [0, actor]`; an actor id needs `expected_actors_sha256`, the goods need the items/weapons/armors hashes they use. A common event with `recover_all` is the reusable "heal the party" step (an inn, a spring, a save point).
+- **`shop` and `recover_all` are allowed.** `shop` is `302`/`605` rows ([staged events](staged-events.md#shop-and-recover-all-v133), [shops and inns](shops-and-inns.md)): a common event that opens a shop is the way to share one shop between several events, or to sell from an item/skill effect 44. The shop is skipped in battle, so a common event called from a battle does nothing there, and the commands after the shop run when it closes. `recover_all` is `314 [0, 0]` (party) or `314 [0, actor]`; an actor id needs `expected_actors_sha256`, the goods need the items/weapons/armors hashes they use. A common event with `recover_all` is the reusable "heal the party" step (an inn, a spring, a save point).
 - **No call to the new id.** A `common_event` command whose id equals `new_id` is refused (direct recursion). Calls to other existing common events are allowed and are checked against the **pre-append** array.
 
 ### Referenced databases
@@ -153,17 +153,6 @@ Keys: `name`, `trigger`, `commands`, and `switch_id` for `parallel` only. Inside
 - One common event per transaction; at most 999 entries. Placeholder slots left by the editor stay empty; the new event goes after them.
 - Text is plain literal text; switch and variable semantics are not simulated. Check runtime behavior in the game.
 
-## Native evidence (v1.21)
+## Native evidence
 
-A six-step recipe on an editor-created project passed all postgates, and the original project was unchanged. The steps were:
-- three common events: an Inn with a choice and a gold check, a parallel Timer gated by switch 5, and a Cheer event that gives gold;
-- a Cheer Potion with effect 44 pointing at Cheer through `from_step`;
-- a blank event and an Innkeeper page calling the Inn through `from_step`.
-
-In a real-engine smoke run:
-- **Inn with 100 gold:** choosing Yes charged 50 gold.
-- **Inn with 15 gold:** the `gold_at_least` else branch ran and no gold was taken.
-- **Timer:** it stayed idle while switch 5 was OFF. Once the switch was ON it added 5 over about 330 frames, and it stopped when the switch went OFF.
-- **Cheer Potion:** using it reserved and ran Cheer (+25 gold).
-
-An existing save loaded with the new common events and the Innkeeper. Effect 44 only fires through the engine's `use_item` path (menu or battle use), not through a direct `item_apply`.
+A six-step recipe on an editor-created project (three common events, a potion with effect 44 pointing at one of them, and an NPC calling another) passed all postgates and left the original project unchanged. In a real-engine smoke run the inn charged 50 gold with enough gold and took none with too little, the parallel timer stayed idle while its switch was OFF and counted while it was ON, and the potion ran its common event. An existing save loaded with the new events. Effect 44 only fires through the engine's `use_item` path (menu or battle use), not through a direct `item_apply`.

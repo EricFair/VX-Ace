@@ -1,12 +1,12 @@
-# Exact UTF-8 script exports and multiline anchors — v0.21
+# Exact UTF-8 script exports and multiline anchors
 
 Use this when extracting RGSS3 source or preparing exact multiline replacements, especially on Windows. Generate a new external index with the updated reader; old indexes are not rewritten automatically.
 
-The reader now writes verified UTF-8 source bytes directly, preserving CRLF, LF, bare CR and mixed line endings. The Ruby bridge records each source's SHA-256, byte count, UTF-8 decodability, ASCII-subset observation and newline counts in `scripts/order.json`. Python verifies the bridge observations before writing the exported `.rb`. These describe bytes, not proof of runtime compatibility or the original declared code page.
+The reader writes verified UTF-8 source bytes directly, preserving CRLF, LF, bare CR and mixed line endings. The Ruby bridge records each source's SHA-256, byte count, UTF-8 decodability, ASCII-subset observation and newline counts in `scripts/order.json`. Python verifies the bridge observations before writing the exported `.rb`. These describe bytes, not proof of runtime compatibility or the original declared code page.
 
-Previously, Windows text-mode output added a carriage return to existing CRLF script lines. One native Main source had 367 archive bytes but 374 exported bytes, with seven doubled carriage returns. Multiline anchors and indexed line numbers could consequently disagree with the actual script. Do not repair existing source projects or normalize their archives to work around that old export issue; re-index externally.
+Windows text-mode output would add a carriage return to CRLF lines and make multiline anchors disagree with the script; the reader avoids that by writing bytes directly. Do not repair existing source projects or normalize their archives; re-index externally.
 
-The planner and copy audit now read indexed script bytes without universal-newline conversion. Search anchors remain exact and unique; no fuzzy newline fallback is added. When building a spec programmatically, preserve the captured bytes:
+The planner and copy audit read indexed script bytes without universal-newline conversion. Search anchors remain exact and unique; no fuzzy newline fallback is added. When building a spec programmatically, preserve the captured bytes:
 
 ```python
 source = script_path.read_bytes().decode("utf-8", "strict")
@@ -21,6 +21,4 @@ Script extraction no longer replaces invalid UTF-8 bytes or corrupt compressed s
 
 Script extraction bounds are 4096 entries, 16 MiB compressed/decompressed per source and 64 MiB decompressed source total. Inflation is incremental with bounded input chunks. These are tool admission limits, not RGSS3 engine limits or an OS security sandbox. Database/string presentation outside Script Editor sources retains its existing separate behavior.
 
-Five regression tests cover exact CRLF/LF/mixed and non-ASCII UTF-8 bytes, metadata, exact multiline planner/copy behavior, bad/trailing/truncated deflate, non-UTF-8 refusal, partial-index mutation refusal and inflation budgets. Public fixtures are original authored source. Proprietary scripts and native test projects remain private.
-
-All 126 scripts from the private native seed matched their decompressed archive bytes exactly after fresh extraction. A private CRLF block was staged into one disposable baseline, then replaced by an exact multiline spec into another copy; actual VX Ace startup executed the replacement marker and reached the title normally. No source project or proprietary script text was published.
+Native check: all 126 scripts of a small editor-made test project matched their decompressed archive bytes after extraction, and an exact multiline CRLF replacement staged on a copy ran in the real engine.

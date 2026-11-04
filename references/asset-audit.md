@@ -1,4 +1,4 @@
-# Read-only graphics/audio references — v0.15
+# Read-only graphics/audio references
 
 Use this when checking missing assets or filename casing from a fresh project index. It searches the project first, then an optional explicitly supplied unpacked RTP root. It never installs, copies, renames or repairs assets.
 
@@ -8,7 +8,7 @@ python tools/vxace_asset_audit.py PROJECT_INDEX --project PROJECT --output NEW_E
 python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT --rtp "C:/Explicit/Path/To/rtp"
 ```
 
-The RTP root must be a separate directory containing Graphics/ or Audio/. A missing RTP argument leaves unresolved references uncertain; it does not turn a normal RTP-based game into hundreds of proven missing-file errors. Do not guess RTP availability from a registry entry, a successful file name match elsewhere on disk or an installed editor alone. Supply the actual directory when it is known. The standalone command and master require a new external report directory outside the game, index and RTP, with fresh source/index evidence. v0.16 adds explicit RTP-output refusal before report creation.
+The RTP root must be a separate directory containing Graphics/ or Audio/. A missing RTP argument leaves unresolved references uncertain; it does not turn a normal RTP-based game into hundreds of proven missing-file errors. Do not guess RTP availability from a registry entry, a successful file name match elsewhere on disk or an installed editor alone. Supply the actual directory when it is known. The standalone command and master require a new external report directory outside the game, index and RTP, with fresh source/index evidence. Report output inside the RTP root is refused before anything is created.
 
 ## What is checked
 
@@ -36,13 +36,11 @@ The master enables `asset_audit: true`; `--rtp` is passed only to that read-only
 
 ## Limits and evidence
 
-By default there is no image decoding/dimension check. v0.17 offers `--image-headers` for [bounded PNG header and default-layout observations](image-header-layouts.md); the master enables this separate option. These do not decode pixels or validate the full image. Audio playback, licensing, encrypted archives, implicit engine assets, script/note references, dynamic names and runtime-created content remain outside the audit. A `found` file can still be corrupt or incompatible. Source/index integrity is rechecked; RTP asset names, sizes and modification times are rechecked, not complete file hashes.
+By default there is no image decoding/dimension check. `--image-headers` offers for [bounded PNG header and default-layout observations](image-header-layouts.md); the master enables this separate option. These do not decode pixels or validate the full image. Audio playback, licensing, encrypted archives, implicit engine assets, script/note references, dynamic names and runtime-created content remain outside the audit. A `found` file can still be corrupt or incompatible. Source/index integrity is rechecked; RTP asset names, sizes and modification times are rechecked, not complete file hashes.
 
-Eighteen asset tests cover fallback uncertainty, local priority, casing, explicit/nested/dotted names, format ambiguity, unsafe/opaque names, provenance, bounded evidence, stale reports, linked files, wrong RTP roots, budgets, metadata changes and RTP text sidecars. Two master configuration tests cover strict flags and older configurations. Windows may skip link-creation tests when privileges are unavailable.
+Real testing exposed tileset `.txt` sidecars as false competitors; they are excluded from image candidates. On an example project every distinct indexed asset reference resolved against the installed VX Ace RTP. Runtime-created names are outside static reference collection, so no broader completeness claim follows.
 
-The actual private Oakfall index resolved all 290 distinct indexed asset references against the explicitly supplied installed VX Ace RTP. Real testing exposed tileset `.txt` sidecars as false competitors; the implementation now excludes them and has a regression test. Native playtesting separately observed the village characters, tiles, title and guardian graphics/audio. Runtime-created Oakfall NPC names are outside static reference collection; no broader asset completeness claim follows from that observation. Project/RTP data and private reports remain local.
-
-## RTP auto-detection (v1.34)
+## RTP auto-detection
 
 `--rtp` is optional. When it is omitted, `vxace_rtp.py` (`find_rtp(project, explicit, autodetect)`) looks for the installed RTP, in this order:
 
@@ -54,6 +52,6 @@ A candidate must contain `Graphics/` or `Audio/`. The first valid one is used an
 
 `python tools/vxace_rtp.py PROJECT` prints the result and every place tried (exit 1 when none).
 
-- `--no-rtp-autodetect` (asset audit, master, recipe `plan`/`run`, copy patcher) skips the search; the environment variable `VXACE_NO_RTP_AUTODETECT=1` does the same for every tool (the test runner sets it, so tests never depend on this machine's install).
+- `--no-rtp-autodetect` (asset audit, master, recipe `plan`/`run`, copy patcher) skips the search; the environment variable `VXACE_NO_RTP_AUTODETECT=1` does the same for every tool.
 - Library calls (`audit()`, `workflow()`, `plan_recipe()`, `run_recipe()`) never auto-detect on their own; only the command lines do (`workflow(..., autodetect=True)` is what `vxace_master.py` passes). The master's asset stage is always started with `--no-rtp-autodetect`; the master resolves the RTP itself and hands it over.
 - Snapshot tools (`vxace_map_events.py`, `vxace_database_entries.py`, `vxace_upper_tiles.py`) and the read-only MCP server keep their explicit-only `--rtp`; the recipe passes them the resolved path. The smoke tool does not use the RTP.

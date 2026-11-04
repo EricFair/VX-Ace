@@ -1,4 +1,4 @@
-# Direct common-event call cycles — v0.16
+# Direct common-event call cycles
 
 The existing read-only event linter now builds a bounded graph of native `117` Call Common Event commands. It reports exact strongly connected components containing mutual calls or self-calls as `possible_common_event_recursion` warnings. It does not change or block event commands automatically.
 
@@ -18,14 +18,8 @@ Calls within branches are included as possible edges. Conditions, switches, scri
 
 ## Native verification and limits
 
-Fifteen automated tests cover self/mutual/disconnected cycles, acyclic chains, downstream exclusion, conditional uncertainty, missing/opaque targets, native ID-slot agreement, bounded evidence, map/troop entries, stale/source integrity, deep iterative graphs and budget refusal.
+A disposable native project was staged through the guarded copy chain with a cycle: a map event calls common event 1, which calls 2, which calls 1. The linter reported one component `[1, 2]` before execution. A bounded test wrapper then ran the project in the real engine: the calls nested through the native interpreter (depths 0, 1, 2) and the wrapper stopped the fourth entry.
 
-A private disposable native project was staged through the guarded Python copy chain: map event 1 calls common event 1; common event 1 calls 2; common event 2 calls 1. Exact snapshots, source/index freshness, all 16 byte gates, re-index, semantic review, copied native version advancement and all 16 post-copy byte gates passed. The linter reported one component `[1, 2]` before execution.
+This verifies the flagged relationship and increasing native nesting while keeping the test bounded. It does not execute an unguarded infinite loop, measure the engine stack limit or prove behavior with arbitrary custom interpreters.
 
-The same transaction installed a private Main-slot test wrapper that logs each entry into the native Call Common Event command and stops the fourth entry. Actual VX Ace F12 playtesting produced target/depth/count rows `1/0/1`, `2/1/2`, `1/2/3`, `2/3/4`, then returned to the map message “Bounded common-event cycle test finished.” The first three entries used the native nested interpreter path; the fourth was intercepted by the guard.
-
-This verifies the flagged relationship and increasing native nesting while keeping the test bounded. It does not execute an unguarded infinite loop, measure the engine stack limit or prove behavior with arbitrary custom interpreters. The guard and project data are private test artifacts, absent from the delivered village and public skill examples. The original project remains unchanged.
-
-## RTP output protection
-
-v0.16 also refuses standalone asset reports and master output anywhere inside an explicit RTP root, before creating report directories. The RTP is a read-only input just like the game and index. Regression tests verify that these refusals leave it unchanged. This closes an output-path gap in the v0.15 wrappers; the actual v0.15 validation used an external report directory and did not write into RTP.
+RTP output protection is described in [asset audit](asset-audit.md).

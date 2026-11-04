@@ -13,7 +13,7 @@ python tools/vxace_impact.py PROJECT_INDEX --spec patch.json --json impact.json 
 
 5. Review every reported relationship, collision candidate, save hook, and limitation.
 6. If the report exposes an unexpected high-risk script collision or wrong target, stop and revise the plan.
-7. Only then use proposal planning or copy mutation if the change fits the currently allowed writer.
+7. Only then use proposal planning or copy mutation if the change is one the guarded writers support.
 
 ## After a staged copy is re-indexed
 

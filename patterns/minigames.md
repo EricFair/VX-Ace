@@ -29,7 +29,7 @@
 **Button timing**
 
 1. Set `VAR[mg_hits]` = 0; Control Timer start with a limit in seconds.
-2. Loop: Show a cue (Show Picture or SE), Wait a random count (use Wait with a variable set from Random), then Button Input Processing into `VAR[mg_key]`. Compare with the expected button code (a project-specific constant: record it, do not guess).
+2. Loop: Show a cue (Show Picture or SE), Wait a random count (Random into a variable, then a loop of Wait 1 with a counter, since Wait takes a fixed number), then Button Input Processing into `VAR[mg_key]`. Compare with the expected button code (a project-specific constant: record it, do not guess).
 3. Conditional Branch on Timer <= 0 (Conditional Branch > Timer) -> Break Loop.
 4. After the loop: Control Timer stop; erase pictures; award by `VAR[mg_hits]` thresholds.
 

@@ -38,14 +38,14 @@ python tools/vxace_recipe.py run cave.json --project "C:/Games/MyGame" --work "C
 python tools/vxace_smoke.py check FINAL_COPY --start-map NEW_MAP_ID --x 10 --y 12 --direction 8 --expect-event Rat --auto-battle win --screenshot cave@120 --results "C:/VXWork/cave-check"
 ```
 
-`plan` predicts the new map id and prints a balance table for the new troop; `run` prints the final copy. This exact recipe was planned, run and checked in the engine on the test project: the rat chased the player, the battle started on touch and was won.
+`plan` predicts the new map id and prints a balance table for the new troop; `run` prints the final copy.
 
 The exact keys of every step are in [references/recipes.md](references/recipes.md). `plan` refuses a recipe that does not fit your project before anything is copied.
 
 ## Safety model
 
 - Analysis, indexing, planning and impact are read-only and write their reports outside the project.
-- Changes are made on a disposable copy. Every targeted data file must round-trip byte-for-byte immediately before it is changed, and the copy is re-indexed and diffed afterwards.
+- Changes are first made on a disposable copy. Every targeted data file must round-trip byte-for-byte immediately before it is changed, and the copy is re-indexed and diffed afterwards.
 - A reviewed copy enters your project only through [adopt](references/adopt.md): you confirm the exact file list, replaced files are backed up and `undo` restores them.
 - `--in-place` recipes are only for a project you designate as a working or test project: one verified backup first, rollback on failure, one-command undo.
 - Host-Ruby syntax checks are diagnostics, not proof of RGSS3 compatibility, and in-engine smoke checks supplement, never replace, your own playtesting.

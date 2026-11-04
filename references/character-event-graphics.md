@@ -1,6 +1,6 @@
-# Asset-bound character graphics on new dialogue events — v0.27, options and priority v1.33
+# Asset-bound character graphics on new dialogue events
 
-The [stationary dialogue append](map-event-creation.md) still requires an exact blank native template. An optional character graphic may now be supplied for the **new detached record only**. Existing event/page graphics, tile graphics, movement routes, copied logic and arbitrary field writes are outside this operation.
+The [stationary dialogue append](map-event-creation.md) still requires an exact blank native template. An optional character graphic may be supplied for the **new detached record only**. Existing event/page graphics, tile graphics, movement routes, copied logic and arbitrary field writes are outside this operation.
 
 ## Capture the proposed asset
 
@@ -10,7 +10,7 @@ python tools/vxace_map_events.py PROJECT_INDEX --project PROJECT --map MAP_ID --
 
 Use an exact basename without path/extension, from the actual project or explicit separate read-only RTP. Project assets take precedence. Missing, ambiguous, case-mismatched, linked or non-PNG resolutions refuse; no asset discovery, installation or copying is performed. Output directories must be outside source/index/RTP.
 
-Full selected file SHA-256, regular-file/descriptor/path stability,32MiB bounds and valid bounded PNG IHDR/CRC are required. Default native character-grid semantics use the first two reference characters: a leading `!` or `$` with `$` among those two selects3×4 single-character frames; otherwise12×8 eight-character frames. `!` as the first character retains native object-character positioning/bush semantics. A sheet must divide exactly into the selected grid with each frame1–256 pixels in each dimension. Single-character sheets require index0; ordinary sheets allow0–7. Direction is2/4/6/8 and pattern0–2.
+Full selected file SHA-256, regular-file/descriptor/path stability, 32 MiB bounds and valid bounded PNG IHDR/CRC are required. Default native character-grid semantics use the first two reference characters: a leading `!` or `$` with `$` among those two selects 3×4 single-character frames; otherwise 12×8 eight-character frames. `!` as the first character retains native object-character positioning/bush semantics. A sheet must divide exactly into the selected grid with each frame 1–256 pixels in each dimension. Single-character sheets require index 0; ordinary sheets allow 0–7. Direction is 2/4/6/8 and pattern 0–2.
 
 These are header/layout and exact-byte observations, **not full decoding or native rendering proof**. Inspect the selected character, direction, frame, positioning and animation in actual VX Ace. Custom rendering scripts can change these semantics.
 
@@ -29,14 +29,14 @@ Stage through the normal planner and Python copy patcher, adding `--rtp EXPLICIT
 
 All base full-map/template/identity/cell/command/version/impact/re-index/semantic/post-project gates still apply. This does not authorize modifying an existing NPC, adding a resource or changing asset files.
 
-## Options and priority (v1.33)
+## Options and priority
 
-The recipe step `append_dialogue_event` exposes the graphic (`graphic`, bound through the snapshot above and `--rtp`) and an optional `options` object (a non-empty subset of `walk_anime`, `step_anime`, `direction_fix`, `through` and `priority` = `below`/`same`/`above`, allowed only with a graphic; on the mutation it appears as `options` next to `graphic` and `expected_asset`). A dialogue event with a graphic is now stored with priority **same** unless `options.priority` says otherwise, so the player bumps into it; a dialogue event without a graphic keeps the template page's priority as before. The remaining page fields still come from the blank template. `add_shop` works on such an event (see [shops and inns](shops-and-inns.md)).
+The recipe step `append_dialogue_event` exposes the graphic (`graphic`, bound through the snapshot above and `--rtp`) and an optional `options` object (a non-empty subset of `walk_anime`, `step_anime`, `direction_fix`, `through` and `priority` = `below`/`same`/`above`, allowed only with a graphic; on the mutation it appears as `options` next to `graphic` and `expected_asset`). A dialogue event with a graphic is stored with priority **same** unless `options.priority` says otherwise, so the player bumps into it; a dialogue event without a graphic keeps the template page's priority. The remaining page fields still come from the blank template. `add_shop` works on such an event (see [shops and inns](shops-and-inns.md)).
 
 ## Verification
 
-Ten new synthetic tests cover native fields, full copy/audit, low-level context refusal, missing/corrupt/ambiguous/case/dimension/byte bounds, optional schema/stale hash, default single/object prefixes, explicit RTP/project precedence, read-only snapshot and final-asset-change rollback with source unchanged. All388 executable tests and all seven read-only master stages passed locally.
+The tests cover the native fields, full copy and audit, missing/corrupt/ambiguous assets, stale hashes, RTP/project precedence and rollback when the asset changes late.
 
-Private native copies verified an ordinary eight-character sheet, a `$` single-character sheet and a `!` object sheet. The editor displayed the selected NPC; native action-button interaction turned it toward the player and showed both dialogue lines. Independent authored native assertions verified actual bitmap/frame sizes and positioning: the single sheet used192×256 pixels with64×64 frames and a four-pixel shift; the object sheet used384×256 with32×32 frames, native object-character status and zero shift. Frame rectangles remained inside their bitmaps.
+Native copies verified an ordinary eight-character sheet, a `$` single-character sheet and a `!` object sheet. The editor displayed the selected NPC; action-button interaction turned it toward the player and showed both dialogue lines. Native assertions verified the actual bitmap and frame sizes and positioning (single sheet 192×256 with 64×64 frames and a four-pixel shift; object sheet 384×256 with 32×32 frames and zero shift).
 
-Each native case loaded the unchanged older save, reconstructed the new event once, completed dialogue, saved once and loaded that save in a different Game process with the same event/state and no extra map setup or save rewrite. Bound asset hashes, existing events/map fields, other Data and baseline sources remained unchanged. These cases cover the inspected default engine/resources; custom rendering/map/save hooks still need project-specific review and native testing. Proprietary images/projects/saves/raw reports remain private.
+Each case loaded the unchanged older save, reconstructed the new event once, saved, and loaded that save in a different Game process with the same state. Bound asset hashes, existing events and other Data stayed unchanged. These cases cover the default engine; custom rendering/map/save hooks need project-specific review and native testing.

@@ -40,13 +40,13 @@ Review both:
 - `plan.json` for machine-readable details;
 - `plan.md` for human-readable diffs, proposals, regression checks, and rollback guidance.
 
-## 7. Apply manually or with a future verified writer
+## 7. Apply the plan
 
-v0.7 itself never writes project data.
+The planner itself never writes project data. Apply the reviewed plan in one of these ways:
 
-For RGSS3, apply the reviewed diff in a project copy or via the Script Editor while preserving order/dependencies.
-
-For events/database entries, use the editor manually until structured binary writing has passed round-trip validation.
+- RGSS3: apply the reviewed diff in a project copy or via the Script Editor while preserving order/dependencies.
+- Events/database entries: use the guarded copy operations (`tools/vxace_copy_patcher.py`, recipes) so the change lands on a disposable copy first.
+- Promote a reviewed copy to the project with `vxace_adopt.py apply` (backup + undo), or run a recipe in place on a designated working project; see [references/adopt.md](../references/adopt.md) and [references/recipes.md](../references/recipes.md).
 
 ## 8. Test and re-index
 

@@ -85,4 +85,4 @@ When a symptom appears state-related, log or inspect both:
 - current value;
 - last expected writer.
 
-A future project reader should index every read/write reference to switches and variables.
+The Project Reader and Codex index every read/write reference to switches and variables.
