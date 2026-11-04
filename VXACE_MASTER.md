@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v1.34.0
+# VX Ace Masterfile — v2.0.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -55,6 +55,8 @@ v1.31 adds a `layout` option for fresh maps and `add_area` ([map layouts](refere
 v1.32 adds `features_add`/`features_remove` and a HIT guard for features overrides, a `set_fields` recipe step (guarded `edit_database_entry` on existing entries), switch/variable names in `set_system_fields`, and hit/evasion in the balance analysis.
 
 v1.33 adds Shop Processing and Recover All to the shared command language, graphics on dialogue events, and the `add_shopkeeper`, `add_inn` and `add_intro` recipe macros.
+
+2.0 hardens the toolchain: a content-hash cache makes each recipe step about four times faster, `plan` estimates every new troop against the starting party, `set_fields` can change actor graphics (hash-bound), `add_monster` chases by default, graphic-less touch pages default to priority below (no invisible walls), and smoke reports record the game's frame rate. Tests no longer read the live test project.
 
 v1.34 adds RTP auto-detection (registry, Steam libraries, common files), a one-page project overview, an RTP sprite catalogue with `graphic: {"sprite": ...}` lookup, troop-level balance (hit/eva, damage per turn, survival estimate), and smoke helpers: `vxace_smoke.py check`, a scripted DSL (goto, step, talk, wait_until, auto_battle) and in-engine PNG screenshots.
 

@@ -153,6 +153,11 @@ module VXA_Smoke
       return unless ACTIVE
       unless @finished
         run_hooks(:finish)
+        if @boot_time
+          seconds = Time.now - @boot_time
+          fps = seconds > 0 ? (@frame / seconds) : 0.0
+          record(:INFO, 'timing', 'frames=' + @frame.to_s + ' seconds=' + format('%.2f', seconds) + ' fps=' + format('%.1f', fps))
+        end
         @finished = true
         write_line(['END', NONCE, @count.to_s].join("\t"))
       end
@@ -774,6 +779,7 @@ module VXA_Smoke
 
     # ---- boot and frame driver ------------------------------------------
     def boot
+      @boot_time = Time.now
       record(:INFO, 'boot', 'mode=' + @start_mode)
       if @start_mode == 'new'
         DataManager.setup_new_game

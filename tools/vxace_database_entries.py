@@ -9,7 +9,7 @@ from pathlib import Path
 import sys
 from vxace_index_query import execute, unlinked
 
-VERSION = '0.20.0'
+VERSION = '0.21.0'
 ITEM_INTS = {'id','icon_index','price','scope','occasion','animation_id','speed',
              'success_rate','hit_type','itype_id','repeats','tp_gain'}
 ITEM_TEXT = {'name','description','note'}
@@ -111,7 +111,12 @@ def new_key_item(root, mutation):
 def apply(root, mutation, source_path=None, context=None):
     if isinstance(mutation,dict) and mutation.get('action')=='edit_database_entry':
         from vxace_database_edit import apply as edit_entry
-        return edit_entry(root,mutation,source_path)
+        rtp=None
+        if context is not None:
+            if not isinstance(context,dict) or set(context)!={'rtp'} or (context['rtp'] is not None and not isinstance(context['rtp'],str)):
+                raise ValueError('Entry edit asset context is unsupported')
+            rtp=context['rtp']
+        return edit_entry(root,mutation,source_path,rtp)
     if isinstance(mutation,dict) and mutation.get('action')=='append_database_entry':
         from vxace_database_append import apply as append_entry
         rtp=None
@@ -170,13 +175,19 @@ def main(argv=None):
     ap.add_argument('--rtp',help='actors table only: explicit read-only RTP root used to resolve the sheets')
     args=ap.parse_args(argv)
     if args.edit_id is not None:
-        if args.template_id is not None or args.template_item is not None or args.class_id is not None or args.character_sheet or args.face_sheet or args.rtp:
-            ap.error('--edit-id is used alone with --table')
+        if args.template_id is not None or args.template_item is not None or args.class_id is not None:
+            ap.error('--edit-id is used with --table (and, for actors, --character-sheet / --face-sheet / --rtp)')
+        if (args.character_sheet or args.face_sheet or args.rtp) and args.table!='actors':
+            ap.error('--character-sheet, --face-sheet and --rtp are only for --table actors')
+        if args.rtp and not (args.character_sheet or args.face_sheet):
+            ap.error('--rtp needs --character-sheet or --face-sheet')
         try:
             project=unlinked(args.project)
             if project.is_file() and project.suffix.lower()=='.rvproj2':project=project.parent
+            rtp=unlinked(args.rtp) if args.rtp else None
+            if rtp is not None and (unlinked(args.output)==rtp or rtp in unlinked(args.output).parents):raise ValueError('Snapshot output must be outside read-only RTP')
             from vxace_database_edit import indexed_snapshot as edit_snapshot
-            result=execute(args.index,project,args.output,lambda data:edit_snapshot(data,project,args.table,args.edit_id),'item-entry-snapshot')
+            result=execute(args.index,project,args.output,lambda data:edit_snapshot(data,project,args.table,args.edit_id,tuple(args.character_sheet),tuple(args.face_sheet),rtp),'item-entry-snapshot')
             (Path(args.output)/'item-entry-snapshot.md').write_text('# VX Ace database entry edit preconditions\n\nRead-only; no mutation authorized.\n\n```json\n'+json.dumps(result,indent=2)+'\n```\n',encoding='utf-8')
             print(json.dumps({'status':'ok','table':args.table,'edit_id':args.edit_id}))
             return 0

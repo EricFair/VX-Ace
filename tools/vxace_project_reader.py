@@ -42,10 +42,16 @@ def ruby_path(explicit=None):
 
 
 def run_bridge(ruby,bridge,mode,src):
-    p=subprocess.run([ruby,str(bridge),mode,str(src)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-    if p.returncode:
-        raise RuntimeError((p.stderr or p.stdout).decode("utf-8","replace").strip())
-    return json.loads(p.stdout.decode("utf-8","replace"))
+    import vxace_cache
+    digest=vxace_cache.key("bridge",vxace_cache.tool_identity(bridge),ruby,mode,vxace_cache.file_sha256(src)) if vxace_cache.directory() else None
+    raw=vxace_cache.get("bridge",digest) if digest else None
+    if raw is None:
+        p=subprocess.run([ruby,str(bridge),mode,str(src)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        if p.returncode:
+            raise RuntimeError((p.stderr or p.stdout).decode("utf-8","replace").strip())
+        raw=p.stdout
+        if digest: vxace_cache.put("bridge",digest,raw)
+    return json.loads(raw.decode("utf-8","replace"))
 
 
 def key(v):

@@ -16,7 +16,7 @@ import time
 from vxace_copy_patcher import current_inventory
 from vxace_index_query import unlinked
 
-VERSION='1.9.0'
+VERSION='2.0.0'
 ROOT=Path(__file__).resolve().parent
 RUNTIME=ROOT/'smoke'/'vxa_smoke_runtime.rb'
 SLOT_NAME='VXA Smoke Harness'
@@ -277,6 +277,7 @@ def run(work,mode,start,frames,auto_confirm,timeout,json_out,markdown_out,launch
     report={'version':VERSION,'status':status,'mode':mode,'start':start,'frames':frames,'auto_confirm':auto_confirm,'timeout_seconds':timeout,
             'nonce':nonce,'results_file':out_name,'runtime':parsed['header'],'records':records,'counts':counts,'uncaught':uncaught,
             'screenshots':screenshots,'problems':problems,'timed_out':timed_out,'duration_seconds':duration,'process_exit_code':proc.returncode,
+            'timing':timing_of(records),
             'script_refs':script_refs(records,stage_record['script_names']),'copy':str(copy),'project':str(project),
             'scripts_unchanged_after_run':unchanged,'slot_source_sha256':stage_record['slot_source_sha256'],'suite_sha256':stage_record.get('suite_sha256'),
             'runtime_compatibility_proven':False,'mutation_authorized':False,
@@ -287,11 +288,23 @@ def run(work,mode,start,frames,auto_confirm,timeout,json_out,markdown_out,launch
     return report
 
 
+def timing_of(records):
+    """{'frames', 'seconds', 'fps'} from the runtime's INFO timing record, or None (older runtime, crash before the end)."""
+    for record in reversed(records):
+        if record.get('type')=='INFO' and record.get('name')=='timing':
+            values=dict(part.split('=',1) for part in str(record.get('detail','')).split() if '=' in part)
+            try:return {'frames':int(values['frames']),'seconds':float(values['seconds']),'fps':float(values['fps'])}
+            except (KeyError,ValueError):return None
+    return None
+
+
 def markdown(report):
     def cell(text):return str(text).replace('|','\\|').replace('\n',' ')
     lines=['# VX Ace smoke test report','',f"Status: **{report['status']}**",
            f"Mode: {report['mode']} / start: {report['start']} / frames: {report['frames']} / auto-confirm: {report['auto_confirm']}",
            f"Duration: {report['duration_seconds']} s, process exit code: {report['process_exit_code']}",
+           *( [f"Game speed: {report['timing']['frames']} frames in {report['timing']['seconds']} s = {report['timing']['fps']} fps"
+               + (' (below 50 fps: the run was throttled; RGSS pauses while its window is not active, so do not hide or minimise it)' if report['timing']['fps']<50 else '')] if report.get('timing') else []),
            'Counts: '+', '.join(f'{key} {value}' for key,value in report['counts'].items()),
            f"Runtime: {cell(report['runtime'])}",'']
     if report['problems']:lines+=['## Problems','']+['- '+cell(p) for p in report['problems']]+['']
@@ -417,13 +430,13 @@ def main(argv=None):
         if args.command=='check':
             report=check(args.project,args.results,args.start_map,args.x,args.y,args.direction,args.expect_event,args.step,args.talk,args.screenshot,args.frames,
                          args.mode,args.timeout,args.auto_battle,args.ruby,args.keep_work,args.work_root,args.launcher)
-            print(json.dumps({**{k:report[k] for k in ('version','status','counts','duration_seconds')},'screenshots':[s['file'] for s in report['screenshots']],
+            print(json.dumps({**{k:report[k] for k in ('version','status','counts','duration_seconds','timing')},'screenshots':[s['file'] for s in report['screenshots']],
                               'temporary_copy_removed':report['check']['temporary_copy_removed'],'results':report['check']['results']}))
             if report['status']=='integrity_failure':return 2
             return 0 if report['status']=='pass' else 3
         report=run(args.work,args.mode,args.start,args.frames,args.auto_confirm,args.timeout,args.json,args.markdown,args.launcher,args.screenshot)
     except Exception as error:print('Smoke test refused: '+str(error),file=sys.stderr);return 2
-    print(json.dumps({k:report[k] for k in ('version','status','counts','duration_seconds','runtime_compatibility_proven')}))
+    print(json.dumps({k:report[k] for k in ('version','status','counts','duration_seconds','timing','runtime_compatibility_proven')}))
     if report['status']=='integrity_failure':return 2
     return 0 if report['status']=='pass' else 3
 

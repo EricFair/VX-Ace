@@ -9,7 +9,7 @@
 | `map_id`, `x`, `y`, `name` | placement, as for the other event macros; exactly one of `template_event` (an existing blank event or `{"from_step": k}`) or `donor_event` with `blank_x`/`blank_y` |
 | `troop` | troop id, or `{"from_step": k}` of a troops `append_entry` step |
 | `graphic` | required character graphic (`character_name`, `character_index`, `direction`, `pattern`); bound like any staged graphic (project first, `--rtp` for RTP sheets). A monster without a graphic is refused |
-| `move` | the v1.25 move object. Default `{"type": "random", "speed": 3, "frequency": 3}`. `{"type": "fixed"}` makes a stationary monster; `approach` and `custom` also work |
+| `move` | the v1.25 move object. Default (2.0) `{"type": "approach", "speed": 3, "frequency": 5}`: the monster comes for the player and starts its battle when it reaches them, but is slower than the player (speed 4). `{"type": "random", "speed": 3, "frequency": 3}` makes a wanderer (it only fights when the player walks into it). `{"type": "fixed"}` makes a stationary monster; `approach` and `custom` also work |
 | `can_escape` (default `true`), `can_lose` (default `false`) | the battle flags. With `can_lose` false a defeat is Game Over, the engine default |
 | `intro_text` | 1..4 literal lines shown before the battle |
 | `win`, `escape`, `lose` | command lists run in the matching battle branch (staged command language). `escape` needs `can_escape` true and `lose` needs `can_lose` true |
@@ -47,7 +47,7 @@ Impact and `plan` describe the monster in plain words ("Wandering monster, battl
    "intro_text": ["A slime blocks the way!"]}]}
 ```
 
-One page: random movement (speed 3, frequency 3), event touch, priority same, text then battle. The default flags let the party run away and make a defeat Game Over. The slime stays on the map after every fight.
+One page: approach movement (speed 3, frequency 5, the 2.0 default), event touch, priority same, text then battle. The default flags let the party run away and make a defeat Game Over. The slime stays on the map after every fight.
 
 ### A quest boss that appears when switch 9 is ON and disappears after the win
 

@@ -22,7 +22,7 @@ import vxace_adopt as adopt
 import vxace_rtp
 from vxace_rtp_sprites import SpriteError, resolve_recipe_sprites
 
-VERSION = '1.34.0'
+VERSION = '2.0.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -295,7 +295,7 @@ def validate_touch_trigger(step, number, steps):
         raise RecipeError(f'step {number}: from_step is only allowed for map_id, template_event, battle troop ids, item/weapon/armor ids, transfer maps and common event ids in commands')
 
 
-MONSTER_MOVE = {'type': 'random', 'speed': 3, 'frequency': 3}
+MONSTER_MOVE = {'type': 'approach', 'speed': 3, 'frequency': 5}   # 2.0: a monster comes for the player (slower than the player's speed 4, so it can be avoided)
 
 
 def validate_monster(step, number, steps):
@@ -922,6 +922,18 @@ def resolve_refs(value, created):
 
 # ---------------------------------------------------------------- spec building (snapshot + parameters only)
 
+def bind_actor_assets(mutation, overrides, snapshot):
+    """Put the snapshot's character/face sheet bindings into an actor mutation (append or in-place edit) when its overrides name graphics."""
+    from vxace_database_append import actor_graphics
+    characters, faces = actor_graphics(overrides)
+    if characters or faces:
+        assets = snapshot.get('assets')
+        wanted = {**({'characters': characters} if characters else {}), **({'faces': faces} if faces else {})}
+        if not isinstance(assets, dict) or set(assets) != set(wanted) or any(not isinstance(assets[group], dict) or set(assets[group]) != names for group, names in wanted.items()):
+            raise RecipeError('snapshot lacks the character/face sheet bindings of the actor graphics')
+        mutation['expected_assets'] = assets
+
+
 def build_spec(title, number, step, snapshot, source=None):
     """Build the exact spec for one step. Hashes, next ids and counts come only from the snapshot."""
     kind = step['type']
@@ -937,14 +949,7 @@ def build_spec(title, number, step, snapshot, source=None):
                 raise RecipeError(f'snapshot has no {name} hash')
             mutation[ref_field(name)] = snapshot[name + '_sha256']
         if step['table'] == 'actors':
-            from vxace_database_append import actor_graphics
-            characters, faces = actor_graphics(step['overrides'])
-            if characters or faces:
-                assets = snapshot.get('assets')
-                wanted = {**({'characters': characters} if characters else {}), **({'faces': faces} if faces else {})}
-                if not isinstance(assets, dict) or set(assets) != set(wanted) or any(not isinstance(assets[group], dict) or set(assets[group]) != names for group, names in wanted.items()):
-                    raise RecipeError('snapshot lacks the character/face sheet bindings of the actor graphics')
-                mutation['expected_assets'] = assets
+            bind_actor_assets(mutation, step['overrides'], snapshot)
         mutation['overrides'] = step['overrides']
         change = {'kind': 'database_entry', 'locator': {'table': step['table']},
                   'proposal': f'Recipe step {number}: append one {step["table"]} entry cloned from template {step["template_id"]}.',
@@ -955,6 +960,8 @@ def build_spec(title, number, step, snapshot, source=None):
             if snapshot.get(name + '_sha256') is None:
                 raise RecipeError(f'snapshot has no {name} hash')
             mutation[ref_field(name)] = snapshot[name + '_sha256']
+        if step['table'] == 'actors':
+            bind_actor_assets(mutation, step['fields'], snapshot)
         mutation['overrides'] = step['fields']
         change = {'kind': 'database_entry', 'locator': {'table': step['table'], 'id': step['id']},
                   'proposal': f'Recipe step {number}: edit {step["table"]} entry {step["id"]} in place ({", ".join(sorted(step["fields"]))}).',
@@ -1338,7 +1345,14 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
                         table_args += ['--rtp', rtp]
                 script, args, name = 'vxace_database_entries.py', [index, '--project', source, *table_args], 'item-entry-snapshot'
             elif kind == 'set_fields':
-                script, args, name = 'vxace_database_entries.py', [index, '--project', source, '--table', resolved['table'], '--edit-id', resolved['id']], 'item-entry-snapshot'
+                edit_args = []
+                if resolved['table'] == 'actors':
+                    characters, faces = actor_graphics(resolved['fields'])
+                    edit_args += [arg for sheet in sorted(characters) for arg in ('--character-sheet', sheet)]
+                    edit_args += [arg for sheet in sorted(faces) for arg in ('--face-sheet', sheet)]
+                    if (characters or faces) and rtp:
+                        edit_args += ['--rtp', rtp]
+                script, args, name = 'vxace_database_entries.py', [index, '--project', source, '--table', resolved['table'], '--edit-id', resolved['id'], *edit_args], 'item-entry-snapshot'
             elif kind == 'set_system_fields':
                 start = resolved.get('start')
                 script, args, name = ('vxace_system_fields.py', [index, '--project', source,
@@ -1405,7 +1419,8 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
                                                   '--backend', 'python', *(['--ruby', ruby] if ruby else []),
                                                   *(['--rtp', rtp] if rtp and ((kind == 'append_staged_event' and graphic_names(resolved['pages']))
                                                                                or (kind == 'append_dialogue_event' and 'graphic' in resolved)
-                                                                               or (kind == 'append_entry' and resolved['table'] == 'actors' and any(actor_graphics(resolved['overrides'])))) else [])])
+                                                                               or (kind == 'append_entry' and resolved['table'] == 'actors' and any(actor_graphics(resolved['overrides'])))
+                                                                               or (kind == 'set_fields' and resolved['table'] == 'actors' and any(actor_graphics(resolved['fields'])))) else [])])
         record['audit'] = str(audit / 'audit.json')
         if not copy.is_dir():
             fail('copy patcher reported success but the copy is missing')
@@ -1802,6 +1817,21 @@ def auto_rtp(args):
 
 
 def run_recipe(recipe_path, project, work, ruby=None, smoke=None, rtp=None, in_place=None, cleanup=True):
+    """Run the recipe with the content-hash cache (vxace_cache) in WORK/.cache unless VXACE_CACHE_DIR is already set.
+    The cache only skips re-decoding and re-round-tripping byte-identical files; it is deleted when the run ends."""
+    if os.environ.get('VXACE_CACHE_DIR'):
+        return _run_recipe(recipe_path, project, work, ruby, smoke, rtp, in_place, cleanup)
+    cache = unlinked(work).resolve() / '.cache'
+    os.environ['VXACE_CACHE_DIR'] = str(cache)
+    try:
+        return _run_recipe(recipe_path, project, work, ruby, smoke, rtp, in_place, cleanup)
+    finally:
+        os.environ.pop('VXACE_CACHE_DIR', None)
+        if cache.is_dir():
+            remove_tree(cache)
+
+
+def _run_recipe(recipe_path, project, work, ruby=None, smoke=None, rtp=None, in_place=None, cleanup=True):
     """Execute the recipe. Returns the report dict; its status is 'pass', 'step_failed', 'validation_refused', 'smoke_failed' or 'error'.
     `in_place` (None, or {'backup_root', 'confirm', 'rollback_on_failure'}) selects in-place mode; `cleanup` (copy-chain mode) deletes each passed
     step's index folders and, at the end, every intermediate step copy except the final one."""
@@ -2014,6 +2044,8 @@ def main(argv=None):
     vxace_rtp.add_arguments(item)
     item.add_argument('--in-place', action='store_true', help='predict an in-place run (no project copies are kept; the backup is reported)')
     item.add_argument('--backup-root', help='with --in-place: where the start backup would go')
+    item.add_argument('--balance-levels', type=lambda text: tuple(int(x) for x in text.split(',')), default=None,
+                      help='party levels for the balance estimate of new troops (comma-separated, default 1,5,10,20)')
     item = commands.add_parser('run')
     item.add_argument('recipe')
     item.add_argument('--project', required=True)
@@ -2057,7 +2089,7 @@ def main(argv=None):
             import vxace_recipe_plan
             if args.backup_root and not args.in_place:
                 raise RecipeError('--backup-root belongs to --in-place')
-            plan = vxace_recipe_plan.plan_recipe(args.recipe, args.project, args.output, args.ruby, auto_rtp(args), args.in_place, args.backup_root)
+            plan = vxace_recipe_plan.plan_recipe(args.recipe, args.project, args.output, args.ruby, auto_rtp(args), args.in_place, args.backup_root, args.balance_levels)
             summary = plan['summary']
             print(json.dumps({'version': vxace_recipe_plan.VERSION, 'status': plan['status'], 'steps_planned': summary['steps_planned'], 'refused_step': plan['refused_step'],
                               'transactions': summary['transactions'], 'files_changed': summary['files_changed'], 'original_unchanged': plan['original_unchanged'],

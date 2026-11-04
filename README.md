@@ -1,222 +1,59 @@
-# RPG Maker VX Ace Developer — v1.34
+# RPG Maker VX Ace Developer — v2.0
 
-A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
+A skill and local toolchain that lets an AI agent work on **RPG Maker VX Ace** projects like a careful senior developer: analyse a project, design mechanics natively, build content (maps, events, monsters, shops, database entries) with guarded recipes, check it in the real engine and bring reviewed changes into your project with a backup and undo. Runtime code targets **RGSS3 / Ruby 1.9.2**.
 
-- **Start here:** [getting started](GETTING_STARTED.md), then **[VXACE_MASTER.md](VXACE_MASTER.md)** for the complete settings, capability matrix, commands, safety contract and evidence. Machine-readable defaults are in `vxace-master.json`.
-- **Agent skill:** [SKILL.md](SKILL.md).
-- **Release history:** [CHANGELOG.md](CHANGELOG.md) summarises each release; detailed limits and native evidence live in each operation's reference.
+- **Install and first session:** [GETTING_STARTED.md](GETTING_STARTED.md)
+- **Agent entry point:** [SKILL.md](SKILL.md)
+- **Every command, setting and safety rule:** [VXACE_MASTER.md](VXACE_MASTER.md) (machine-readable defaults in `vxace-master.json`)
+- **Release history:** [CHANGELOG.md](CHANGELOG.md)
+
+## What it does
+
+| Area | Highlights | Reference |
+|---|---|---|
+| Understand a project | validator (byte-identical round trip of every data file), reader and Codex, one-page overview, script compatibility, asset/RTP and map-tile audits, search | [project reader](references/project-reader.md), [validation](references/project-validation.md) |
+| Analyse | balance (formulas, curves, troops vs the party with equipment and hit rates, economy), notetag registry, text export and message lint, patch impact, semantic diff | [balance](references/balance-analysis.md), [impact](references/impact-analysis.md) |
+| Build content | recipes: one JSON file of steps with `{"from_step": k}` links, a dry-run `plan` (ids, warnings, troop balance) and `run`; macros for monsters, areas with doors, shopkeepers, inns, intros, chests, touch triggers; readable map layouts; RTP sprite catalogue | [recipes](references/recipes.md) |
+| Edit the database | append actors, classes, enemies, skills, states, weapons, armors, items, troops and skill learnings from templates; edit existing entries (`set_fields`, single feature rows); System fields | [database append](references/database-append.md), [system fields](references/system-fields.md) |
+| Events | quest NPCs with conditional pages, choices, battles, shops, Recover All, movement and touch/parallel triggers; common events | [staged events](references/staged-events.md), [monsters](references/monsters.md) |
+| Test in the engine | one-line `vxace_smoke.py check` (start map, expected events, steps, talk, auto-battle, in-engine screenshots), scripted suites, crash capture | [smoke testing](references/smoke-testing.md) |
+| Design knowledge | native-first patterns (quests, crafting, day/night, puzzles, bosses) and RGSS3 templates | [patterns](patterns/README.md), [templates](templates/rgss3/README.md) |
+
+Anything outside the enabled operations, such as autotile painting, event deletion or free-form map property edits, is refused. [SKILL.md](SKILL.md) lists the exact operations.
+
+## A recipe in one minute
+
+```json
+{"title": "Cave slice", "steps": [
+ {"type": "add_area", "template_map_id": 1, "name": "Cave", "width": 21, "height": 15, "tileset_id": 4, "layout": {"preset": "dungeon", "paths": [[10, 3]]}, "donor_event": 1, "door": {"map_id": 1, "x": 8, "y": 4, "blank_x": 1, "blank_y": 1}, "arrival": {"x": 10, "y": 12, "direction": 8}, "return_door": {"x": 10, "y": 13}, "back_to": {"x": 8, "y": 5, "direction": 2}},
+ {"type": "append_entry", "table": "enemies", "template_id": 1, "overrides": {"name": "Cave Rat", "params": [60, 0, 12, 8, 5, 5, 10, 10]}},
+ {"type": "append_entry", "table": "troops", "template_id": 1, "overrides": {"name": "Rats", "members": [{"enemy_id": {"from_step": 2}, "x": 200, "y": 300, "hidden": false}, {"enemy_id": {"from_step": 2}, "x": 340, "y": 300, "hidden": false}]}},
+ {"type": "append_blank_event", "map_id": {"from_step": 1}, "donor_map_id": 1, "donor_event": 1, "x": 1, "y": 1},
+ {"type": "add_monster", "map_id": {"from_step": 1}, "template_event": {"from_step": 4}, "x": 10, "y": 5, "name": "Rat", "troop": {"from_step": 3}, "graphic": {"sprite": "grey rats"}}]}
+```
 
 ```bash
-python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR
+python tools/vxace_recipe.py plan cave.json --project "C:/Games/MyGame" --output "C:/VXWork/cave-plan"
+python tools/vxace_recipe.py run cave.json --project "C:/Games/MyGame" --work "C:/VXWork/cave-run"
+python tools/vxace_smoke.py check FINAL_COPY --start-map NEW_MAP_ID --x 10 --y 12 --direction 8 --expect-event Rat --auto-battle win --screenshot cave@120 --results "C:/VXWork/cave-check"
 ```
 
-## Capabilities
+`plan` predicts the new map id and prints a balance table for the new troop; `run` prints the final copy. This exact recipe was planned, run and checked in the engine on the test project: the rat chased the player, the battle started on touch and was won.
 
-### Read-only analysis
-
-| Area | Reference |
-|---|---|
-| Project reader, Codex and project-wide validator | [project reader](references/project-reader.md), [codex](references/project-codex.md), [validation](references/project-validation.md) |
-| RGSS3 script compatibility analysis | [compatibility index](references/script-compatibility-index.md) |
-| Host and optional compile-only native syntax diagnostics | [validation](references/project-validation.md), [native syntax](references/native-syntax-diagnostics.md) |
-| Literal and bounded regex search, event-logic diagnostics | [search](references/search-and-event-diagnostics.md), [regex](references/regex-search.md) |
-| Map tile, asset, PNG-header and common-event cycle audits | [map tiles](references/map-tile-audit.md), [assets](references/asset-audit.md), [image headers](references/image-header-layouts.md), [cycles](references/common-event-cycles.md) |
-| Patch impact analysis and semantic Codex diff | [impact](references/impact-analysis.md) |
-| Baseline-relative observed schema comparison | [schema comparison](references/schema-comparison.md) |
-| Balance: damage formulas, stat/EXP curves, matchups, troop rewards, shop economy | [balance](references/balance-analysis.md) |
-| Notetag registry: note/comment tags vs script parsers, typo hints | [notetags](references/notetag-registry.md) |
-| Dialogue/database text export (JSON/CSV/Markdown) and message lint | [text export](references/text-export.md) |
-| Edited-CSV text import to a guarded patch spec (existing parameter/field/map-name edits) | [text import](references/text-import.md) |
-| In-engine smoke tests of a staged disposable copy (real `Game.exe`, scripted input, crash capture), one-line `check` with step/talk/auto-battle/screenshots | [smoke testing](references/smoke-testing.md) |
-| Read-only stdio MCP interface | [MCP](references/mcp-read-only.md) |
-| Independent Python codec audit | [upstream adoption](references/upstream-adoption.md) |
-
-### Guarded edits (disposable copies only)
-
-Each operation is a narrow, separately evidenced subset with exact native guards and the full copy/post-validation chain:
-
-| Operation | Reference |
-|---|---|
-| Event command/page structure | [event structure](references/event-structure.md) |
-| Existing-map region cells | [regions](references/map-region-editing.md) |
-| One random-encounter entry (troop, weight, regions, optional step) | [encounters](references/map-encounters.md) |
-| Upper-layer scenery tiles | [upper tiles](references/upper-tile-painting.md) |
-| Inert key items | [key items](references/key-item-append.md) |
-| Actors, classes, enemies, skills, states, weapons, armors, usable items, troops (template clone + whitelisted overrides, bounded effects and features, enemy action patterns and drops) | [database append](references/database-append.md) |
-| One class skill learning (existing skill, level) | [database append](references/database-append.md) |
-| One script slot before canonical Main | [script slots](references/script-slot-insertion.md) |
-| Blank events (schema donor) and stationary dialogue events, optionally with character graphics | [map events](references/map-event-creation.md), [graphics](references/character-event-graphics.md) |
-| One-time gold/item rewards | [rewards](references/one-time-event-rewards.md) |
-| Blank-map append; new areas (fresh map from any template, optional A5 floor fill, two-way door) | [blank map](references/blank-map-append.md) |
-| One direct map transfer | [transfer](references/direct-map-transfer.md) |
-| Shop Processing on a blank or single-dialogue event | [shops](references/map-shops.md) |
-| Quest-stage NPCs: 1..8 conditional pages with dialogue, switch/variable/self-switch changes and nested choices, if/else, battles, party, gold, item, transfer and wait commands | [staged events](references/staged-events.md) |
-| Common events (call-only or switch-gated parallel) with the same command language | [common events](references/common-event-append.md) |
-| NPC movement (random, approach, custom routes), touch/parallel triggers, one-time step-on triggers, Set Move Route and Erase Event | [touch triggers](references/touch-triggers.md), [staged events](references/staged-events.md) |
-| Readable generated maps: border walls, paths and landmarks with stock-tileset presets; reachability warnings | [map layouts](references/map-layouts.md) |
-| Visible shopkeepers, inns that heal, one-time map intros; Shop Processing and Recover All in event pages | [shops and inns](references/shops-and-inns.md), [intros](references/intros.md) |
-| Map monsters that start battle on touch (`add_monster`); sprite events default to same priority (collide) | [monsters](references/monsters.md) |
-| Treasure chests (gold, item, weapon or armor; closed/opened pages with the RTP chest graphic) | [treasure chests](references/treasure-chests.md) |
-| Starting party, start position, game title, currency, menu terms, switch and variable names | [system fields](references/system-fields.md) |
-| Map display name and editor/tree name | [display names](references/map-display-names.md), [tree names](references/map-tree-names.md) |
-
-[Recipes](references/recipes.md) chain several of these operations as separate guarded transactions on successive disposable copies, optionally ending with a smoke run, or (`--in-place`) directly in a project you designate as the working project with one backup and undo; `vxace_recipe.py plan` dry-runs a recipe first (predicted ids, links and warnings, no copies).
-
-Reviewed copies enter the real project only through [adopt](references/adopt.md): an explicit, confirmed, backed-up copy of exactly the declared files, with undo.
-
-Anything outside these subsets — for example ground/autotile painting, event deletion, general database or map-property authoring — is refused. See each reference for exact refusal rules.
-
-### Design knowledge
-
-- [Pattern library](patterns/README.md): native-first designs for quests, gated events, crafting, day/night, shops, party management, puzzles, minigames, bestiaries and boss battles.
-- [RGSS3 templates](templates/rgss3/README.md): original notetag parser, map HUD, menu command, save-safe data extension and playtest debug logger.
-
-## Recommended real-project sequence
-
-```text
-Real VX Ace project
-        │
-        ▼
-Project Validator  ← project-wide byte gate
-        │
-        ▼
-Project Reader + Codex
-        │
-        ▼
-Compatibility Analyzer
-        │
-        ▼
-Impact Analyzer  ← dependency review
-        │
-        ▼
-Patch Planner
-        │
-        ▼
-Copy Patcher  ← still rechecks each targeted file
-        │
-        ▼
-Post-index + raw diff
-        │
-        ▼
-Semantic Codex diff  ← meaning review
-        │
-        ▼
-VX Ace editor/runtime testing
-```
-
-A project-level validator pass never disables the per-target round-trip gate.
-
-## Toolchain commands
-
-### Project validator
-
-```bash
-python tools/vxace_project_validator.py "C:/Games/MyVXACEProject" \
-  --output "C:/Validation/MyVXACEProject"
-```
-
-The validator:
-
-- scans every `Data/*.rvdata2` file;
-- performs a no-op load/dump using the current `rvdata2_mutator.rb` into temporary files only;
-- requires raw SHA-256 equality for each round-trip result;
-- marks the project `copy_mutation_ready=true` only when **every** discovered `.rvdata2` file passes;
-- never writes to the source project and refuses output inside it;
-- extracts `Scripts.rvdata2` through the read-only bridge and runs `ruby -c` on each Script Editor entry as a separate diagnostic.
-
-The script syntax result is intentionally **not** the mutation gate: host-Ruby parsing can catch obvious corruption but does not prove Ruby 1.9.2/RGSS3 runtime compatibility.
-
-Outputs `validation/validation.json` and `validation/validation.md`. Exit codes: `0` all files passed the byte-identical gate; `3` one or more files failed and copy mutation should be refused; `2` configuration/tool/validation error.
-
-The master workflow is read-only and selects the Python backend. Individual validator/patcher commands keep their Ruby default unless `--backend python` is given. Real-project validation found modern-Ruby float formatting differences that failed seven of sixteen files; the pinned Python codec preserves all sixteen exactly.
-
-### Read-only Project Reader + Codex
-
-```bash
-python tools/vxace_project_reader.py PROJECT
-```
-
-### Compatibility analyzer
-
-```bash
-python tools/rgss3_analyzer.py extracted-scripts/ \
-  --order scripts/order.json \
-  --json analysis/script-compatibility.json \
-  --markdown analysis/script-compatibility.md
-```
-
-### Dependency impact analyzer
-
-Before staging a reviewed patch, verify its target and known blast radius:
-
-```bash
-python tools/vxace_impact.py PROJECT_INDEX --spec patch.json \
-  --json impact.json --markdown impact.md
-```
-
-The report uses the current Project Codex to surface map-event graph relationships, script ownership/collision/save-hook evidence, exact database targets, and explicit coverage limitations.
-
-### Proposal-only patch planner
-
-```bash
-python tools/vxace_patch_planner.py PROJECT_INDEX \
-  --project PROJECT \
-  --spec patch-spec.json \
-  --output patch-plan/
-```
-
-### Verified copy patcher
-
-```bash
-python tools/vxace_copy_patcher.py PROJECT_INDEX \
-  --project PROJECT \
-  --spec patch.json \
-  --copy PROJECT_COPY \
-  --audit AUDIT_DIR
-```
-
-The original project remains a non-write target.
-
-### Semantic Codex diff
-
-After a staged copy has been re-indexed, compare project meaning rather than only changed normalized files:
-
-```bash
-python tools/vxace_semantic_diff.py BEFORE_INDEX AFTER_INDEX \
-  --json semantic-diff.json --markdown semantic-diff.md
-```
-
-It reports added/removed/changed Codex systems, state machines, graph nodes/edges, and script ownership/collision metadata. Unexpected semantic changes are a review stop signal. Impact and semantic diff are analysis-only and never relax a mutation gate.
-
-### Independent Python codec audit
-
-```bash
-python tools/vxace_codec_audit.py PROJECT --output NEW_EXTERNAL_REPORT_DIR
-```
-
-Uses a pinned MIT-declared codec subset from `azureknight63/rpgvxace-mcp`, needs only Python 3.10+, refuses mismatches and codec warnings, and writes reports outside the source. It never grants mutation readiness. See `references/upstream-adoption.md` and `tools/_vendor/NOTICE.md` for provenance.
-
-## Automated validation
-
-The development test suite is not part of the published skill. Each release is validated locally with the full suite and, for every guarded operation, a native run in actual VX Ace on disposable copies; the references record that evidence.
-
-## License
-
-[MIT](LICENSE) — free to use, modify and share. The vendored codec keeps its own MIT notice in `tools/_vendor/`. The skill contains no RPG Maker default scripts or assets; you need your own licensed copy of RPG Maker VX Ace.
+The exact keys of every step are in [references/recipes.md](references/recipes.md). `plan` refuses a recipe that does not fit your project before anything is copied.
 
 ## Safety model
 
-- validation, indexing, compatibility analysis, impact analysis, semantic diffing, and planning are read-only;
-- original project mutation remains disabled;
-- all mutation happens on a new disposable clone;
-- stale indexes are hard failures;
-- every targeted `.rvdata2` must pass an exact no-op byte round-trip immediately before mutation;
-- a project-wide preflight covers all `.rvdata2` files;
-- host-Ruby syntax checking is diagnostic only;
-- staged copies are re-indexed/diffed and must still be tested in actual RPG Maker VX Ace.
+- Analysis, indexing, planning and impact are read-only and write their reports outside the project.
+- Changes are made on a disposable copy. Every targeted data file must round-trip byte-for-byte immediately before it is changed, and the copy is re-indexed and diffed afterwards.
+- A reviewed copy enters your project only through [adopt](references/adopt.md): you confirm the exact file list, replaced files are backed up and `undo` restores them.
+- `--in-place` recipes are only for a project you designate as a working or test project: one verified backup first, rollback on failure, one-command undo.
+- Host-Ruby syntax checks are diagnostics, not proof of RGSS3 compatibility, and in-engine smoke checks supplement, never replace, your own playtesting.
 
-## Current limitation
+## Evidence and limits
 
-Native editor/runtime evidence comes from a small editor-produced VX Ace project, disposable copies and controlled fixtures; see the Native evidence sections of each reference. Validate each snapshot and review custom runtime/save hooks. User project data is not included in the repository.
+Each operation's reference records its native evidence: a small editor-made project, disposable copies and controlled fixtures. It does not prove compatibility with every customised game; review custom scripts and save hooks. The development test suite is kept locally and is not part of the published skill.
 
-See `references/copy-mutation.md`, `workflows/verified-copy-mutation.md`, `workflows/real-project-validation.md` and `workflows/impact-review.md`.
+## License
+
+[MIT](LICENSE). The vendored Python Marshal codec keeps its own MIT notice in `tools/_vendor/`. The skill contains no RPG Maker default scripts or assets; you need your own licensed copy of RPG Maker VX Ace.

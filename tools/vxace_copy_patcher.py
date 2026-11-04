@@ -41,11 +41,26 @@ def run(cmd:list[str], *, capture=True)->subprocess.CompletedProcess:
     return subprocess.run(cmd,stdout=subprocess.PIPE if capture else None,stderr=subprocess.PIPE if capture else None,text=True,check=False)
 
 def inspect_file(ruby:str, mutator:Path, file:Path)->dict:
+    import vxace_cache
+    digest=vxace_cache.key('inspect',vxace_cache.tool_identity(mutator),ruby if mutator.suffix!='.py' else sys.executable,vxace_cache.file_sha256(file)) if vxace_cache.directory() else None
+    cached=vxace_cache.get_json('inspect',digest) if digest else None
+    if cached is not None: return cached
     p=run(mutator_command(ruby,mutator,'inspect',file))
     if p.returncode: raise RuntimeError(f'inspect failed for {file.name}: {p.stderr.strip()}')
-    return json.loads(p.stdout)
+    result=json.loads(p.stdout)
+    if digest: vxace_cache.put_json('inspect',digest,result)
+    return result
 
 def roundtrip_preflight(ruby:str, mutator:Path, file:Path)->dict:
+    import vxace_cache
+    digest=vxace_cache.key('preflight',vxace_cache.tool_identity(mutator),ruby if mutator.suffix!='.py' else sys.executable,vxace_cache.file_sha256(file)) if vxace_cache.directory() else None
+    cached=vxace_cache.get_json('preflight',digest) if digest else None
+    if cached and cached.get('status')=='passed' and cached.get('file')==file.name: return cached
+    result=_roundtrip_preflight(ruby,mutator,file)
+    if digest: vxace_cache.put_json('preflight',digest,result)
+    return result
+
+def _roundtrip_preflight(ruby:str, mutator:Path, file:Path)->dict:
     with tempfile.TemporaryDirectory() as td:
         out=Path(td)/file.name
         before=inspect_file(ruby,mutator,file)
@@ -394,7 +409,7 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
             verify_entry(before_entry_root,load(tmp)[0],mutation)
         elif entry_edit:
             from vxace_database_edit import verify_transition as verify_edit
-            verify_edit(before_entry_root,load(tmp)[0],mutation,entry_enemies)
+            verify_edit(before_entry_root,load(tmp)[0],mutation,entry_enemies,copy_root if 'expected_assets' in mutation else None,change['ruby_spec'].get('context',{}).get('rtp'))
         elif entry_learning:
             from vxace_class_learning import verify_transition as verify_learning
             verify_learning(before_entry_root,load(tmp)[0],mutation,entry_skills)
@@ -725,8 +740,10 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
             table=c['locator']['table']
             if c['mutation'].get('action')=='edit_database_entry':
                 from vxace_database_edit import indexed_snapshot as edit_indexed,edit_entry
-                edit_indexed(Index(index),project,table,c['locator']['id'])
-                edit_entry(load(unlinked(project/c['target']))[0],c['ruby_spec']['mutation'],snapshot_refs(project/c['target'],table))
+                edit_names=actor_graphics(c['mutation'].get('overrides')) if table=='actors' else (set(),set())
+                edit_indexed(Index(index),project,table,c['locator']['id'],tuple(sorted(edit_names[0])),tuple(sorted(edit_names[1])),rtp)
+                edit_entry(load(unlinked(project/c['target']))[0],c['ruby_spec']['mutation'],snapshot_refs(project/c['target'],table),project,rtp)
+                if 'expected_assets' in c['mutation']:c['ruby_spec']['context']={'rtp':str(rtp) if rtp else None}
                 continue
             if table=='classes' and c['mutation'].get('action')=='append_class_learning':
                 if any(o['target']=='Data/Skills.rvdata2' for o in changes):

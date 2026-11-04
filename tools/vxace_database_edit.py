@@ -8,17 +8,18 @@ slot changed and that it equals the factory result of applying the overrides to 
 from __future__ import annotations
 import hashlib
 
-VERSION = '1.34.0'
+VERSION = '2.0.0'
 ACTION = 'edit_database_entry'
 BASE_FIELDS = {'action', 'expected_array_sha256', 'expected_entry_sha256', 'overrides'}
 NATIVE_EXTRA = {'table', 'entry_id'}
-# Actor graphics are bound by sheet hashes (expected_assets) in the append; an in-place edit does not carry that binding.
+# Actor graphics are bound by sheet hashes (expected_assets) exactly like an actor append; an in-place edit without that binding refuses them.
 GRAPHIC_KEYS = {'character_name', 'character_index', 'face_name', 'face_index'}
 
 
 def spec_fields(table, overrides=None):
     from vxace_database_append import required_refs, ref_field
-    return BASE_FIELDS | {ref_field(name) for name in required_refs(table, overrides)}
+    assets = {'expected_assets'} if table == 'actors' and isinstance(overrides, dict) and ('character_name' in overrides or 'face_name' in overrides) else set()
+    return BASE_FIELDS | assets | {ref_field(name) for name in required_refs(table, overrides)}
 
 
 def native_mutation(locator, mutation):
@@ -32,12 +33,12 @@ def native_mutation(locator, mutation):
     return {**mutation, 'table': locator['table'], 'entry_id': locator['id']}
 
 
-def check_fields(table, overrides):
-    if table == 'actors' and isinstance(overrides, dict) and GRAPHIC_KEYS & set(overrides):
-        raise ValueError('An in-place edit does not change actor graphics (' + ', '.join(sorted(GRAPHIC_KEYS & set(overrides))) + '): they need a sheet binding; change them in the editor or on a new actor')
+def check_fields(table, overrides, mutation=None):
+    if table == 'actors' and isinstance(overrides, dict) and GRAPHIC_KEYS & set(overrides) and not (isinstance(mutation, dict) and 'expected_assets' in mutation):
+        raise ValueError('An in-place edit changes actor graphics (' + ', '.join(sorted(GRAPHIC_KEYS & set(overrides))) + ') only with an expected_assets sheet binding: snapshot with --character-sheet / --face-sheet')
 
 
-def edit_entry(root, mutation, refs=None):
+def edit_entry(root, mutation, refs=None, project=None, rtp=None):
     """The edited copy of the entry (the factory result): validates the schema and every hash, never changes `root`."""
     from vxace_database_append import (database_array, need_refs, required_refs, template, validated_overrides, apply_overrides, integer, digest,
                                        ref_field, REF_FILES)
@@ -46,7 +47,7 @@ def edit_entry(root, mutation, refs=None):
     if not isinstance(mutation, dict) or mutation.get('action') != ACTION or set(mutation) != spec_fields(table, mutation.get('overrides')) | NATIVE_EXTRA:
         raise ValueError('Only the exact ' + ACTION + ' schema is supported (a referenced-database hash is required exactly for the databases the fields reference)')
     database_array(root, table)
-    check_fields(table, mutation['overrides'])
+    check_fields(table, mutation['overrides'], mutation)
     roots = need_refs(table, root, refs, required_refs(table, mutation['overrides']))
     entry_id = integer(mutation['entry_id'], 'entry ID', 1, len(root) - 1)
     selected = template(root, table, entry_id, True)
@@ -56,19 +57,28 @@ def edit_entry(root, mutation, refs=None):
         if mutation[ref_field(name)] != digest(value):
             raise ValueError(REF_FILES[name] + ' fingerprint is stale (' + ref_field(name) + ')')
     overrides = validated_overrides(table, selected, mutation['overrides'], roots, True)
+    if 'expected_assets' in mutation:
+        # Actor graphics: each sheet is bound by the hash/layout of its PNG in the project (or the explicit RTP), as in the append.
+        from vxace_character_graphics import actor_assets
+        from vxace_database_append import actor_graphics
+        characters, faces = actor_graphics(overrides)
+        if project is None:
+            raise ValueError('Actor graphics need the native project to bind the sheets')
+        if not isinstance(mutation['expected_assets'], dict) or mutation['expected_assets'] != actor_assets(project, rtp, characters, faces):
+            raise ValueError('Actor graphics asset binding is stale or inconsistent')
     entry = marshal_rb.load(marshal_rb.dump(selected))
     apply_overrides(entry, root, selected, table, overrides, roots)
     return entry
 
 
-def apply(root, mutation, source_path=None):
-    from vxace_database_append import mutation_refs
+def apply(root, mutation, source_path=None, rtp=None):
+    from vxace_database_append import mutation_refs, project_of
     table = mutation.get('table') if isinstance(mutation, dict) else None
-    entry = edit_entry(root, mutation, mutation_refs(source_path, table, mutation))
+    entry = edit_entry(root, mutation, mutation_refs(source_path, table, mutation), project_of(source_path), rtp)
     root[mutation['entry_id']] = entry
 
 
-def verify_transition(before, after, mutation, refs=None):
+def verify_transition(before, after, mutation, refs=None, project=None, rtp=None):
     """The candidate is the old array with exactly the targeted slot replaced by the factory result (every other slot, incl. slot 0, deep-equal)."""
     from vxace_database_append import database_array, digest
     table, number = mutation['table'], mutation['entry_id']
@@ -77,24 +87,24 @@ def verify_transition(before, after, mutation, refs=None):
         raise ValueError('Database-edit candidate changed the array shape')
     if digest([x for n, x in enumerate(before) if n != number]) != digest([x for n, x in enumerate(after) if n != number]):
         raise ValueError('Database-edit candidate changed an unselected entry')
-    if digest(after[number]) != digest(edit_entry(before, mutation, refs)):
+    if digest(after[number]) != digest(edit_entry(before, mutation, refs, project, rtp)):
         raise ValueError('Database-edit candidate differs from the approved edit of the selected entry')
 
 
-def snapshot(root, table, entry_id, refs=None):
+def snapshot(root, table, entry_id, refs=None, assets=None):
     """The edit preconditions of one existing entry: array / entry hashes, the hashes of every database its fields might reference, and its current content."""
     from vxace_database_append import snapshot as table_snapshot, OVERRIDES
-    raw = table_snapshot(root, table, entry_id, refs, None, True)
+    raw = table_snapshot(root, table, entry_id, refs, assets, True)
     drop = {'template_sha256', 'template_id', 'template_name', 'template_fields', 'inherited', 'template_note_present', 'forced_values', 'next_id',
             'append_slot_supported', 'scope', 'supported_overrides'}
     result = {k: v for k, v in raw.items() if k not in drop}
     result.update(entry_id=entry_id, entry_sha256=raw['template_sha256'], entry_name=raw['template_name'], entry_fields=raw['template_fields'], current=raw['inherited'],
-                  supported_fields=[k for k in OVERRIDES[table] if not (table == 'actors' and k in GRAPHIC_KEYS)],
+                  supported_fields=list(OVERRIDES[table]),
                   scope='in-place edit of one existing native entry; its id and note stay, no other entry is touched, no deletion/reuse/reorder')
     return result
 
 
-def indexed_snapshot(data, project, table, entry_id):
+def indexed_snapshot(data, project, table, entry_id, characters=(), faces=(), rtp=None):
     from pathlib import Path
     from vxace_index_query import unlinked
     from vxace_python_mutator import load
@@ -102,17 +112,23 @@ def indexed_snapshot(data, project, table, entry_id):
     file = Path(project) / 'Data' / (FILES[table] + '.rvdata2')
     root, _ = load(unlinked(file))
     refs = snapshot_refs(file, table)
-    raw = table_snapshot(root, table, entry_id, refs, None, True)
+    assets = None
+    if characters or faces:
+        if table != 'actors':
+            raise ValueError('Character/face sheet bindings are only for the actors table')
+        from vxace_character_graphics import actor_assets
+        assets = actor_assets(project, rtp, characters, faces)
+    raw = table_snapshot(root, table, entry_id, refs, assets, True)
     indexed_check(data, table, raw)
     if table == 'troops':
         indexed_enemies = data.json('database/enemies.json')
         if not isinstance(indexed_enemies, list) or len(indexed_enemies) != len(refs['enemies']):
             raise ValueError('Indexed/native Enemies array sizes disagree')
-    return {'version': VERSION, 'table': table, **snapshot(root, table, entry_id, refs),
+    return {'version': VERSION, 'table': table, **snapshot(root, table, entry_id, refs, assets),
             'limits': ['Edits one existing native entry in place: every listed field is written from the fields object, id and note stay, and every other entry stays byte-identical.',
                        'The same keys, ranges and referenced-database hashes as an append of this table apply (expected_<name>_sha256 exactly for the databases the fields reference; the table\'s own array is bound by expected_array_sha256 and the entry by expected_entry_sha256).',
                        'Lists (features, effects, actions, drop_items, members, learnings, equips) are replaced whole, except features_add / features_remove which change single feature rows; a features replacement of an enemy, actor or class without the HIT row is refused unless allow_drop_hit is true.',
-                       'Troops keep their battle pages: only name and members change. Actor graphics (character / face sheets) cannot be edited here.',
+                       'Troops keep their battle pages: only name and members change. Actor graphics (character_name/character_index, face_name/face_index) are edited only as pairs together with expected_assets, which binds each sheet by hash and layout (snapshot with --character-sheet / --face-sheet, and --rtp for RTP sheets); without that binding they are refused.',
                        'Saves keep working: actors take class parameters and features live, enemies and troops load fresh each battle, inventories keep item ids; nothing that references the entry is rewritten.',
                        'Snapshot is not mutation permission; use the reviewed Python disposable-copy workflow and a battle or smoke test.']}
 

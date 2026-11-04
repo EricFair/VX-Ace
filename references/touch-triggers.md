@@ -14,7 +14,7 @@ Staged event pages can start from a touch instead of the action button, can walk
 | Page | Starts when |
 | --- | --- |
 | `player_touch` / `event_touch`, priority `below` or `above` | the player steps **onto** the event's cell (`Game_Player#check_touch_event`, triggers 1 and 2, priority not "same") |
-| `player_touch` / `event_touch`, priority `same` (the default for touch pages) | the player walks into the event (`check_event_trigger_touch`, triggers 1 and 2) or presses the action button facing it; the event blocks movement unless `through` |
+| `player_touch` / `event_touch`, priority `same` (the default when the page has a graphic) | the player walks into the event (`check_event_trigger_touch`, triggers 1 and 2) or presses the action button facing it; the event blocks movement unless `through` |
 | `event_touch`, priority `same`, with a move type other than `fixed` | additionally when the event walks into the player (`Game_Event#check_event_trigger_touch`) |
 
 A below-priority touch page therefore needs the player to step on it; it cannot be bumped from the side. Impact says so for every touch page. A touch page with no commands never starts (`Game_Event#start` returns for an empty list).

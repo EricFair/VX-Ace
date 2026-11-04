@@ -18,7 +18,7 @@ import vxace_recipe as R
 from vxace_copy_patcher import current_inventory, normalize_changes
 from vxace_index_query import unlinked
 
-VERSION = '1.34.0'
+VERSION = '2.0.0'
 PREDICTED = 'predicted, verify after run'
 EXACT = 'exact'
 HASHES = 'bound at run time'
@@ -169,10 +169,16 @@ def take_snapshot(sim, step, recipe_dir, source_text):
                 assets = actor_assets(project, rtp, tuple(sorted(characters)), tuple(sorted(faces)))
         return snapshot(root, step['table'], step['template_id'], refs, assets)
     if kind == 'set_fields':
-        from vxace_database_append import snapshot_refs
+        from vxace_database_append import snapshot_refs, actor_graphics
         from vxace_database_edit import snapshot
         path = sim.path(entry_target(step))
-        return snapshot(sim.get(entry_target(step)), step['table'], step['id'], snapshot_refs(path, step['table']))
+        assets = None
+        if step['table'] == 'actors':
+            characters, faces = actor_graphics(step['fields'])
+            if characters or faces:
+                from vxace_character_graphics import actor_assets
+                assets = actor_assets(project, rtp, tuple(sorted(characters)), tuple(sorted(faces)))
+        return snapshot(sim.get(entry_target(step)), step['table'], step['id'], snapshot_refs(path, step['table']), assets)
     if kind == 'set_system_fields':
         from vxace_system_fields import snapshot
         start = step.get('start')
@@ -274,7 +280,7 @@ def verify_change(sim, change, before, after, extras):
             verify_transition(before, after, mutation, extras['skills'])
         elif mutation.get('action') == 'edit_database_entry':
             from vxace_database_edit import verify_transition
-            verify_transition(before, after, mutation, extras['refs'])
+            verify_transition(before, after, mutation, extras['refs'], project if 'expected_assets' in mutation else None, rtp)
         elif mutation.get('action') == 'append_key_item':
             from vxace_database_entries import verify_transition
             verify_transition(before, after, mutation)
@@ -557,7 +563,8 @@ def describe_step(sim, step, snapshot, mutation, number, plan_links):
             warnings.append('A layout only draws plain A5 tiles and B-E landmarks as a readable starter map (no autotiles, one bordered rectangle); real level design stays manual in the editor.')
         elif planned['floor_tile_id'] is not None:
             lines.append(f'  Floor: A5 tile index {planned["fill_floor"]} (tile id {planned["floor_tile_id"]}) on layer 0 of every cell; the other layers, regions and shadows stay 0.')
-            warnings.append('fill_floor only makes a walkable placeholder room; real level design stays manual in the editor.')
+            warnings.append('fill_floor only makes one flat placeholder tile with no walls, paths or landmarks, and the index is easy to get wrong (Interior A5 index 1 is an iron grate). '
+                            'Prefer "layout": {"style": "room", "preset": "interior" or "field", ...} for a map a player can read; see references/map-layouts.md.')
         elif planned['tiles_rebuilt']:
             warnings.append('The new map has a different size or tileset than its template, so its tile Table starts empty (all 0); paint it in the editor.')
         return lines, warnings
@@ -876,7 +883,21 @@ def link_targets(steps):
     return found
 
 
-def plan_recipe(recipe_path, project, output, ruby=None, rtp=None, in_place=False, backup_root=None):
+def plan_recipe(recipe_path, project, output, ruby=None, rtp=None, in_place=False, backup_root=None, balance_levels=None):
+    """Dry-run with the content-hash cache (vxace_cache) in OUTPUT/.cache unless VXACE_CACHE_DIR is set; the cache is deleted afterwards."""
+    if os.environ.get('VXACE_CACHE_DIR'):
+        return _plan_recipe(recipe_path, project, output, ruby, rtp, in_place, backup_root, balance_levels)
+    cache = unlinked(output).resolve() / '.cache'
+    os.environ['VXACE_CACHE_DIR'] = str(cache)
+    try:
+        return _plan_recipe(recipe_path, project, output, ruby, rtp, in_place, backup_root, balance_levels)
+    finally:
+        os.environ.pop('VXACE_CACHE_DIR', None)
+        if cache.is_dir():
+            R.remove_tree(cache)
+
+
+def _plan_recipe(recipe_path, project, output, ruby=None, rtp=None, in_place=False, backup_root=None, balance_levels=None):
     """Dry-run the recipe. Returns the plan dict; its status is 'ok', 'step_refused', 'validation_refused' or 'error'.
     With `in_place` the summary describes an in-place run (no retained project copies, a start backup under `backup_root`) instead of the copy-chain disk estimate."""
     recipe_path = Path(recipe_path).resolve()
@@ -938,11 +959,67 @@ def plan_recipe(recipe_path, project, output, ruby=None, rtp=None, in_place=Fals
             plan['status'] = 'error'
             plan['error'] = 'ORIGINAL PROJECT FILES CHANGED'
     plan['sprites'] = list(R.SPRITE_NOTES)
+    plan['balance'] = None
+    if plan['status'] == 'ok':
+        try:
+            plan['balance'] = plan_balance(sim, project, records, output, ruby, balance_levels)
+        except Exception as error:   # advisory only: a balance problem never refuses the plan
+            plan['balance'] = {'status': 'error', 'error': f'{type(error).__name__}: {error}', 'troops': []}
     plan['summary'] = summarize(plan, sim, project, steps, in_place, backup_root)
     plan['smoke'] = smoke_advice(steps)
     (output / 'recipe-plan.json').write_text(json.dumps(plan, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     (output / 'recipe-plan.md').write_text(markdown_plan(plan), encoding='utf-8')
     return plan
+
+
+def plan_balance(sim, project, records, output, ruby, levels=None):
+    """2.0: static balance of every troop the recipe creates, against the (simulated) starting party, before anything runs.
+    The simulated database files are written into a temporary copy of Data/ under the plan output, indexed, analysed with
+    vxace_balance.analyze and deleted again. Returns None when the recipe creates no troop. Advisory evidence only."""
+    from vxace_python_mutator import marshal_rb
+    import vxace_balance
+    from vxace_index_query import Index
+    troops = [r['created_id'] for r in records if r['status'] == 'planned' and r['type'] == 'append_entry'
+              and (r.get('resolved_parameters') or {}).get('table') == 'troops' and r.get('created_id')]
+    if not troops:
+        return None
+    temp = output / 'balance-project'
+    index = output / 'balance-index'
+    try:
+        shutil.copytree(project / 'Data', temp / 'Data')
+        base = os.path.normcase(str(project)) + os.sep
+        for key, root in sim.roots.items():   # keys are normcase'd absolute paths
+            rel = key[len(base):].replace(os.sep, '/') if key.startswith(base) else ''
+            if rel.lower().startswith('data/') and rel.lower().endswith('.rvdata2') and '/' not in rel[5:]:
+                (temp / 'Data' / rel[5:]).write_bytes(marshal_rb.dump(root))
+        code, out, err = R.run_tool(output / 'logs', 'balance-reader', 'vxace_project_reader.py', [temp, '--output', index, '--no-compat', '--no-codex', *(['--ruby', ruby] if ruby else [])])
+        if code != 0:
+            return {'status': 'error', 'error': f'reader failed (exit {code}): {R.last_line(err, out)}', 'troops': []}
+        result = vxace_balance.analyze(Index(index), levels=tuple(levels or (1, 5, 10, 20)), troop_ids=troops)
+    finally:
+        R.remove_tree(temp)
+        R.remove_tree(index)
+    (output / 'balance.json').write_text(json.dumps(result, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+    (output / 'balance.md').write_text(vxace_balance.markdown(result), encoding='utf-8')
+    rows = []
+    warnings = []
+    for battle in result.get('troop_battles', []):
+        for row in battle['rows']:
+            sim_row = row['simulation']
+            rows.append({'troop_id': battle['troop_id'], 'troop': battle['name'], 'party_level': row['party_level'], 'result': sim_row['result'],
+                         'turn': sim_row['turn'], 'party_hp_left_percent': sim_row['party_hp_left_percent'],
+                         'troop_damage_per_turn': row['troop_expected_damage_per_turn'], 'party_damage_per_turn': row['party_plain_attack_damage_per_turn']})
+        results = [r for r in rows if r['troop_id'] == battle['troop_id']]
+        if results and all(r['result'] != 'party_wins' for r in results):
+            warnings.append(f'Troop {battle["troop_id"]} "{battle["name"]}": the starting party loses (or cannot finish) at every sampled level; check enemy stats, hit rates and equipment.')
+    for battle in result.get('troop_battles', []):
+        for row in battle['rows'][:1]:
+            if row['party_plain_attack_damage_per_turn'] == 0:
+                warnings.append(f'Troop {battle["troop_id"]} "{battle["name"]}": the party deals no expected damage (hit rate 0 or no HP formula).')
+            if row['troop_expected_damage_per_turn'] == 0:
+                warnings.append(f'Troop {battle["troop_id"]} "{battle["name"]}": its enemies deal no expected damage (an enemy with HIT 0 never connects).')
+    return {'status': 'ok', 'troops': troops, 'levels': list(levels or (1, 5, 10, 20)), 'rows': rows, 'warnings': warnings,
+            'report': str(output / 'balance.md'), 'note': 'Static expected-value estimate of the plain-attack race against the starting party with initial equipment; rough, advisory, not a playtest.'}
 
 
 def backup_bytes(project):
@@ -997,6 +1074,15 @@ def markdown_plan(plan):
                if summary.get('in_place') else
                f'- Estimated disk use for `run`: {summary["estimated_disk_bytes"] / 1048576:.1f} MiB ({summary["project_bytes"] / 1048576:.2f} MiB x ({summary["transactions"]} + 1))'),
               f'- Smoke: {"recommended" if plan["smoke"]["recommended"] else "optional"}' + (', suite needed' if plan['smoke']['suite_needed'] else '') + f'. {plan["smoke"]["note"]}', '']
+    balance = plan.get('balance')
+    if balance:
+        lines += ['## Balance of the new troops (static estimate)', '']
+        if balance['status'] != 'ok':
+            lines += [f'Balance check failed: {balance.get("error")}', '']
+        else:
+            lines += ['| troop | party lv | result | turn | party HP left | troop dmg/turn | party dmg/turn |', '|---|---|---|---|---|---|---|']
+            lines += [f'| {r["troop_id"]} {r["troop"]} | {r["party_level"]} | {r["result"]} | {r["turn"]} | {r["party_hp_left_percent"]}% | {r["troop_damage_per_turn"]} | {r["party_damage_per_turn"]} |' for r in balance['rows']]
+            lines += [''] + [f'- Warning: {w}' for w in balance['warnings']] + [f'- {balance["note"]} Full report: {balance["report"]}', '']
     if plan.get('sprites'):
         lines += ['## Resolved sprites', ''] + [f'- {s["where"]}: "{s["query"]}" -> {s["sheet"]} #{s["index"]} ({s["description"]})' for s in plan['sprites']] + ['']
     lines += ['## Steps', '']

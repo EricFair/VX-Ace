@@ -46,6 +46,16 @@ def parse_json_stdout(proc):
     except json.JSONDecodeError as e: raise RuntimeError(f'Tool returned invalid JSON: {e}') from e
 
 def roundtrip_file(ruby, mutator, source, temp_dir):
+    import vxace_cache
+    digest=vxace_cache.key('roundtrip',VERSION,vxace_cache.tool_identity(mutator),ruby if mutator.suffix!='.py' else sys.executable,vxace_cache.file_sha256(source)) if vxace_cache.directory() else None
+    cached=vxace_cache.get_json('roundtrip',digest) if digest else None
+    if cached and cached.get('status')=='pass' and cached.get('source_sha256')==sha256(source):
+        return {**cached,'path':source.name}
+    result=_roundtrip_file(ruby, mutator, source, temp_dir)
+    if digest and result.get('status')=='pass': vxace_cache.put_json('roundtrip',digest,result)
+    return result
+
+def _roundtrip_file(ruby, mutator, source, temp_dir):
     temp_dir.mkdir(parents=True,exist_ok=True); candidate=temp_dir/source.name
     proc=run(mutator_command(ruby,mutator,'roundtrip',source,candidate))
     if proc.returncode:

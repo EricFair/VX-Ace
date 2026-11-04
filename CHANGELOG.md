@@ -2,6 +2,19 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 2.0.0 — Hardening
+
+- **Faster recipes:** a content-hash cache (`tools/vxace_cache.py`) skips re-decoding and re-round-tripping files that did not change. One step went from about 43 s to about 10 s. The cache lives in the work folder and is deleted after the run. Failed gates are never cached.
+- **Balance before running:** `vxace_recipe.py plan` estimates every new troop against the starting party (`balance.md`, `--balance-levels`).
+- **`set_fields` actor graphics:** character and face sheets are bound by their hashes, as in an actor append.
+- **Behaviour defaults from playtests:**
+  - `add_monster` approaches the player (speed 3, frequency 5) and starts its battle on touch.
+  - A graphic-less touch page defaults to priority below, so a door, trap or cutscene tile is stepped onto instead of acting as an invisible wall.
+  - The plan warning for bare `fill_floor` points to the layout presets.
+- **Smoke:** every run records its frame rate. RGSS pauses while its window is inactive, so the game window stays visible (measured: hidden, minimised and no-activate launches stall at boot).
+- **Docs:** SKILL.md routing is grouped by goal and has a building loop. The README is shorter, and its recipe example was planned, run and checked in the engine.
+- **Tests:** they use a frozen copy of the test project, never the live one.
+
 ## 1.34.0 — Analysis and test helpers
 
 - **RTP auto-detection:** the RTP is found through the registry, Steam libraries and the common-files folder, so the master pass no longer flags hundreds of stock files.

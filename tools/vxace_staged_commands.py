@@ -421,13 +421,16 @@ def chest_summary(pages):
 
 
 def effective_priority(page):
-    """Priority a staged page will have: its explicit option, else Same as Characters for a page with a character graphic or a touch trigger
-    (the v1.30 / v1.25 defaults), else None (the template's own priority is kept)."""
+    """Priority a staged page will have: its explicit option, else Same as Characters for a page with a character graphic (v1.30), else Below
+    Characters for a graphic-less touch page (2.0: a door, trap or cutscene tile the player steps onto, never an invisible wall), else None (the
+    template's own priority is kept)."""
     options = page.get('options') if isinstance(page.get('options'), dict) else {}
     if 'priority' in options:
         return options['priority']
-    if page.get('graphic') or page.get('trigger') in TOUCH_TRIGGERS:
+    if page.get('graphic'):
         return 'same'
+    if page.get('trigger') in TOUCH_TRIGGERS:
+        return 'below'
     return None
 
 

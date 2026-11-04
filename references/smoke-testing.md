@@ -115,6 +115,12 @@ end
 
 In a script `check`, `info` and `screenshot` are the same functions as before; `$game_*` are only touched inside blocks that run after the map is up (the script starts at the first `Scene_Map`).
 
+## Game speed (2.0)
+
+Every run ends with an `INFO timing` record (`frames=N seconds=S fps=F`), and the report has a `timing` block. A run near 60 fps is normal. Below 50 fps the report says the run was throttled.
+
+RGSS pauses while its window is not active. A game launched hidden (`SW_HIDE`), minimised or without activation stays on its boot frame until the timeout; this was measured in 2.0, with all three modes stalling while the same check passed at 54 fps with a normal window. The smoke tool therefore always opens a normal window. Do not hide or minimise it during a run, and keep other windows from taking focus.
+
 ## Report and exit codes
 
 The JSON report holds status (`pass`, `failed`, `incomplete`, `timeout`, `integrity_failure`), mode, start, frames, nonce, runtime info, all records, counts, duration, process exit code, problems, script references, `screenshots` (file, label, size, bytes) and the two evidence flags. Markdown is a readable copy.
