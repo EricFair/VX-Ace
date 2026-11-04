@@ -353,6 +353,46 @@ def chest_summary(pages):
     return chests
 
 
+def effective_priority(page):
+    """Priority a staged page will have: its explicit option, else Same as Characters for a page with a character graphic or a touch trigger
+    (the v1.30 / v1.25 defaults), else None (the template's own priority is kept)."""
+    options = page.get('options') if isinstance(page.get('options'), dict) else {}
+    if 'priority' in options:
+        return options['priority']
+    if page.get('graphic') or page.get('trigger') in TOUCH_TRIGGERS:
+        return 'same'
+    return None
+
+
+def monster_summary(pages):
+    """Map-monster pages: a page with a character graphic and a touch trigger whose top-level commands start a battle. `disappears` is true
+    when the win branch turns a self switch ON that a later page tests. Returns [{page, troop, trigger, move, disappears, self_switch}]."""
+    monsters = []
+    for number, page in enumerate(pages if isinstance(pages, list) else [], 1):
+        ops = page.get('commands') if isinstance(page, dict) else None
+        if not isinstance(ops, list) or not page.get('graphic') or page.get('trigger') not in TOUCH_TRIGGERS:
+            continue
+        battles = [op for op in ops if isinstance(op, dict) and isinstance(op.get('battle'), int)]
+        if not battles:
+            continue
+        battle = battles[0]
+        letters = [op['set_self_switch'] for op in iter_ops(battle.get('win')) if op.get('set_self_switch') and op.get('value') is True]
+        gone = [later for later, other in enumerate(pages, 1) if later > number and isinstance(other, dict) and letters
+                and isinstance(other.get('condition'), dict) and other['condition'].get('self_switch') == letters[0]]
+        move = page.get('move') if isinstance(page.get('move'), dict) else {}
+        monsters.append({'page': number, 'troop': battle['battle'], 'trigger': page['trigger'], 'move': move.get('type', 'fixed'),
+                         'disappears': bool(gone), 'self_switch': letters[0] if gone else None})
+    return monsters
+
+
+def describe_monster(monster, troop_name=None):
+    """One human sentence for a monster_summary row."""
+    kind = {'random': 'Wandering', 'approach': 'Chasing', 'custom': 'Patrolling'}.get(monster['move'], 'Stationary')
+    troop = f'troop {monster["troop"]}' + (f' "{troop_name}"' if troop_name else '')
+    end = f'disappears after victory (self switch {monster["self_switch"]})' if monster['disappears'] else 'stays after victory (the battle can start again)'
+    return f'{kind} monster, battles {troop} on touch, {end}.'
+
+
 def staged_ids(pages, switch_count, variable_count):
     """Every switch/variable id referenced by the pages (conditions, commands, nested branches) must exist in the native System."""
     def switch(value, label):

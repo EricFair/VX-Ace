@@ -20,7 +20,7 @@ from vxace_database_append import LIST_TABLES, DROP_TABLES, ref_field, required_
 from vxace_index_query import unlinked
 import vxace_adopt as adopt
 
-VERSION = '1.29.0'
+VERSION = '1.30.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -41,6 +41,9 @@ STEP_KEYS = {
                            {'type', 'map_id', 'x', 'y', 'name', 'contents', 'graphic', 'template_event', 'donor_event', 'blank_x', 'blank_y'}),
     'add_touch_trigger': ({'type', 'map_id', 'x', 'y', 'name', 'commands'},
                           {'type', 'map_id', 'x', 'y', 'name', 'commands', 'repeatable', 'template_event', 'donor_event', 'blank_x', 'blank_y'}),
+    'add_monster': ({'type', 'map_id', 'x', 'y', 'name', 'troop', 'graphic'},
+                    {'type', 'map_id', 'x', 'y', 'name', 'troop', 'graphic', 'move', 'can_escape', 'can_lose', 'intro_text', 'win', 'escape', 'lose', 'condition', 'respawn',
+                     'template_event', 'donor_event', 'blank_x', 'blank_y'}),
     'add_shop': ({'type', 'map_id', 'event_id', 'goods', 'purchase_only'}, {'type', 'map_id', 'event_id', 'goods', 'purchase_only'}),
     'insert_script': ({'type', 'name', 'source_file'}, {'type', 'name', 'source_file'}),
     'set_map_display_name': ({'type', 'map_id', 'name'}, {'type', 'map_id', 'name'}),
@@ -274,6 +277,74 @@ def validate_touch_trigger(step, number, steps):
         raise RecipeError(f'step {number}: from_step is only allowed for map_id, template_event, battle troop ids, item/weapon/armor ids, transfer maps and common event ids in commands')
 
 
+MONSTER_MOVE = {'type': 'random', 'speed': 3, 'frequency': 3}
+
+
+def validate_monster(step, number, steps):
+    """Structural rules of the add_monster macro: placement, a troop, a character graphic and the optional move / battle options / branches / condition.
+    The expansion is built with a stand-in troop id and checked with the staged-event page validator, so every page rule applies here too."""
+    from vxace_map_events import staged_shape, page_move_shape
+    from vxace_staged_commands import body, check_text, iter_ops
+    validate_placement(step, number, steps)
+    if is_ref(step['troop']):
+        check_ref(step['troop'], number, steps, 'troops', 'troop')
+    elif not is_int(step['troop']) or step['troop'] < 1:
+        raise RecipeError(f'step {number}: troop must be a positive integer or {{"from_step": N}} of a troops append_entry step')
+    from vxace_character_graphics import graphic_schema
+    try:
+        graphic_schema(step['graphic'])
+    except ValueError as error:
+        raise RecipeError(f'step {number}: graphic: {error}')
+    for key in ('can_escape', 'can_lose', 'respawn'):
+        if key in step and type(step[key]) is not bool:
+            raise RecipeError(f'step {number}: {key} must be a boolean')
+    if 'move' in step:
+        try:
+            page_move_shape(step['move'])
+        except ValueError as error:
+            raise RecipeError(f'step {number}: move: {error}')
+    if 'intro_text' in step:
+        lines = step['intro_text']
+        if not isinstance(lines, list) or not 1 <= len(lines) <= 4:
+            raise RecipeError(f'step {number}: intro_text must be a list of 1..4 literal lines')
+        try:
+            if not any([check_text(line, 'intro text line', 500, True) for line in lines]):
+                raise ValueError('intro text must contain text')
+        except ValueError as error:
+            raise RecipeError(f'step {number}: intro_text: {error}')
+    if 'escape' in step and not step.get('can_escape', True):
+        raise RecipeError(f'step {number}: an escape branch needs can_escape true')
+    if 'lose' in step and not step.get('can_lose', False):
+        raise RecipeError(f'step {number}: a lose branch needs can_lose true (without can_lose a defeat is Game Over)')
+    limit = 40 if step.get('respawn') else 39
+    for key in ('win', 'escape', 'lose'):
+        if key in step:
+            if not isinstance(step[key], list):
+                raise RecipeError(f'step {number}: {key} must be a list of commands')
+            if key == 'win' and len(step['win']) > limit:
+                raise RecipeError(f'step {number}: win may hold at most {limit} commands' + ('' if step.get('respawn') else ' (one more is added to turn self switch A ON)'))
+            try:
+                body(step[key], 1, f'battle {key} branch', 0)
+            except ValueError as error:
+                raise RecipeError(f'step {number}: {key}: {error}')
+    condition = step.get('condition', {})
+    if isinstance(condition, dict) and condition.get('self_switch') == 'A':
+        raise RecipeError(f'step {number}: condition may not test self switch A (the macro uses it for the defeated page)')
+    shadow = strip_map_ref(copymod.deepcopy(step))
+    if is_ref(shadow.get('template_event')):
+        shadow['template_event'] = 0
+    if is_ref(shadow['troop']):
+        shadow['troop'] = 1
+    holder = {key: shadow[key] for key in ('win', 'escape', 'lose') if key in shadow}
+    shadow_command_refs(iter_ops([{'battle_holder': 1, **holder}]), number, steps)
+    if contains_ref_key(shadow):
+        raise RecipeError(f'step {number}: from_step is only allowed for map_id, template_event, troop and ids inside win / escape / lose')
+    try:
+        staged_shape(expand_monster(shadow, None)[1]['pages'])
+    except ValueError as error:
+        raise RecipeError(f'step {number}: {error}')
+
+
 BLANK_MAP_LIMITS = {'width': (17, 500), 'height': (13, 500), 'tileset_id': (1, 999), 'parent_id': (0, 999), 'fill_floor': (0, 127)}
 AREA_TRIGGERS = ('player_touch', 'action')
 DIRECTIONS = (0, 2, 4, 6, 8)
@@ -305,6 +376,11 @@ def facing_of(value, number, where):
         raise RecipeError(f'step {number}: {where} must be exactly x, y and direction (0 keep, 2 down, 4 left, 6 right, 8 up)')
 
 
+def door_trigger(door):
+    """Effective trigger of an add_area door: the explicit one, else action for a door with a graphic (solid, same priority) and player_touch for a plain floor door."""
+    return door.get('trigger') or ('action' if door.get('graphic') else 'player_touch')
+
+
 def validate_door(value, number, where, allowed):
     cell_of(value, number, where)
     unknown = set(value) - allowed
@@ -334,7 +410,33 @@ def validate_area(step, number, steps):
     if not isinstance(door, dict) or 'map_id' not in door:
         raise RecipeError(f'step {number}: door must be an object with map_id, x and y')
     check_map_id(door['map_id'], number, steps, 'door map_id')
-    validate_door(door, number, 'door', {'map_id', 'x', 'y', 'template_event', 'blank_x', 'blank_y', 'trigger', 'graphic', 'name'})
+    validate_door(door, number, 'door', {'map_id', 'x', 'y', 'template_event', 'blank_x', 'blank_y', 'trigger', 'graphic', 'name', 'condition', 'locked_text'})
+    shadow_condition = None
+    if 'condition' in door:
+        from vxace_staged_commands import condition_shape
+        if not isinstance(door['condition'], dict):
+            raise RecipeError(f'step {number}: door condition must be an object')
+        shadow_condition = {'if': copymod.deepcopy(door['condition'])}
+        shadow_command_refs([shadow_condition], number, steps)
+        stand_in = {key: (1 if key == 'has_item' and value == 0 and is_ref(door['condition'].get(key)) else value) for key, value in shadow_condition['if'].items()}
+        try:
+            condition_shape(stand_in)
+        except ValueError as error:
+            raise RecipeError(f'step {number}: door condition: {error}')
+        if 'self_switch' in door['condition']:
+            raise RecipeError(f'step {number}: door condition cannot test a self switch (a door has no self switch state)')
+    if 'locked_text' in door:
+        from vxace_staged_commands import check_text
+        lines = door['locked_text']
+        if 'condition' not in door:
+            raise RecipeError(f'step {number}: door locked_text needs a door condition')
+        if not isinstance(lines, list) or not 1 <= len(lines) <= 4:
+            raise RecipeError(f'step {number}: door locked_text must be a list of 1..4 literal lines')
+        try:
+            if not any([check_text(line, 'locked text line', 500, True) for line in lines]):
+                raise ValueError('locked text must contain text')
+        except ValueError as error:
+            raise RecipeError(f'step {number}: door locked_text: {error}')
     validate_door(ret, number, 'return_door', {'x', 'y', 'blank_x', 'blank_y', 'trigger', 'graphic', 'name'})
     facing_of(step['arrival'], number, 'arrival')
     facing_of(step['back_to'], number, 'back_to')
@@ -350,17 +452,20 @@ def validate_area(step, number, steps):
     elif 'donor_event' not in step or 'blank_x' not in door:
         raise RecipeError(f'step {number}: give door template_event (an existing blank event), or donor_event with door blank_x and blank_y (the free cell for the blank template event that stays on the door map)')
     # A touch door that sends the player back onto its own cell (or a touch return door that receives the player on its cell) would bounce forever.
-    if door.get('trigger', 'player_touch') == 'player_touch' and (step['back_to']['x'], step['back_to']['y']) == (door['x'], door['y']):
+    if door_trigger(door) == 'player_touch' and (step['back_to']['x'], step['back_to']['y']) == (door['x'], door['y']):
         raise RecipeError(f'step {number}: back_to is the door cell: a player_touch door would bounce the player straight back into the new area')
-    if ret.get('trigger', 'player_touch') == 'player_touch' and (step['arrival']['x'], step['arrival']['y']) == (ret['x'], ret['y']):
+    if door_trigger(ret) == 'player_touch' and (step['arrival']['x'], step['arrival']['y']) == (ret['x'], ret['y']):
         raise RecipeError(f'step {number}: arrival is the return_door cell: a player_touch return door would bounce the player straight back out')
     for key, (cx, cy) in (('arrival', (step['arrival']['x'], step['arrival']['y'])), ('return_door', (ret['x'], ret['y']))):
         for axis, size in (('x', cx), ('y', cy)):
             limit = step.get('width' if axis == 'x' else 'height')
             if limit is not None and size >= limit:
                 raise RecipeError(f'step {number}: {key} {axis} {size} lies outside the new {limit}-wide/high map')
-    if contains_ref_key({**step, 'door': {k: v for k, v in door.items() if k not in ('map_id', 'template_event')}}):
-        raise RecipeError(f'step {number}: from_step is only allowed for door map_id and door template_event')
+    checked_door = {k: v for k, v in door.items() if k not in ('map_id', 'template_event', 'condition')}
+    if shadow_condition is not None:
+        checked_door['condition'] = shadow_condition['if']
+    if contains_ref_key({**step, 'door': checked_door}):
+        raise RecipeError(f'step {number}: from_step is only allowed for door map_id, door template_event and a has_item id in the door condition')
 
 
 def validate_recipe(recipe):
@@ -541,6 +646,8 @@ def validate_recipe(recipe):
             validate_chest(step, number, steps)
         elif kind == 'add_touch_trigger':
             validate_touch_trigger(step, number, steps)
+        elif kind == 'add_monster':
+            validate_monster(step, number, steps)
         elif kind == 'add_shop':
             check_map_id(step['map_id'], number, steps)
             if is_ref(step['event_id']):
@@ -606,7 +713,7 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: csv must be a non-empty string')
             if 'allow_shorter' in step and type(step['allow_shorter']) is not bool:
                 raise RecipeError(f'step {number}: allow_shorter must be a boolean')
-        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest', 'add_touch_trigger', 'set_system_fields', 'add_area') \
+        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest', 'add_touch_trigger', 'add_monster', 'set_system_fields', 'add_area') \
                 and contains_ref_key(strip_map_ref(step)):
             raise RecipeError(f'step {number}: from_step is not allowed in a {kind} step')
         if kind == 'append_encounter' and contains_ref_key({k: v for k, v in step.items() if k not in ('troop_id', 'map_id')}):
@@ -1204,11 +1311,45 @@ def expand_touch_trigger(step, project):
     return blank, staged
 
 
-def door_page(trigger, graphic, target):
+LOCKED_TEXT = ["It's locked."]
+
+
+def expand_monster(step, project):
+    """Expand a resolved add_monster step into (blank-event step or None, staged-event step). Page 1 carries the condition, the character graphic, priority
+    same (the monster collides, so the player bumps into it) and the trigger: event touch when it moves, player touch when it is fixed in place.
+    Its commands are the optional intro text and one battle; unless respawn, the win branch ends by turning self switch A ON and page 2 (self switch A only,
+    no graphic, priority below, no commands) takes over, because page conditions are ANDed and page 1 may already use a switch. `project` is unused."""
+    move = dict(step.get('move') or MONSTER_MOVE)
+    trigger = 'player_touch' if move['type'] == 'fixed' else 'event_touch'
+    respawn = bool(step.get('respawn'))
+    battle = {'battle': step['troop'], 'can_escape': step.get('can_escape', True), 'can_lose': step.get('can_lose', False)}
+    win = list(step.get('win', [])) + ([] if respawn else [{'set_self_switch': 'A', 'value': True}])
+    if win:
+        battle['win'] = win
+    for key in ('escape', 'lose'):
+        if key in step:
+            battle[key] = list(step[key])
+    commands = ([{'text': list(step['intro_text'])}] if step.get('intro_text') else []) + [battle]
+    pages = [{'condition': copymod.deepcopy(step.get('condition', {})), 'graphic': dict(step['graphic']), 'move': move, 'trigger': trigger,
+              'options': {'priority': 'same'}, 'commands': commands}]
+    if not respawn:
+        pages.append({'condition': {'self_switch': 'A'}, 'options': {'priority': 'below'}, 'commands': []})
+    blank = None
+    if 'donor_event' in step:
+        blank = {'type': 'append_blank_event', 'map_id': step['map_id'], 'donor_event': step['donor_event'], 'x': step['blank_x'], 'y': step['blank_y']}
+    staged = {'type': 'append_staged_event', 'map_id': step['map_id'], 'template_event': step.get('template_event'), 'x': step['x'], 'y': step['y'],
+              'name': step['name'], 'pages': pages}
+    return blank, staged
+
+
+def door_page(trigger, graphic, target, condition=None, locked_text=None):
     """One page, no self switch (a door works every time): a transfer to `target` {map_id, x, y, direction}. Touch doors sit below the characters so the
-    player steps onto them; action doors are solid (same as characters) so the player faces them and presses the action button."""
+    player steps onto them; action doors are solid (same as characters) so the player faces them and presses the action button.
+    With a `condition` (v1.30) the command is `if condition then transfer else text locked_text` (default text "It's locked.")."""
+    transfer = {'transfer': {**target, 'fade': 0}}
+    commands = [transfer] if condition is None else [{'if': copymod.deepcopy(condition), 'then': [transfer], 'else': [{'text': list(locked_text or LOCKED_TEXT)}]}]
     page = {'condition': {}, 'trigger': trigger, 'options': {'priority': 'below' if trigger == 'player_touch' else 'same'},
-            'commands': [{'transfer': {**target, 'fade': 0}}]}
+            'commands': commands}
     if graphic:
         page['graphic'] = dict(graphic)
     return page
@@ -1224,7 +1365,7 @@ def expand_area(step, project=None):
     {"from_step": k} numbers (1 = the new map), resolved against the macro's own created ids. Order: new map, [door blank event], door, blank event
     on the new map (schema donor from the door map), return door."""
     door, ret, arrival, back = step['door'], step['return_door'], step['arrival'], step['back_to']
-    trigger, ret_trigger = door.get('trigger', 'player_touch'), ret.get('trigger', 'player_touch')
+    trigger, ret_trigger = door_trigger(door), door_trigger(ret)
     if trigger == 'player_touch' and (back['x'], back['y']) == (door['x'], door['y']):
         raise RecipeError('back_to is the door cell: a player_touch door would bounce the player straight back into the new area')
     if ret_trigger == 'player_touch' and (arrival['x'], arrival['y']) == (ret['x'], ret['y']):
@@ -1242,7 +1383,8 @@ def expand_area(step, project=None):
         template = {'from_step': len(steps)}
     steps.append({'type': 'append_staged_event', 'map_id': door['map_id'], 'template_event': template, 'x': door['x'], 'y': door['y'],
                   'name': door.get('name', f'{step["name"]} Door'[:100]),
-                  'pages': [door_page(trigger, door.get('graphic'), {'map_id': {'from_step': 1}, 'x': arrival['x'], 'y': arrival['y'], 'direction': arrival['direction']})]})
+                  'pages': [door_page(trigger, door.get('graphic'), {'map_id': {'from_step': 1}, 'x': arrival['x'], 'y': arrival['y'], 'direction': arrival['direction']},
+                                      door.get('condition'), door.get('locked_text'))]})
     bx, by = (ret['blank_x'], ret['blank_y']) if 'blank_x' in ret else free_cell({(ret['x'], ret['y']), (arrival['x'], arrival['y'])})
     steps.append({'type': 'append_blank_event', 'map_id': {'from_step': 1}, 'donor_event': donor, 'donor_map_id': door['map_id'], 'x': bx, 'y': by})
     steps.append({'type': 'append_staged_event', 'map_id': {'from_step': 1}, 'template_event': {'from_step': len(steps)}, 'x': ret['x'], 'y': ret['y'],
@@ -1251,7 +1393,7 @@ def expand_area(step, project=None):
     return steps
 
 
-MACROS = {'add_treasure_chest': expand_chest, 'add_touch_trigger': expand_touch_trigger, 'add_area': expand_area}
+MACROS = {'add_treasure_chest': expand_chest, 'add_touch_trigger': expand_touch_trigger, 'add_monster': expand_monster, 'add_area': expand_area}
 
 
 def failed_record(number, step_type, message, records):

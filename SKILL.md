@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.29.0
+Version: 1.30.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -92,6 +92,7 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Quest NPC whose dialogue changes with progress | [references/staged-events.md](references/staged-events.md), [patterns/quest-state-machine.md](patterns/quest-state-machine.md) |
 | Shared logic: inn, reward chain, timer (common event) | [references/common-event-append.md](references/common-event-append.md) |
 | Starting party, start position, title, currency or menu terms | [references/system-fields.md](references/system-fields.md) |
+| Map monster that battles on touch (fixed, wandering or chasing; one-time or respawning) | `add_monster` ([references/monsters.md](references/monsters.md)) |
 | Wandering or pacing NPC, step-on trap or cutscene trigger | [references/touch-triggers.md](references/touch-triggers.md) |
 | New area (map) with a door in and out | `add_area` ([references/new-areas.md](references/new-areas.md)) |
 | Enemy AI (skill conditions, ratings), drops, weaknesses | [references/database-append.md](references/database-append.md) |

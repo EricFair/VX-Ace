@@ -12,7 +12,7 @@ from vxace_map_regions import integer, table_for
 from vxace_staged_commands import (commands_shape, staged_ids as _staged_ids, ref_fields, check_references, native_rows, structure_check, reference_snapshot, graphic_names,
                                    iter_ops, route_shape, plain_route, native_route, PAGE_TRIGGERS, TOUCH_TRIGGERS, MOVE_TYPES)
 
-VERSION = '1.29.0'
+VERSION = '1.30.0'
 FIELDS = {'action','template_id','new_id','name','x','y','text',
           'expected_map_sha256','expected_template_sha256'}
 BLANK_FIELDS = {'action','donor_event_id','new_id','name','x','y','expected_map_sha256','expected_donor_sha256'}
@@ -181,7 +181,7 @@ def staged_event(root,mutation,project,rtp=None):
         for key in OPTION_FLAGS:
             if key in options:page.set(key,options[key])
         if 'priority' in options:page.set('priority_type',PRIORITIES[options['priority']])
-        elif spec.get('trigger') in TOUCH_TRIGGERS:page.set('priority_type',PRIORITIES['same'])   # touch pages default to Same as Characters
+        elif spec.get('graphic') or spec.get('trigger') in TOUCH_TRIGGERS:page.set('priority_type',PRIORITIES['same'])   # v1.30: a page with a character graphic (and, as before, a touch page) defaults to Same as Characters; a graphic-less page keeps the template's priority
         if 'trigger' in spec:page.set('trigger',PAGE_TRIGGERS[spec['trigger']])
         move=spec.get('move')
         if move:

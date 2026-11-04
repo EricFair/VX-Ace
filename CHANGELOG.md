@@ -2,6 +2,19 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.30.0 — Events that behave
+
+- **Collision by default:** staged pages with a character graphic now default to priority same, so they collide and fire when the player faces them. Impact and plan warn about a graphic event below the player.
+- **`add_monster` macro:** builds a map monster that starts its battle on touch. It can be fixed (bump into it), wandering, or chasing (`approach`). It is one-time (it disappears after a win) or respawning, and it can optionally be gated by a quest condition.
+- **Locked doors:** `add_area` doors can be locked behind a condition, with their own locked text. Doors that have a graphic default to the action trigger with priority same.
+- **Engine check on the test project:**
+  - the sprite NPC collided;
+  - bumping the fixed monster started its battle, and it vanished after the win;
+  - the chasing monster moved toward the player;
+  - the locked door opened only once its variable condition held.
+
+See [monsters](references/monsters.md).
+
 ## 1.29.0 — In-place recipes and cleanup
 
 - **In-place runs:** `vxace_recipe.py run --in-place --confirm-in-place NAME` builds a recipe directly in a project the user designates as the working or test project.

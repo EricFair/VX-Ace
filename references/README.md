@@ -58,6 +58,7 @@ Use the smallest relevant reference first.
 - `system-fields.md` — guarded System edit: starting party, start position, title, currency and terms (v1.23).
 - `touch-triggers.md` — moving NPCs and the `add_touch_trigger` one-time step-on macro (v1.25).
 - `new-areas.md` — fresh-map append with A5 floor fill and the `add_area` two-way door macro (v1.26).
+- `monsters.md` — `add_monster`: touch-battle map monsters, fixed/wandering/chasing, one-time or respawning (v1.30).
 - `treasure-chests.md` — `add_treasure_chest` recipe macro: a two-page chest event (v1.22).
 - `blank-map-append.md` — blank map append.
 - `direct-map-transfer.md` — direct transfer to a blank map.

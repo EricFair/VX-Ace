@@ -112,9 +112,9 @@ Snapshot: `vxace_map_events.py ... --map NEW --donor-event 1 --donor-map 1`. The
 | Key | Meaning |
 | --- | --- |
 | `template_map_id`, `name`; optional `width`, `height`, `tileset_id`, `parent_id`, `fill_floor` | the `append_blank_map` step |
-| `door` | `map_id` (the source map, an id or `{"from_step": k}`), `x`, `y` and a template for the door event: either `template_event` (an existing blank event on that map, or `{"from_step": k}`) or the macro's `donor_event` plus `blank_x`/`blank_y` (the free cell where a blank template event stays on the source map, as in `add_treasure_chest`). Optional: `trigger` (`"player_touch"` default, or `"action"`), `graphic` (a page character graphic, bound like any staged graphic), `name` (default `<name> Door`) |
+| `door` | `map_id` (the source map, an id or `{"from_step": k}`), `x`, `y` and a template for the door event: either `template_event` (an existing blank event on that map, or `{"from_step": k}`) or the macro's `donor_event` plus `blank_x`/`blank_y` (the free cell where a blank template event stays on the source map, as in `add_treasure_chest`). Optional: `trigger` (`"player_touch"` default, or `"action"`; with a `graphic` the default is `"action"`, v1.30), `graphic` (a page character graphic, bound like any staged graphic), `name` (default `<name> Door`), `condition` and `locked_text` (v1.30, see [conditional doors](#conditional-doors-v130)) |
 | `arrival` | `x`, `y`, `direction` (`0` keep, `2`, `4`, `6`, `8`): where the door puts the player on the new map |
-| `return_door` | `x`, `y` of the event on the new map that sends the player back. Optional `trigger`, `graphic`, `name` (default `<name> Exit`), `blank_x`/`blank_y` (cell of the blank template event that stays on the new map; the default is the first free cell of the top-left rows) |
+| `return_door` | `x`, `y` of the event on the new map that sends the player back. Optional `trigger` (same defaults as the door), `graphic`, `name` (default `<name> Exit`), `blank_x`/`blank_y` (cell of the blank template event that stays on the new map; the default is the first free cell of the top-left rows) |
 | `back_to` | `x`, `y`, `direction`: where the return door puts the player on the source map |
 | `donor_event` | an event on the door map used for its native schema only. Required unless `door.template_event` is given, which then also serves as the donor |
 
@@ -124,18 +124,49 @@ The macro expands (identically in `run` and in `plan`) into these transactions, 
 | --- | --- |
 | `a` | `append_blank_map` (the options above). Creates map id N = next maximum + 1. |
 | `b` | only when the door has no `template_event`: `append_blank_event` on the door map at `blank_x`,`blank_y` (schema from `donor_event`) |
-| `c` | `append_staged_event` on the door map at `door.x`,`door.y`: one page, trigger `player_touch` with priority `below` (or `action` with priority `same` as characters, so it is a solid thing you face and press), whose only command is a `transfer` to map N at `arrival` (fade normal). No self switch: a door works every time. |
+| `c` | `append_staged_event` on the door map at `door.x`,`door.y`: one page, trigger `player_touch` with priority `below` (or `action` with priority `same` as characters, so it is a solid thing you face and press), whose only command is a `transfer` to map N at `arrival` (fade normal). No self switch: a door works every time. A door with a `graphic` and no explicit `trigger` is an `action` door with priority `same` (v1.30); an explicit `"player_touch"` keeps priority `below`. With `door.condition` the command is `if condition then transfer else text` (v1.30). |
 | `d` | `append_blank_event` on map N (event 1), with the schema donor read from the door map through `donor_map_id` |
 | `e` | `append_staged_event` on map N at `return_door` (event 2): the same kind of single page, `transfer` back to the door map at `back_to`. |
 
 `from_step` on the `add_area` step afterwards means the **new map id**, not an event id. The new map keeps its blank template event 1 (use it as `template_event` or `donor_event` with `"map_id": {"from_step": k}` for more events on the new map, as in the example below).
+
+### Conditional doors (v1.30)
+
+`door.condition` locks the door behind a staged `if` condition; `door.locked_text` (1..4 literal lines, default `["It's locked."]`) is shown when the condition is false. `locked_text` needs a `condition`. The return door has no condition.
+
+`condition` takes the `if` forms of the staged command language ([staged events](staged-events.md), v1.19): `{"switch": n, "is": bool}`, `{"variable": n, "op": "==|>=|<=|>|<|!=", "value": n}`, `{"gold_at_least": n}` and `{"has_item": id}` (an id or `{"from_step": k}` of a key item step). `self_switch` is refused: a door is a one-page event with no self switch state to set. Switch and variable ids are checked against the System, and an item id against the Items table, exactly as an `if` command is.
+
+The door page's command list becomes one `if` command:
+
+```
+if <condition>      (code 111)
+  transfer to the new map at arrival      (code 201)
+else
+  text <locked_text>                       (101 / 401)
+end
+```
+
+`plan` and `run` expand it identically, so the ids (new map, door, blank events) are predicted exactly as without a condition.
+
+```json
+{"title": "Armory", "steps": [
+  {"type": "add_area", "template_map_id": 2, "name": "Armory", "width": 20, "height": 15, "tileset_id": 3, "fill_floor": 1,
+   "donor_event": 1,
+   "door": {"map_id": 1, "x": 8, "y": 3, "blank_x": 2, "blank_y": 2, "trigger": "action", "name": "Armory Door",
+            "condition": {"variable": 1, "op": ">=", "value": 5}, "locked_text": ["The armory is locked.", "Come back with more badges."]},
+   "arrival": {"x": 10, "y": 12, "direction": 8},
+   "return_door": {"x": 10, "y": 13},
+   "back_to": {"x": 8, "y": 4, "direction": 2}}]}
+```
+
+The armory door opens only while variable 1 is at least 5. Without a graphic an `action` door is an invisible event the player faces and presses; add a `graphic` for a visible door (then `trigger` can be left out).
 
 ### Checks
 
 - `arrival` must lie inside the new map: when `width`/`height` are given the recipe is refused before anything runs; otherwise the guarded transfer check measures the map that was actually created (or the template's size) and the door step fails.
 - `back_to` must lie inside the source map (checked against the real source map by the return-door transfer).
 - `return_door` and the door must lie in their maps and on free cells (the event tools refuse occupied cells and duplicate names).
-- **Bounce**: a `player_touch` door whose `back_to` is the door cell would send the player straight back into the new area, and a `player_touch` return door whose cell is `arrival` would send the player straight out again. Both are refused (`RecipeError`) when the recipe is validated and when the macro expands. `action` doors never fire on arrival, so that cell is allowed for them.
+- **Bounce**: a `player_touch` door (including the default of a door with no graphic) whose `back_to` is the door cell would send the player straight back into the new area, and a `player_touch` return door whose cell is `arrival` would send the player straight out again. Both are refused (`RecipeError`) when the recipe is validated and when the macro expands. `action` doors never fire on arrival, so that cell is allowed for them.
 - With `fill_floor` the arrival cell is passable by construction (every cell has the checked passable A5 tile on layer 0). Without it the cell is whatever the template or an empty map gives; the tools check bounds, not passability of an unpainted map.
 - The transfer destination maps are bound like any staged transfer (v1.19): the door step binds the hash of the new map from the previous copy, the return step binds the hash of the source map as it is after the door was added (`expected_destination_maps_sha256`, with `expected_mapinfos_sha256`). Nothing in a recipe contains a hash.
 - `plan` predicts the new map id and every event id exactly (it simulates the new map and its size in memory for the later bounds, occupancy and transfer checks) and reports `Data/MapInfos.rvdata2`, `Data/MapNNN.rvdata2` and `Data/System.rvdata2` as changed files.

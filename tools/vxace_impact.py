@@ -588,16 +588,18 @@ def upper_tile_impact(index,change):
 
 def staged_page_report(pages,switches,variables):
     """Per-page rows and advisory warnings of staged pages (shared with the recipe dry-run); switches/variables are the System name lists with slot 0."""
-    from vxace_staged_commands import iter_ops,command_notes,describe_route,TOUCH_TRIGGERS
+    from vxace_staged_commands import iter_ops,command_notes,describe_route,effective_priority,TOUCH_TRIGGERS
     def label(names,number):
         return names[number] if isinstance(names[number],str) and names[number] else None
     warnings=[];rows=[]
     for number,page in enumerate(pages,1):
         condition=page['condition']
-        trigger=page.get('trigger','action');move=page.get('move');priority=(page.get('options') or {}).get('priority','same' if trigger in TOUCH_TRIGGERS else None)
+        trigger=page.get('trigger','action');move=page.get('move');priority=effective_priority(page)
         rows.append({'page':number,'condition':condition,'commands':len(page['commands']),'trigger':trigger,
                      **({'graphic':page['graphic']} if page.get('graphic') else {}),**({'options':page['options']} if page.get('options') else {}),
                      **({'move':move} if move else {})})
+        if page.get('graphic') and priority in ('below','above') and not (trigger=='player_touch' and priority=='below'):
+            warnings.append(f'Page {number} has a character graphic with priority {priority}: graphic event {priority} the player: it will not collide and must be walked onto. Use priority same so the player bumps into it (and it starts on action or touch).')
         if trigger in TOUCH_TRIGGERS and page['commands']:
             if priority in ('below','above'):
                 warnings.append(f'Page {number} is a {trigger.replace("_"," ")} trigger with priority {priority}: it only starts when the player steps onto its cell (it cannot be bumped into from the side).')
@@ -677,7 +679,7 @@ def map_event_impact(index,change):
     staged_report=None
     if staged:
         from vxace_map_events import staged_ids
-        from vxace_staged_commands import iter_ops,index_check,chest_summary
+        from vxace_staged_commands import iter_ops,index_check,chest_summary,monster_summary,describe_monster
         system=data.json('database/system.json')
         if not isinstance(system,dict) or not isinstance(system.get('switches'),list) or not isinstance(system.get('variables'),list) or len(system['switches'])<2 or len(system['variables'])<2:
             raise ValueError('Indexed native System switches/variables required')
@@ -689,6 +691,14 @@ def map_event_impact(index,change):
             except Exception:return None
             row=rows_[number] if isinstance(rows_,list) and 0<=number<len(rows_) else None
             return row.get('name') if isinstance(row,dict) and row.get('name') else None
+        monsters=[]
+        for monster in monster_summary(pages):
+            names=None
+            try:
+                troops=data.json('database/troops.json');row=troops[monster['troop']] if isinstance(troops,list) and 0<monster['troop']<len(troops) else None
+                names=row.get('name') if isinstance(row,dict) and row.get('name') else None
+            except Exception:pass
+            monsters.append({**monster,'description':f'Page {monster["page"]}: '+describe_monster(monster,names)})
         chests=[]
         for chest in chest_summary(pages):
             gives=[]
@@ -699,7 +709,7 @@ def map_event_impact(index,change):
                     gives.append(f'{op["amount"]} x {kind} {op[kind]}'+(f' "{label}"' if label else ' (unnamed)'))
             chests.append({**chest,'description':f'Treasure chest: page {chest["page"]} gives '+', '.join(gives)+f' and turns self switch {chest["self_switch"]} ON; page {chest["opened_page"]} (self switch {chest["self_switch"]}) is the opened chest.'})
         graphics=[{'page':number,'graphic':page.get('graphic'),'options':page.get('options')} for number,page in enumerate(pages,1) if page.get('graphic') or page.get('options')]
-        staged_report={'page_count':len(pages),'pages':rows,'chests':chests,'graphic_changes':graphics,'priority_note':'The engine runs the highest-numbered page whose conditions are all met; verify the page order against the quest state machine.',
+        staged_report={'page_count':len(pages),'pages':rows,'chests':chests,'monsters':monsters,'graphic_changes':graphics,'priority_note':'The engine runs the highest-numbered page whose conditions are all met; verify the page order against the quest state machine.',
                        'warnings':warnings}
     data.unchanged()
     return {'kind':'map_event','severity':'high','target':{'map_id':mid,'new_id':identifier,'name':name,'x':x,'y':y,('donor_event_id' if blank else 'template_id'):template_id},
