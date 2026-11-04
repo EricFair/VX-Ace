@@ -174,17 +174,23 @@ def plan(project, copy, audit_paths, recipe_report, output):
     if recipe_report:
         rpath = unlinked(recipe_report)
         report = load_json(rpath)
+        if report.get('mode') == 'in_place':
+            raise Refused('bad_recipe', 'recipe report is from an in-place run: the project already holds the changes and there is no staged copy; '
+                                        'revert with vxace_recipe.py undo (or vxace_adopt.py undo) using the run\'s adopt-record.json')
         if report.get('status') != 'pass' or not report.get('final_copy') or not report.get('original_unchanged'):
             raise Refused('bad_recipe', 'recipe report is not a passing report with an unchanged original')
         if os.path.normcase(str(Path(report['project']).resolve())) != os.path.normcase(str(project)):
             raise Refused('wrong_project', 'recipe report was made for a different project: ' + str(report['project']))
-        if copy is None: copy = report['final_copy']
-        elif os.path.normcase(str(Path(copy).resolve())) != os.path.normcase(str(Path(report['final_copy']).resolve())):
-            raise Refused('wrong_copy', 'COPY is not the recipe final copy: ' + str(report['final_copy']))
+        # Paths in a report are relative to the report file's own folder (v1.29); absolute paths of older reports are used as they are.
+        base = rpath.resolve().parent
+        final_copy = str(base / report['final_copy'])
+        if copy is None: copy = final_copy
+        elif os.path.normcase(str(Path(copy).resolve())) != os.path.normcase(str(Path(final_copy).resolve())):
+            raise Refused('wrong_copy', 'COPY is not the recipe final copy: ' + final_copy)
         steps = report.get('steps') or []
         if not steps or any(not s.get('audit') for s in steps):
             raise Refused('bad_recipe', 'every recipe step needs an audit')
-        audit_paths = [s['audit'] for s in steps]
+        audit_paths = [str(base / s['audit']) for s in steps]
         recipe_info = {'report': str(rpath), 'report_sha256': sha256_file(rpath), 'steps': len(steps)}
     if copy is None: raise ValueError('--copy is required unless --recipe is given')
     if not audit_paths: raise ValueError('at least one --audit is required unless --recipe is given')

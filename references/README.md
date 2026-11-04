@@ -54,6 +54,17 @@ Use the smallest relevant reference first.
 - `one-time-event-rewards.md` — one-time gold/item rewards.
 - `map-shops.md` — Shop Processing on a blank or single-dialogue event.
 - `staged-events.md` — quest-stage events with conditional pages and switch/variable/self-switch commands.
+- `common-event-append.md` — call-only or parallel common events using the staged-event command language (v1.21).
+- `system-fields.md` — guarded System edit: starting party, start position, title, currency and terms (v1.23).
+- `touch-triggers.md` — moving NPCs and the `add_touch_trigger` one-time step-on macro (v1.25).
+- `new-areas.md` — fresh-map append with A5 floor fill and the `add_area` two-way door macro (v1.26).
+- `map-layouts.md` — readable generated maps: walls, paths, landmarks, presets, reachability (v1.31).
+- `shops-and-inns.md` — `add_shopkeeper`, `add_inn`, shop/recover commands, dialogue graphics (v1.33).
+- `intros.md` — `add_intro`: run-once map intro instead of autorun (v1.33).
+- `smoke-testing.md` also covers game speed and why the window must stay visible (2.0).
+- `rtp-sprites.md` — stock RTP character sprite catalogue; `graphic: {sprite: ...}` lookup (v1.34).
+- `monsters.md` — `add_monster`: touch-battle map monsters, fixed/wandering/chasing, one-time or respawning (v1.30).
+- `treasure-chests.md` — `add_treasure_chest` recipe macro: a two-page chest event (v1.22).
 - `blank-map-append.md` — blank map append.
 - `direct-map-transfer.md` — direct transfer to a blank map.
 - `map-display-names.md` — player-visible map name.

@@ -73,7 +73,7 @@ def normalize_spec(spec: dict) -> dict:
         if not isinstance(raw, dict):
             raise ValueError(f"Change #{i} must be an object")
         kind = raw.get("kind")
-        if kind not in {"script", "script_slot", "event", "database", "map_region", "map_tile", "map_event", "map_entry", "database_entry", "map_name", "map_label", "map_encounter", "map_shop"}:
+        if kind not in {"script", "script_slot", "event", "database", "map_region", "map_tile", "map_event", "map_entry", "database_entry", "map_name", "map_label", "map_encounter", "map_shop", "common_event", "system_fields"}:
             raise ValueError(f"Change #{i} has unsupported kind: {kind}")
         item = dict(raw)
         if kind == "script":
@@ -95,16 +95,30 @@ def normalize_spec(spec: dict) -> dict:
                 raise ValueError('Map append proposal requires template_map_id and proposal')
         elif kind == 'database_entry':
             locator=item.get('locator');mutation=item.get('mutation')
-            if isinstance(locator,dict) and locator.get('table')=='classes':
+            if isinstance(mutation,dict) and mutation.get('action')=='edit_database_entry':
+                from vxace_database_edit import native_mutation as edit_mutation
+                edit_mutation(locator,mutation)
+                if not item.get('proposal'):raise ValueError('Database entry edit requires a proposal')
+            elif isinstance(locator,dict) and locator.get('table')=='classes' and ('id' in locator or (isinstance(mutation,dict) and mutation.get('action')=='append_class_learning')):
                 from vxace_class_learning import native_mutation
                 native_mutation(locator,mutation)
                 if not item.get('proposal'):raise ValueError('Class learning requires a proposal')
             else:
-                if not isinstance(locator,dict) or set(locator)!={'table'} or locator['table'] not in ('items','enemies','skills','states','weapons','armors','troops') or not item.get('proposal'):
+                if not isinstance(locator,dict) or set(locator)!={'table'} or locator['table'] not in ('actors','classes','items','enemies','skills','states','weapons','armors','troops') or not item.get('proposal'):
                     raise ValueError('Database entry proposal requires an exact supported table locator and proposal')
                 action=mutation.get('action') if isinstance(mutation,dict) else None
                 if action!='append_database_entry' and (locator['table'],action)!=('items','append_key_item'):
                     raise ValueError('Entry action does not match the table (items: append_key_item or append_database_entry; others: append_database_entry)')
+        elif kind == 'common_event':
+            from vxace_common_event_append import schema as common_event_schema
+            if item.get('locator')!={'table':'common_events'} or not item.get('proposal'):
+                raise ValueError('Common event append proposal requires the exact {"table": "common_events"} locator and proposal')
+            common_event_schema(item.get('mutation'))
+        elif kind == 'system_fields':
+            from vxace_system_fields import schema as system_schema
+            if item.get('locator')!={'table':'system'} or not item.get('proposal'):
+                raise ValueError('System fields proposal requires the exact {"table": "system"} locator and proposal')
+            system_schema(item.get('mutation'))
         elif kind == 'map_shop':
             locator=item.get('locator')
             if not isinstance(locator,dict) or set(locator)!={'map_id','event_id'} or any(type(locator[k]) is not int or not 1<=locator[k]<=999 for k in locator):
@@ -191,7 +205,7 @@ def regression_checks(changes: list[dict]) -> list[str]:
         checks += ['Review dynamic item IDs, inventory extensions and template/note consumers before appending a key item.',
                    'Verify the new ID/Key Item entry in VX Ace, native inventory categorization and engine save/restart-load.',
                    'Confirm every existing Items entry is unchanged; deletion/reuse/reordering remain disabled.']
-    if any(i.get('kind')=='database_entry' and i.get('mutation',{}).get('action')=='append_database_entry' and any(k in i.get('mutation',{}).get('overrides',{}) for k in ('effects','features')) for i in changes if isinstance(i.get('mutation'),dict) and isinstance(i['mutation'].get('overrides'),dict)):
+    if any(i.get('kind')=='database_entry' and i.get('mutation',{}).get('action')=='append_database_entry' and any(k in i.get('mutation',{}).get('overrides',{}) for k in ('effects','features','features_add','features_remove')) for i in changes if isinstance(i.get('mutation'),dict) and isinstance(i['mutation'].get('overrides'),dict)):
         checks += ['Review every replaced effects/features list entry in the impact report, especially common-event calls (effect 44), learn-skill (effect 43), escape (effect 41) and add-skill features (43).',
                    'Check the referenced states, skills, common events and elements in the VX Ace editor; their files are hash-bound and must stay unchanged in the same transaction.',
                    'Use the new item/skill/equipment or state in a battle test (or smoke test) and confirm the effects/traits show in the editor database tab.']
@@ -199,10 +213,27 @@ def regression_checks(changes: list[dict]) -> list[str]:
         checks += ['Review every inherited feature, effect, drop, action and damage element/type of the template clone; the note is forced empty (troops have no note and copy only a blank battle page).',
                    'Review troops, shops, drops, dynamic IDs and notetag consumers; check battler_name against the asset audit.',
                    'Verify the new entry in the VX Ace editor, a battle test or smoke test, and engine save/full-process restart.']
+    if any(i.get('kind')=='database_entry' and i.get('locator',{}).get('table')=='classes' and i.get('mutation',{}).get('action')=='append_database_entry' for i in changes):
+        checks += ['Review the new class EXP curve, the eight parameter curves (levels 1 and 99 and a middle level), the learnings (skill and level) and the equip / skill-type features in the impact report.',
+                   'The new class is used by no actor until an actor with that class_id exists; give that actor equips the class can wear (the actor append checks them).',
+                   'Verify the class in the VX Ace editor (EXP curve, parameter curves, skills to learn, features) and level a test actor through several levels in a battle or smoke test.']
+    if any(i.get('kind')=='database_entry' and i.get('mutation',{}).get('action')=='edit_database_entry' for i in changes):
+        checks += ['Review the old -> new table in the impact report: every listed field is rewritten on the existing entry, whose id and note stay.',
+                   'A features replacement replaces the whole list (the report names the dropped rows); a battler without the HIT row (code 22, data_id 0) misses every physical attack.',
+                   'Test the edited entry in the VX Ace editor and a battle or smoke test; confirm every other entry of the table is unchanged.']
     if any(i.get('kind')=='database_entry' and i.get('mutation',{}).get('action')=='append_class_learning' for i in changes):
         checks += ['Review the class existing learnings, the skill (cost, scope, damage) and the level; the new learning has an empty note and is appended last.',
                    'Check actor initial levels, class-change scripts and custom skill-learning scripts; old saves learn the skill only on a later level-up (no retroactive learning).',
                    'Verify the class in the VX Ace editor and level an actor of that class to or past the level in a new game and an older save.']
+    if 'common_event' in kinds:
+        checks += ['Review every command in the impact report (battles, transfers, gold removal, calls to other common events, unnamed switches/variables) and the called common events.',
+                   'For a parallel process confirm its trigger switch is turned ON and OFF where intended, and playtest that the wait keeps the map responsive; autorun is never created.',
+                   'Verify the new entry in the VX Ace editor Common Events tab, call it from an event, effect or script, then test with a new game and an older save and a full process restart.',
+                   'Confirm only Data/CommonEvents.rvdata2 changed: System, the referenced databases, maps and every existing common event stay byte-identical.']
+    if 'system_fields' in kinds:
+        checks += ['Review the old -> new table in the impact report: the start position and starting party only apply to new games, game_title only shows on the title screen, terms and currency_unit show in old saves.',
+                   'Verify the System tab in the VX Ace editor (title, currency, terms, initial party, start position), then test a new game, an older save and a full process restart.',
+                   'Confirm only Data/System.rvdata2 changed, only the listed System fields differ, version_id is unchanged and every other copied file stays byte-identical.']
     if 'script_slot' in kinds:
         checks += ['Insert only one exact byte-verified native slot before unique canonical Main through the explicit Python copy workflow.',
                    'Verify every existing script ID/name/source/order is preserved; no reordering/deletion or other Scripts edits in the transaction.',
@@ -318,12 +349,12 @@ def build_plan(index: Path, project: Path, spec_path: Path, output: Path) -> dic
                            map_sha256=snap['map_sha256'],troops_sha256=snap['troops_sha256'])
             changes.append(planned)
         elif change['kind']=='map_entry':
-            from vxace_maps import snapshot as map_snapshot,candidates as map_candidates
+            from vxace_maps import snapshot as map_snapshot,candidates as map_candidates,OPTIONS as MAP_OPTIONS
             from vxace_index_query import Index
             from vxace_python_mutator import load
             from vxace_copy_patcher import normalize_changes
             proposed=normalize_changes(index,{'changes':[change]})[0]
-            data=Index(index);map_snapshot(data,project,proposed['mutation']['template_map_id']);data.unchanged()
+            data=Index(index);map_snapshot(data,project,proposed['mutation']['template_map_id'],{k:proposed['mutation'][k] for k in MAP_OPTIONS if k in proposed['mutation']});data.unchanged()
             map_candidates(load(project/'Data/MapInfos.rvdata2')[0],proposed['mutation'],project)
             changes.append(structural_change(change))
         else:changes.append(structural_change(change))

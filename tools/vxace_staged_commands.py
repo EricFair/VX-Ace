@@ -5,6 +5,7 @@ Used by vxace_map_events.append_staged_event, the impact report and the recipe r
 referenced database files are only read, and each one is bound by its own expected SHA-256 in the mutation."""
 from __future__ import annotations
 import hashlib
+from collections import namedtuple
 from pathlib import Path
 
 MAX_COMMANDS = 40          # operations per command list (page or branch body)
@@ -14,12 +15,29 @@ VALUE_LIMIT = 99999999
 VARIABLE_OPS = {'set': 0, 'add': 1, 'sub': 2}
 CONDITION_OPS = {'==': 0, '>=': 1, '<=': 2, '>': 3, '<': 4, '!=': 5}
 KINDS = ('text', 'set_switch', 'set_variable', 'set_self_switch', 'choices', 'if', 'battle', 'party',
-         'common_event', 'gold', 'item', 'transfer', 'wait')
+         'common_event', 'gold', 'item', 'weapon', 'armor', 'transfer', 'wait', 'erase_event', 'move_route', 'shop', 'recover_all')
+# Event page triggers (RPG::Event::Page#trigger). Autorun (3) is refused: it has no termination proof.
+PAGE_TRIGGERS = {'action': 0, 'player_touch': 1, 'event_touch': 2, 'parallel': 4}
+TOUCH_TRIGGERS = ('player_touch', 'event_touch')
+# Autonomous movement (RPG::Event::Page#move_type) and the bounded move-route language, codes as in Game_Character#process_move_command.
+MOVE_TYPES = {'fixed': 0, 'random': 1, 'approach': 2, 'custom': 3}
+ROUTE_MOVES = {'down': 1, 'left': 2, 'right': 3, 'up': 4, 'random': 9, 'toward_player': 10, 'away_from_player': 11, 'forward': 12, 'backward': 13}
+ROUTE_TURNS = {'down': 16, 'left': 17, 'right': 18, 'up': 19, 'random': 24, 'toward_player': 25, 'away_from_player': 26}
+ROUTE_WAIT_CODE = 15
+MAX_ROUTE = 40
+ROUTE_TARGETS = {'player': -1, 'this': 0}      # Game_Interpreter#get_character: negative = player, 0 = this event
+# Plain (not yet native) move route objects carried inside plain_rows parameters.
+PlainMoveCommand = namedtuple('PlainMoveCommand', 'code parameters')
+PlainMoveRoute = namedtuple('PlainMoveRoute', 'repeat skippable wait list')
 # kind -> (database file, native class, mutation hash field)
 REF_FILES = {'troops': ('Troops', 'RPG::Troop', 'expected_troops_sha256'),
              'actors': ('Actors', 'RPG::Actor', 'expected_actors_sha256'),
              'common_events': ('CommonEvents', 'RPG::CommonEvent', 'expected_common_events_sha256'),
-             'items': ('Items', 'RPG::Item', 'expected_items_sha256')}
+             'items': ('Items', 'RPG::Item', 'expected_items_sha256'),
+             'weapons': ('Weapons', 'RPG::Weapon', 'expected_weapons_sha256'),
+             'armors': ('Armors', 'RPG::Armor', 'expected_armors_sha256')}
+# goods commands: key -> (REF_FILES kind, native command code, label)
+GOODS = {'item': ('items', 126), 'weapon': ('weapons', 127), 'armor': ('armors', 128)}
 MAPINFOS_FIELD = 'expected_mapinfos_sha256'
 MAPS_FIELD = 'expected_destination_maps_sha256'
 
@@ -85,13 +103,141 @@ def condition_shape(cond):
         raise ValueError('Unsupported if condition; use switch, variable, self_switch, gold_at_least or has_item')
 
 
+def route_shape(route, label='move route'):
+    """Validate a move-route command list (1..40 commands of the bounded language). Raises ValueError."""
+    if not isinstance(route, list) or not 1 <= len(route) <= MAX_ROUTE:
+        raise ValueError(f'{label} needs 1..{MAX_ROUTE} route commands')
+    for item in route:
+        if isinstance(item, str):
+            if item not in ROUTE_MOVES:
+                raise ValueError(f'{label} command "{item}" is unsupported; use ' + ', '.join(ROUTE_MOVES) + ' or {"wait": n} / {"turn": direction}')
+        elif isinstance(item, dict) and set(item) == {'wait'}:
+            plain_int(item['wait'], label + ' wait frames', 1, 999)
+        elif isinstance(item, dict) and set(item) == {'turn'}:
+            if not isinstance(item['turn'], str) or item['turn'] not in ROUTE_TURNS:
+                raise ValueError(label + ' turn must be one of ' + ', '.join(ROUTE_TURNS))
+        else:
+            raise ValueError(f'{label} command is unsupported (jump, graphic, script, switch, speed/frequency and other route commands are refused)')
+
+
+def route_commands(route):
+    """Native (code, parameters) pairs of a validated route, without the terminator."""
+    rows = []
+    for item in route:
+        if isinstance(item, str):
+            rows.append((ROUTE_MOVES[item], []))
+        elif 'wait' in item:
+            rows.append((ROUTE_WAIT_CODE, [item['wait']]))
+        else:
+            rows.append((ROUTE_TURNS[item['turn']], []))
+    return rows
+
+
+def plain_route(route, repeat, skippable, wait):
+    """A plain move route (editor layout: repeat, skippable, wait, list ending in the code-0 terminator)."""
+    return PlainMoveRoute(repeat, skippable, wait, tuple(PlainMoveCommand(code, params) for code, params in route_commands(route) + [(0, [])]))
+
+
+def describe_route(route):
+    """One line for a validated route."""
+    parts = []
+    for item in route:
+        parts.append(item if isinstance(item, str) else f'wait {item["wait"]}' if 'wait' in item else 'turn ' + item['turn'])
+    return ', '.join(parts)
+
+
+def command_notes(op):
+    """Advisory sentences for a validated erase_event / move_route command (shared by the staged and common-event impact)."""
+    notes = []
+    if 'erase_event' in op:
+        notes.append('Erases this event; the erase is temporary and the event returns when the map is reloaded (leaving and re-entering the map). Use a self-switch page for a permanent disappearance.')
+    if 'move_route' in op:
+        spec = op['move_route'];who = 'the player' if spec['target'] == 'player' else 'this event'
+        moves = [item for item in spec['route'] if isinstance(item, str)]
+        if spec['target'] == 'player':
+            notes.append('Forces the player along a move route: the player cannot move or open the menu until it ends.')
+        if spec.get('repeat', False):
+            notes.append(f'The move route of {who} repeats and never ends on its own' + (' (a forced player route would lock the player permanently).' if spec['target'] == 'player' else '.'))
+        if moves and not spec.get('skippable', False):
+            notes.append(f'A blocked step stalls the route of {who} (it retries the same step) and' + (', with wait, the event never continues.' if spec.get('wait', True) else ' keeps it from finishing.')
+                         + ' Set skippable true if the path may be blocked.')
+    if 'shop' in op:
+        notes.append('Opens the shop scene (Game_Interpreter#command_302 calls Scene_Shop and yields): the commands after the shop run when the shop closes, and the shop is skipped in battle.'
+                     + (' Purchase only: the party cannot sell here.' if op['shop'].get('purchase_only') else ''))
+    if 'recover_all' in op:
+        who = 'the entire party' if op['recover_all'] == 'party' else f'actor {op["recover_all"]}'
+        notes.append(f'Recover All on {who} restores HP and MP and clears every state, including death (a fallen member is revived).')
+    return notes
+
+
+def shop_shape(spec):
+    """Validate a shop command body {goods: [{type, id, price}, ...1..32], purchase_only} with the add_shop bounds. Raises ValueError."""
+    from vxace_map_shops import GOODS as SHOP_GOODS, MAX_GOODS, MAX_PRICE
+    if not isinstance(spec, dict) or set(spec) != {'goods', 'purchase_only'}:
+        raise ValueError('shop needs exactly goods and purchase_only')
+    boolean(spec['purchase_only'], 'shop purchase_only')
+    goods = spec['goods']
+    if not isinstance(goods, list) or not 1 <= len(goods) <= MAX_GOODS:
+        raise ValueError(f'shop needs 1..{MAX_GOODS} goods')
+    seen = set()
+    for good in goods:
+        if not isinstance(good, dict) or set(good) != {'type', 'id', 'price'} or not isinstance(good['type'], str) or good['type'] not in SHOP_GOODS:
+            raise ValueError('Each shop good needs exactly type (item/weapon/armor), id and price')
+        plain_int(good['id'], 'shop goods id', 1, 999)
+        if good['price'] is not None:
+            plain_int(good['price'], 'shop goods price', 0, MAX_PRICE)
+        if (good['type'], good['id']) in seen:
+            raise ValueError('Duplicate shop goods entry refused')
+        seen.add((good['type'], good['id']))
+
+
+def describe_shop(spec, name_of, unit='G'):
+    """'Shop: Potion (default price), Hunter's Dirk 600 G' for a validated shop body; name_of(kind, id) returns a database name or None."""
+    parts = []
+    for good in spec['goods']:
+        name = name_of(good['type'], good['id']) or f'{good["type"]} {good["id"]} (unnamed)'
+        parts.append(f'{name} (default price)' if good['price'] is None else f'{name} {good["price"]} {unit}')
+    return 'Shop: ' + ', '.join(parts) + (' [purchase only]' if spec['purchase_only'] else '')
+
+
+def describe_recover(who, name_of=None):
+    if who == 'party':
+        return 'Recover all: the entire party (HP, MP, states)'
+    name = name_of('actor', who) if name_of else None
+    return f'Recover all: actor {who}' + (f' "{name}"' if name else '') + ' (HP, MP, states)'
+
+
+def extra_descriptions(commands, name_of, unit='G'):
+    """Description lines of the shop and recover_all commands of a (possibly nested) command list, for the plan and impact summaries."""
+    lines = []
+    for op in iter_ops(commands):
+        if isinstance(op.get('shop'), dict):
+            lines.append(describe_shop(op['shop'], name_of, unit))
+        elif 'recover_all' in op:
+            lines.append(describe_recover(op['recover_all'], name_of))
+    return lines
+
+
+def move_route_shape(spec):
+    if not isinstance(spec, dict) or not {'target', 'route'} <= set(spec) <= {'target', 'route', 'repeat', 'skippable', 'wait'}:
+        raise ValueError('move_route needs target and route (optional repeat, skippable, wait)')
+    if not isinstance(spec['target'], str) or spec['target'] not in ROUTE_TARGETS:
+        raise ValueError('move_route target must be player or this')
+    route_shape(spec['route'])
+    for key in ('repeat', 'skippable', 'wait'):
+        if key in spec:
+            boolean(spec[key], 'move_route ' + key)
+    if spec.get('repeat', False) and spec.get('wait', True):
+        raise ValueError('A repeating move route cannot be waited for (the event would never continue); use wait false')
+
+
 def op_shape(op, indent=0):
     """Pure validation of one staged command at block indent `indent`. Raises ValueError."""
     if not isinstance(op, dict):
         raise ValueError('Staged command must be an object')
     kinds = [kind for kind in KINDS if kind in op]
     if len(kinds) != 1:
-        raise ValueError('Unsupported staged command; use text, set_switch, set_variable, set_self_switch, choices, if, battle, party, common_event, gold, item, transfer or wait with exact keys')
+        raise ValueError('Unsupported staged command; use text, set_switch, set_variable, set_self_switch, choices, if, battle, party, common_event, gold, item, weapon, armor, transfer, wait, erase_event, move_route, shop or recover_all with exact keys')
     kind = kinds[0]
     if kind == 'text':
         exact_keys(op, {'text'});lines = op['text']
@@ -152,11 +298,11 @@ def op_shape(op, indent=0):
         exact_keys(op, {'gold'});amount = plain_int(op['gold'], 'gold amount', -VALUE_LIMIT, VALUE_LIMIT)
         if amount == 0:
             raise ValueError('gold amount must not be zero')
-    elif kind == 'item':
-        exact_keys(op, {'item', 'amount'});plain_int(op['item'], 'item id', 1, 2**31 - 1)
-        amount = plain_int(op['amount'], 'item amount', -99, 99)
+    elif kind in GOODS:
+        exact_keys(op, {kind, 'amount'});plain_int(op[kind], kind + ' id', 1, 2**31 - 1)
+        amount = plain_int(op['amount'], kind + ' amount', -99, 99)
         if amount == 0:
-            raise ValueError('item amount must not be zero')
+            raise ValueError(kind + ' amount must not be zero')
     elif kind == 'transfer':
         exact_keys(op, {'transfer'});move = op['transfer']
         if not isinstance(move, dict) or set(move) != {'map_id', 'x', 'y', 'direction', 'fade'}:
@@ -165,6 +311,21 @@ def op_shape(op, indent=0):
         if type(move['direction']) is not int or move['direction'] not in (0, 2, 4, 6, 8):
             raise ValueError('transfer direction must be 0, 2, 4, 6 or 8')
         plain_int(move['fade'], 'transfer fade', 0, 2)
+    elif kind == 'erase_event':
+        exact_keys(op, {'erase_event'})
+        if op['erase_event'] is not True:
+            raise ValueError('erase_event must be true')
+    elif kind == 'move_route':
+        exact_keys(op, {'move_route'});move_route_shape(op['move_route'])
+    elif kind == 'shop':
+        exact_keys(op, {'shop'});shop_shape(op['shop'])
+    elif kind == 'recover_all':
+        exact_keys(op, {'recover_all'})
+        if isinstance(op['recover_all'], str):
+            if op['recover_all'] != 'party':
+                raise ValueError('recover_all must be "party" or an actor id')
+        else:
+            plain_int(op['recover_all'], 'recover_all actor id', 1, 2**31 - 1)
     else:
         exact_keys(op, {'wait'});plain_int(op['wait'], 'wait frames', 1, 999)
 
@@ -210,8 +371,14 @@ def staged_refs(pages):
         elif 'party' in op:add('actors', op.get('actor'))
         elif 'common_event' in op:add('common_events', op['common_event'])
         elif 'item' in op:add('items', op['item'])
+        elif 'weapon' in op:add('weapons', op['weapon'])
+        elif 'armor' in op:add('armors', op['armor'])
         elif isinstance(op.get('if'), dict) and 'has_item' in op['if']:add('items', op['if']['has_item'])
         elif isinstance(op.get('transfer'), dict):add('maps', op['transfer'].get('map_id'))
+        elif isinstance(op.get('shop'), dict):
+            for good in op['shop'].get('goods') if isinstance(op['shop'].get('goods'), list) else []:
+                if isinstance(good, dict) and isinstance(good.get('type'), str) and good['type'] in GOODS:add(GOODS[good['type']][0], good.get('id'))
+        elif 'recover_all' in op:add('actors', op['recover_all'])
     return refs
 
 
@@ -221,6 +388,79 @@ def ref_fields(pages):
     if refs['maps']:
         fields |= {MAPINFOS_FIELD, MAPS_FIELD}
     return fields
+
+
+def graphic_names(pages):
+    """Distinct character sheet names used by the pages' optional graphics (tolerant of malformed input)."""
+    names = set()
+    for page in pages if isinstance(pages, list) else []:
+        graphic = page.get('graphic') if isinstance(page, dict) else None
+        if isinstance(graphic, dict) and isinstance(graphic.get('character_name'), str):
+            names.add(graphic['character_name'])
+    return names
+
+
+def chest_summary(pages):
+    """Treasure-chest pages: a page whose top-level commands give gold/items/weapons/armors and then turn self switch L ON,
+    followed by a later page conditioned on that self switch. Returns [{page, self_switch, gives, opened_page}]."""
+    chests = []
+    for number, page in enumerate(pages if isinstance(pages, list) else [], 1):
+        ops = page.get('commands') if isinstance(page, dict) else None
+        if not isinstance(ops, list):
+            continue
+        gives = [op for op in ops if isinstance(op, dict) and any(key in op for key in ('gold', 'item', 'weapon', 'armor'))
+                 and (op.get('gold', op.get('amount', 0)) or 0) > 0]
+        letters = [op['set_self_switch'] for op in ops if isinstance(op, dict) and op.get('set_self_switch') and op.get('value') is True]
+        if not gives or not letters:
+            continue
+        opened = [later for later, other in enumerate(pages, 1) if later > number and isinstance(other, dict)
+                  and isinstance(other.get('condition'), dict) and other['condition'].get('self_switch') == letters[0]]
+        if opened:
+            chests.append({'page': number, 'self_switch': letters[0], 'gives': gives, 'opened_page': opened[0]})
+    return chests
+
+
+def effective_priority(page):
+    """Priority a staged page will have: its explicit option, else Same as Characters for a page with a character graphic (v1.30), else Below
+    Characters for a graphic-less touch page (2.0: a door, trap or cutscene tile the player steps onto, never an invisible wall), else None (the
+    template's own priority is kept)."""
+    options = page.get('options') if isinstance(page.get('options'), dict) else {}
+    if 'priority' in options:
+        return options['priority']
+    if page.get('graphic'):
+        return 'same'
+    if page.get('trigger') in TOUCH_TRIGGERS:
+        return 'below'
+    return None
+
+
+def monster_summary(pages):
+    """Map-monster pages: a page with a character graphic and a touch trigger whose top-level commands start a battle. `disappears` is true
+    when the win branch turns a self switch ON that a later page tests. Returns [{page, troop, trigger, move, disappears, self_switch}]."""
+    monsters = []
+    for number, page in enumerate(pages if isinstance(pages, list) else [], 1):
+        ops = page.get('commands') if isinstance(page, dict) else None
+        if not isinstance(ops, list) or not page.get('graphic') or page.get('trigger') not in TOUCH_TRIGGERS:
+            continue
+        battles = [op for op in ops if isinstance(op, dict) and isinstance(op.get('battle'), int)]
+        if not battles:
+            continue
+        battle = battles[0]
+        letters = [op['set_self_switch'] for op in iter_ops(battle.get('win')) if op.get('set_self_switch') and op.get('value') is True]
+        gone = [later for later, other in enumerate(pages, 1) if later > number and isinstance(other, dict) and letters
+                and isinstance(other.get('condition'), dict) and other['condition'].get('self_switch') == letters[0]]
+        move = page.get('move') if isinstance(page.get('move'), dict) else {}
+        monsters.append({'page': number, 'troop': battle['battle'], 'trigger': page['trigger'], 'move': move.get('type', 'fixed'),
+                         'disappears': bool(gone), 'self_switch': letters[0] if gone else None})
+    return monsters
+
+
+def describe_monster(monster, troop_name=None):
+    """One human sentence for a monster_summary row."""
+    kind = {'random': 'Wandering', 'approach': 'Chasing', 'custom': 'Patrolling'}.get(monster['move'], 'Stationary')
+    troop = f'troop {monster["troop"]}' + (f' "{troop_name}"' if troop_name else '')
+    end = f'disappears after victory (self switch {monster["self_switch"]})' if monster['disappears'] else 'stays after victory (the battle can start again)'
+    return f'{kind} monster, battles {troop} on touch, {end}.'
 
 
 def staged_ids(pages, switch_count, variable_count):
@@ -286,16 +526,46 @@ def plain_rows(commands, indent=0):
         elif 'common_event' in op:rows.append((117, indent, [op['common_event']]))
         elif 'gold' in op:rows.append((125, indent, [0 if op['gold'] > 0 else 1, 0, abs(op['gold'])]))
         elif 'item' in op:rows.append((126, indent, [op['item'], 0 if op['amount'] > 0 else 1, 0, abs(op['amount'])]))
+        # Weapons / armors: [id, gain 0 / lose 1, constant operand 0, amount, include_equipment]; the editor stores include_equipment false.
+        elif 'weapon' in op:rows.append((127, indent, [op['weapon'], 0 if op['amount'] > 0 else 1, 0, abs(op['amount']), False]))
+        elif 'armor' in op:rows.append((128, indent, [op['armor'], 0 if op['amount'] > 0 else 1, 0, abs(op['amount']), False]))
         elif 'transfer' in op:
             move = op['transfer'];rows.append((201, indent, [0, move['map_id'], move['x'], move['y'], move['direction'], move['fade']]))
+        elif 'erase_event' in op:rows.append((214, indent, []))
+        # Shop Processing: 302 [type, id, price_type, price, purchase_only] then one 605 [type, id, price_type, price] per further good, all at the block indent
+        # (the code of vxace_map_shops.goods_rows, shared with add_shop). Game_Interpreter#command_302 reads the following 605 rows regardless of indent.
+        elif 'shop' in op:
+            from vxace_map_shops import goods_rows
+            rows += [(code, indent, params) for code, params in goods_rows(op['shop']['goods'], op['shop']['purchase_only'])]
+        # Recover All: 314 [designation 0 = fixed, actor id or 0 for the entire party] (Game_Interpreter#iterate_actor_var); variable designation is not offered.
+        elif 'recover_all' in op:rows.append((314, indent, [0, 0 if op['recover_all'] == 'party' else op['recover_all']]))
+        # Set Move Route: 205 [character id, RPG::MoveRoute] then one 505 [RPG::MoveCommand] per route command (the terminator has no line).
+        elif 'move_route' in op:
+            spec = op['move_route'];route = plain_route(spec['route'], spec.get('repeat', False), spec.get('skippable', False), spec.get('wait', True))
+            rows.append((205, indent, [ROUTE_TARGETS[spec['target']], route]));rows += [(505, indent, [command]) for command in route.list[:-1]]
         else:rows.append((230, indent, [op['wait']]))
     return rows
+
+
+def native_move_command(command):
+    """A fresh RPG::MoveCommand (ivars code, parameters)."""
+    from vxace_python_mutator import RubyObject
+    return RubyObject('RPG::MoveCommand', {'@code': command.code, '@parameters': list(command.parameters)})
+
+
+def native_route(route):
+    """A fresh RPG::MoveRoute (ivars repeat, skippable, wait, list; commands code, parameters) from a PlainMoveRoute, as the editor saves it."""
+    from vxace_python_mutator import RubyObject
+    return RubyObject('RPG::MoveRoute', {'@repeat': route.repeat, '@skippable': route.skippable, '@wait': route.wait,
+                                         '@list': [native_move_command(c) for c in route.list]})
 
 
 def native_rows(commands, make_command, literal):
     """RPG::EventCommand objects (including the final terminator); strings (also inside the choices array) become native strings."""
     def convert(value):
         if isinstance(value, str):return literal(value)
+        if isinstance(value, PlainMoveRoute):return native_route(value)
+        if isinstance(value, PlainMoveCommand):return native_move_command(value)
         if isinstance(value, list):return [convert(v) for v in value]
         return value
     rows = [make_command(code, indent, convert(params)) for code, indent, params in plain_rows(commands)]
@@ -433,7 +703,8 @@ def bind_fields(pages, snapshot):
 def index_check(read, pages):
     """Impact-time existence check of the referenced ids against the fresh index (`read(relative)` returns indexed JSON)."""
     refs = staged_refs(pages)
-    files = {'troops': 'database/troops.json', 'actors': 'database/actors.json', 'common_events': 'database/common-events.json', 'items': 'database/items.json'}
+    files = {'troops': 'database/troops.json', 'actors': 'database/actors.json', 'common_events': 'database/common-events.json', 'items': 'database/items.json',
+             'weapons': 'database/weapons.json', 'armors': 'database/armors.json'}
     for kind, relative in files.items():
         if not refs[kind]:
             continue

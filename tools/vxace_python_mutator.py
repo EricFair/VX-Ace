@@ -166,7 +166,33 @@ def apply(root, spec, *, source_path=None):
             source_file=unlinked(source_path)
             if source_file.parent.name!='Data' or not re.fullmatch(r'Map\d{3,6}\.rvdata2',source_file.name):raise ValueError('Staged event native path is unsupported')
             project=source_file.parent.parent
+            from vxace_staged_commands import graphic_names
+            if graphic_names(mutation['pages']):
+                context=spec.get('context')
+                if not isinstance(context,dict) or set(context)!={'rtp'} or (context['rtp'] is not None and not isinstance(context['rtp'],str)):
+                    raise ValueError('Staged page graphics need the explicit asset context')
+                rtp=context['rtp']
+        if mutation.get('action')=='append_blank_event' and 'donor_map_id' in mutation:
+            from vxace_index_query import unlinked
+            if source_path is None:raise ValueError('A donor on another map needs an actual native project source path')
+            source_file=unlinked(source_path)
+            if source_file.parent.name!='Data' or not re.fullmatch(r'Map\d{3,6}\.rvdata2',source_file.name):raise ValueError('Donor-map event native path is unsupported')
+            project=source_file.parent.parent
         append_dialogue_event(root,mutation,project,rtp)
+    elif kind == 'system_fields':
+        from vxace_index_query import unlinked
+        from vxace_system_fields import apply as set_system_fields
+        if source_path is None:raise ValueError('System field edits require an actual native project source path')
+        source_file=unlinked(source_path)
+        if source_file.parent.name!='Data' or source_file.name!='System.rvdata2':raise ValueError('System field edit native path is unsupported')
+        set_system_fields(root,mutation,source_file.parent.parent)
+    elif kind == 'common_event':
+        from vxace_index_query import unlinked
+        from vxace_common_event_append import apply as append_common_event
+        if source_path is None:raise ValueError('Common event appends require an actual native project source path')
+        source_file=unlinked(source_path)
+        if source_file.parent.name!='Data' or source_file.name!='CommonEvents.rvdata2':raise ValueError('Common event append native path is unsupported')
+        append_common_event(root,mutation,source_file.parent.parent)
     elif kind == 'map_tile':
         from vxace_index_query import unlinked
         if source_path is None:raise ValueError('Upper tile writes require an actual native project source path')
@@ -220,7 +246,7 @@ def apply(root, spec, *, source_path=None):
         region_apply(root, mutation)
     elif kind == 'database_entry':
         from vxace_database_entries import apply as entry_apply
-        entry_apply(root, mutation, source_path)
+        entry_apply(root, mutation, source_path, spec.get('context'))
     elif kind == "database":
         owner = object_by_id(root, mutation["id"])
         field = mutation["field"]

@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.20.0
+Version: 2.0.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -25,7 +25,7 @@ Resolve every tool/reference path relative to this skill directory, not the user
 5. Treat third-party scripts as dependencies with license/order/method/save implications.
 6. Do not redistribute proprietary default scripts or user project data.
 7. Never plan/stage from a stale project index.
-8. Never write directly to the user's working VX Ace project. Mutation is copy-only; the single exception is `vxace_adopt.py apply/undo`, run only after the user reviewed the staged copy and its adopt plan and explicitly confirmed it, with the editor closed.
+8. Never write directly to the user's working VX Ace project. Mutation is copy-only, with two exceptions, both with the editor closed: `vxace_adopt.py apply/undo`, run only after the user reviewed the staged copy and its adopt plan and explicitly confirmed it; and `vxace_recipe.py run --in-place --confirm-in-place NAME`, only on a project the user explicitly designated as the working/test project (one verified backup first, rollback on failure, one-command undo).
 9. Never mutate a targeted `.rvdata2` unless its immediate no-op round trip is byte-identical.
 10. On a real project, run the project validator before first mutation-capable use with the current mutator version; a failed file means project-wide mutation readiness is refused.
 11. Never downgrade validator/round-trip failures to warnings merely to permit mutation.
@@ -68,36 +68,69 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 
 ## Task routing
 
+### Understand a project
+
+| Need | Read / run |
+|---|---|
+| First look at a project | `python tools/vxace_master.py PROJECT --output NEW_REPORT_DIR` ([VXACE_MASTER.md](VXACE_MASTER.md)) |
+| One-page overview: maps, events with command summaries, scripts, switch/variable use | `tools/vxace_overview.py` (also written into every index as `overview.md`) |
+| Fresh index for project work | `python tools/vxace_project_reader.py PROJECT` ([references/project-reader.md](references/project-reader.md), [project-codex.md](references/project-codex.md)) |
+| Mutation readiness | `python tools/vxace_project_validator.py PROJECT --output DIR` ([references/project-validation.md](references/project-validation.md)) |
+| Balance: formulas, stat/EXP curves, matchups, troops vs the party, economy | `tools/vxace_balance.py` ([references/balance-analysis.md](references/balance-analysis.md)) |
+| Notetags vs the scripts that parse them | `tools/vxace_notetags.py` ([references/notetag-registry.md](references/notetag-registry.md)) |
+| Dialogue/database text export, message lint | `tools/vxace_text_export.py` ([references/text-export.md](references/text-export.md)) |
+| Find text/commands | [references/search-and-event-diagnostics.md](references/search-and-event-diagnostics.md), [regex-search.md](references/regex-search.md) |
+| Map tiles, passage, regions | [references/map-tile-audit.md](references/map-tile-audit.md) |
+| Which RTP sprite is what; pick a sprite by description | [references/rtp-sprites.md](references/rtp-sprites.md) |
+| Missing graphics/audio, RTP (auto-detected) | [references/asset-audit.md](references/asset-audit.md), [image-header-layouts.md](references/image-header-layouts.md) |
+| Schema drift vs a baseline | [references/schema-comparison.md](references/schema-comparison.md) |
+| MCP read-only adapter | [references/mcp-read-only.md](references/mcp-read-only.md) |
+
+### Design and debug
+
 | Need | Read / run |
 |---|---|
 | Design a feature natively | [workflows/native-feature-design.md](workflows/native-feature-design.md), [patterns/](patterns/README.md) |
 | Write RGSS3 | [references/rgss3-compatibility.md](references/rgss3-compatibility.md), [templates/rgss3/](templates/rgss3/README.md) |
-| First look at a project | `python tools/vxace_master.py PROJECT --output NEW_REPORT_DIR` ([VXACE_MASTER.md](VXACE_MASTER.md)) |
-| Fresh index for project work | `python tools/vxace_project_reader.py PROJECT` ([references/project-reader.md](references/project-reader.md), [project-codex.md](references/project-codex.md)) |
-| Mutation readiness | `python tools/vxace_project_validator.py PROJECT --output DIR` ([references/project-validation.md](references/project-validation.md)) |
-| Balance: formulas, stat/EXP curves, matchups, economy | `tools/vxace_balance.py` ([references/balance-analysis.md](references/balance-analysis.md)) |
-| Notetags vs the scripts that parse them | `tools/vxace_notetags.py` ([references/notetag-registry.md](references/notetag-registry.md)) |
-| Dialogue/database text export, message lint | `tools/vxace_text_export.py` ([references/text-export.md](references/text-export.md)) |
-| Re-import proofread/translated text | `tools/vxace_text_import.py` -> normal plan/copy chain ([references/text-import.md](references/text-import.md)) |
-| Run a staged copy in the real engine (boot, map, scripted input, crash capture) | `tools/vxace_smoke.py stage/run` ([references/smoke-testing.md](references/smoke-testing.md)) |
-| Find text/commands | [references/search-and-event-diagnostics.md](references/search-and-event-diagnostics.md), [regex-search.md](references/regex-search.md) |
 | Event bugs, autoruns, common-event cycles | [workflows/event-debugging.md](workflows/event-debugging.md), [references/common-event-cycles.md](references/common-event-cycles.md) |
 | Script conflicts / load order | [workflows/script-compatibility-review.md](workflows/script-compatibility-review.md) |
-| Map tiles, passage, regions | [references/map-tile-audit.md](references/map-tile-audit.md) |
-| Missing graphics/audio, RTP | [references/asset-audit.md](references/asset-audit.md), [image-header-layouts.md](references/image-header-layouts.md) |
-| Schema drift vs a baseline | [references/schema-comparison.md](references/schema-comparison.md) |
 | Impact before a patch, diff after | [workflows/impact-review.md](workflows/impact-review.md) |
-| Plan and stage a change | [workflows/project-aware-patching.md](workflows/project-aware-patching.md), [workflows/verified-copy-mutation.md](workflows/verified-copy-mutation.md) |
-| Chain several guarded additions (enemy -> skill -> troop -> encounter -> smoke run) | `tools/vxace_recipe.py run` ([references/recipes.md](references/recipes.md)) |
-| Quest NPC whose dialogue changes with progress | [references/staged-events.md](references/staged-events.md), [patterns/quest-state-machine.md](patterns/quest-state-machine.md) |
-| Sell items/weapons/armors from a shopkeeper | [references/map-shops.md](references/map-shops.md) |
-| Make a troop appear as a random encounter | [references/map-encounters.md](references/map-encounters.md) |
-| Add an enemy, skill, state, weapon, armor, usable item, troop or class skill learning; set item/skill effects or equipment/state features | [references/database-append.md](references/database-append.md) |
-| Ship a build | [workflows/release-checklist.md](workflows/release-checklist.md) |
+
+### Build content (recipes)
+
+Recipes are the normal way to add content: one JSON file of steps, dry-run with `plan`, then `run`. See [Building loop](#building-loop) and [references/recipes.md](references/recipes.md).
+
+| Need | Recipe step / reference |
+|---|---|
+| Chain several guarded additions (enemy -> skill -> troop -> encounter -> smoke run) | `tools/vxace_recipe.py plan` (dry-run, no copies, balance of new troops), then `run` (copy chain with cleanup, or `--in-place` on a designated working project) |
+| Add an actor, class, enemy, skill, state, weapon, armor, usable item, troop or class skill learning; set item/skill effects or equipment/state features | `append_entry`, `append_learning` ([references/database-append.md](references/database-append.md)) |
+| Change an existing database entry (stats, features, effects, actions, drops, members, actor graphics) | `set_fields` (`features_add` / `features_remove` for single rows) |
+| Enemy AI (skill conditions, ratings), drops, weaknesses | [references/database-append.md](references/database-append.md) |
+| Starting party, start position, title, currency, menu terms, switch/variable names | `set_system_fields` ([references/system-fields.md](references/system-fields.md)) |
+| New area (map) with a door in and out, optionally locked until a condition | `add_area` ([references/new-areas.md](references/new-areas.md)) |
+| Readable test/starter map: border walls, paths, landmarks (stock RTP presets), reachability warnings | `layout` on `append_blank_map` / `add_area` ([references/map-layouts.md](references/map-layouts.md)) |
+| Map monster that battles on touch (chasing by default; fixed or wandering; one-time or respawning) | `add_monster` ([references/monsters.md](references/monsters.md)) |
+| Quest NPC whose dialogue changes with progress | `append_staged_event` ([references/staged-events.md](references/staged-events.md), [patterns/quest-state-machine.md](patterns/quest-state-machine.md)) |
+| Visible shopkeeper (optionally closed until a condition), inn that heals, one-time map intro | `add_shopkeeper`, `add_inn`, `add_intro` ([references/shops-and-inns.md](references/shops-and-inns.md), [references/intros.md](references/intros.md)) |
+| Treasure chest | `add_treasure_chest` ([references/treasure-chests.md](references/treasure-chests.md)) |
+| Wandering or pacing NPC, step-on trap or cutscene trigger | `add_touch_trigger` ([references/touch-triggers.md](references/touch-triggers.md)) |
+| Shared logic: inn, reward chain, timer (common event) | `append_common_event` ([references/common-event-append.md](references/common-event-append.md)) |
+| Sell items/weapons/armors from an existing event | `add_shop` ([references/map-shops.md](references/map-shops.md)) |
+| Make a troop appear as a random encounter | `append_encounter` ([references/map-encounters.md](references/map-encounters.md)) |
+| Re-import proofread/translated text | `text_import`, or `tools/vxace_text_import.py` -> normal plan/copy chain ([references/text-import.md](references/text-import.md)) |
+| Plan and stage a single hand-written change | [workflows/project-aware-patching.md](workflows/project-aware-patching.md), [workflows/verified-copy-mutation.md](workflows/verified-copy-mutation.md) |
+
+### Test and ship
+
+| Need | Read / run |
+|---|---|
+| Quick in-engine feature check: start map, expect events, step, talk, auto-battle, screenshot | `vxace_smoke.py check` ([references/smoke-testing.md](references/smoke-testing.md)) |
+| Run a staged copy in the real engine (boot, map, scripted input, crash capture) | `tools/vxace_smoke.py stage/run` ([references/smoke-testing.md](references/smoke-testing.md)) |
 | Bring a reviewed copy into the real project, or undo it | `tools/vxace_adopt.py` ([references/adopt.md](references/adopt.md)) |
+| Undo an in-place recipe run | `vxace_recipe.py undo --record R --confirm-in-place NAME` ([references/recipes.md](references/recipes.md)) |
 | Day-to-day working loop | [workflows/daily-game-dev.md](workflows/daily-game-dev.md) |
 | First playable slice | [workflows/playable-slice-verification.md](workflows/playable-slice-verification.md), [examples/oakfall](examples/oakfall/README.md) |
-| MCP read-only adapter | [references/mcp-read-only.md](references/mcp-read-only.md) |
+| Ship a build | [workflows/release-checklist.md](workflows/release-checklist.md) |
 
 Use source truth in this order: extraction status -> Codex routing -> exact `analysis/*.json` evidence -> script compatibility report/source/order -> normalized database/map JSON. Codex classifications are heuristic; never invent stage meanings the project does not evidence.
 
@@ -113,6 +146,24 @@ Use source truth in this order: extraction status -> Codex routing -> exact `ana
 
 The project validator does not replace the copy patcher's per-target gates.
 
+## Building loop
+
+The loop that worked for whole small games (one 42-step recipe built 4 maps, 13 events, 2 shops, 5 enemies and troops, a class and an actor):
+
+1. **Look first.** Index the project and read its `overview.md`. Pick sprites from [references/rtp-sprites.md](references/rtp-sprites.md) (`"graphic": {"sprite": "grey rats"}`) instead of opening sheets by eye.
+2. **Write one recipe** for the whole change. Use `{"from_step": k}` instead of guessing ids, macros (`add_monster`, `add_area`, `add_shopkeeper`, ...) instead of hand-built events, and a `layout` preset for every new map.
+3. **`plan` before `run`.** The dry-run predicts every id and warning without copying anything, and estimates each new troop against the starting party. Fix balance here, not by feel after the run.
+4. **Run.** On a project the user designated as the working/test project, use `--in-place` (one backup, no copies, an undo record). Otherwise run the copy chain (intermediate copies are cleaned up) and adopt the reviewed final copy.
+5. **Check only what changed** with one `vxace_smoke.py check` per feature: start map, expected events, a few steps, auto-battle, a screenshot. The report gives the frame rate. Leave the game window visible: RGSS pauses while its window is not active.
+6. **Tune with `set_fields`** steps in a small recipe, not by re-running the whole recipe.
+
+Defaults that come from playtests:
+- An event with a character graphic is priority same: it collides and is bumped into.
+- A graphic-less touch page is priority below: it is stepped onto, never an invisible wall.
+- `add_monster` chases at speed 3 and starts its battle on touch.
+
+Keep all scratch output (work folders, plans, smoke results) under one folder the user chose, never in the project or at a drive root.
+
 ## Enabled copy operations
 
 Only these structural writes exist; everything else is proposal/manual-only. Each needs the explicit Python copy backend, exact native fingerprints and mandatory postgates — read its reference first.
@@ -122,12 +173,15 @@ Only these structural writes exist; everything else is proposal/manual-only. Eac
 - existing-map region cells ([map-region-editing.md](references/map-region-editing.md));
 - one random-encounter entry on an existing map ([map-encounters.md](references/map-encounters.md));
 - append-only inert key items ([key-item-append.md](references/key-item-append.md));
-- one template-clone append of an enemy, skill, state, weapon, armor, usable item or troop (blank battle page, 1..8 existing enemies) with whitelisted overrides (including bounded effects for skills/items and features for weapons/armors/states), or one class skill learning ([database-append.md](references/database-append.md));
+- one template-clone append of an actor, class, enemy, skill, state, weapon, armor, usable item or troop (blank battle page, 1..8 existing enemies) with whitelisted overrides (including bounded effects for skills/items, features for weapons/armors/states/enemies, and enemy action patterns and drop items), or one class skill learning ([database-append.md](references/database-append.md));
 - one script slot before canonical Main ([script-slot-insertion.md](references/script-slot-insertion.md), [script-byte-fidelity.md](references/script-byte-fidelity.md));
 - ordinary upper-layer B-E tile painting ([upper-tile-painting.md](references/upper-tile-painting.md));
 - one blank event from an existing schema donor, or one stationary literal-dialogue event, per map ([map-event-creation.md](references/map-event-creation.md)) with optional character graphic ([character-event-graphics.md](references/character-event-graphics.md));
 - one-time constant gold/item map rewards ([one-time-event-rewards.md](references/one-time-event-rewards.md));
-- one quest-stage event: 1..8 action-button pages with switch/variable/self-switch conditions, literal dialogue and Control Switch/Variable/Self Switch commands, no branches ([staged-events.md](references/staged-events.md));
+- one quest-stage event: 1..8 action-button pages with switch/variable/self-switch conditions, literal dialogue, Control Switch/Variable/Self Switch, nested choices, if/else and battles, plus party, common event, gold, item, weapon, armor, transfer, wait, Set Move Route, Erase Event, Shop Processing and Recover All commands, optional page graphics, touch/parallel triggers and autonomous movement ([staged-events.md](references/staged-events.md));
+- one existing-entry edit (`edit_database_entry`, recipe `set_fields`) with the same whitelisted overrides as appends, including `features_add`/`features_remove` and hash-bound actor graphics; full feature replacements that drop HIT are refused;
+- one System fields edit: starting party, start position, game title, currency unit, menu terms and switch/variable names ([system-fields.md](references/system-fields.md));
+- one common event (call-only or switch-gated parallel process with a wait) using the same command language ([common-event-append.md](references/common-event-append.md));
 - Shop Processing (1..32 existing goods) on a blank or single-dialogue action-button event ([map-shops.md](references/map-shops.md));
 - blank-map append ([blank-map-append.md](references/blank-map-append.md)) and one direct transfer to it ([direct-map-transfer.md](references/direct-map-transfer.md));
 - one map display name ([map-display-names.md](references/map-display-names.md)) or editor/tree name ([map-tree-names.md](references/map-tree-names.md)).

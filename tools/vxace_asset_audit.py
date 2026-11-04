@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 from vxace_index_query import Index, execute, unlinked
 from vxace_image_headers import read_header, layout_checks
+from vxace_rtp import find_rtp, add_arguments as rtp_arguments
 
 VERSION = '0.17.0'
 MAX_ASSET_FILES = 20000
@@ -235,19 +236,28 @@ def review_required(result):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('index'); ap.add_argument('--project', required=True); ap.add_argument('--output', required=True)
-    ap.add_argument('--rtp', help='Explicit unpacked RTP root containing Graphics/ and Audio/')
+    ap.add_argument('--rtp', help='Explicit unpacked RTP root containing Graphics/ and Audio/ (default: auto-detected: Game.ini RTP= name in the registry, Steam libraries, Enterbrain common files)')
+    rtp_arguments(ap)
     ap.add_argument('--image-headers', action='store_true', help='Observe PNG IHDR dimensions and default character/tileset layouts; not full decoding')
     a = ap.parse_args(argv)
     try:
         project = unlinked(a.project)
         if project.is_file() and project.suffix.lower() == '.rvproj2':
             project = project.parent
+        found = find_rtp(project, a.rtp, not a.no_rtp_autodetect)
+        if a.rtp is None and found['path'] is not None:
+            detected = unlinked(found['path']).resolve()
+            if detected == project.resolve() or project.resolve() in detected.parents or detected in project.resolve().parents:
+                found = {'path': None, 'source': 'detected-but-inside-project', 'tried': found['tried']}
+            else:
+                a.rtp = str(detected)
         if a.rtp is not None:
             rtp = unlinked(a.rtp); output = unlinked(a.output)
             if output == rtp or rtp in output.parents:
                 raise ValueError('Asset reports must be outside the read-only RTP root')
         result = execute(a.index, project, a.output, lambda data: audit(data, project, a.rtp, a.image_headers), 'asset-audit')
         lines = ['# VX Ace asset references', '', 'Presence/casing and requested PNG header/layout checks. See JSON for evidence.', '',
+                 'RTP: ' + (str(a.rtp) + ' (' + found['source'] + ')' if a.rtp else 'none (' + found['source'] + ')'), '',
                  'Counts: ' + json.dumps(result['counts']),
                  'Image headers: ' + json.dumps(result['image_counts']),
                  'Layouts: ' + json.dumps(result['layout_counts']), '']
@@ -257,7 +267,7 @@ def main(argv=None):
         lines += ['', '## Limits', ''] + ['- ' + x for x in LIMITS]
         (Path(a.output) / 'asset-audit.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
         review = review_required(result)
-        print(json.dumps({'status': 'review_required' if review else 'ok', 'counts': result['counts'],
+        print(json.dumps({'status': 'review_required' if review else 'ok', 'rtp': a.rtp, 'rtp_source': found['source'], 'counts': result['counts'],
                           'image_counts': result['image_counts'], 'layout_counts': result['layout_counts']}))
         return 3 if review else 0
     except Exception as exc:

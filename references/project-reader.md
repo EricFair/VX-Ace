@@ -95,3 +95,17 @@ The reader now preserves additional Control Variables / Conditional Branch opera
 For direct map transfers, the index preserves `source_map_id` separately from the destination `map_id`. This avoids treating the destination map as the event context that initiated the transfer.
 
 Unless `--no-codex` is supplied, ingestion now runs `tools/vxace_codex.py` after deterministic indexes and compatibility analysis are generated.
+
+## Project overview (v1.34)
+
+After the Codex, the reader runs `tools/vxace_overview.py` and writes **`overview.md`** and **`overview.json`** into the index folder (`project.json` `overview_generation`; skipped with `--no-codex`). Run it alone with `python tools/vxace_overview.py INDEX [--output DIR]`. It reads only the index and never touches the project. The master report links to `index/overview.md`.
+
+The page has:
+
+- **Maps:** id, name, display name, size, tileset (id and name), event count; the start map, position and party from System.
+- **Events per map:** every event (name, x,y) and each page with trigger, priority, graphic, condition and a one-line summary of the first six actions: text first line, choices, conditionals, switch/variable/self-switch writes, gold/item changes, transfer target, battle troop name, shop goods, common event calls, scripts. Up to 60 events per map in the markdown (the JSON keeps all).
+- **Custom scripts:** the scripts between `▼ Materials` and `▼ Main Process` that have source, with their classes/modules and `alias`/`alias_method` lines.
+- **Switches and variables in use:** id, name, which maps/events/common events/troops read and write them (from the reader's reference index).
+- **Database:** entries per table and the entries above the stock slot counts of an unedited new project (actors 10, classes 10, skills 126, items 16, weapons 60, armors 60, enemies 30, troops 30, states 25, animations 110, tilesets 4, common events 10; read from the editor's `project2.zip`), so the author's additions stand out.
+
+Limits: the summaries are not a behaviour proof; script-set switches/variables are invisible; a project from another template lists its own entries as new.

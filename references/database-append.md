@@ -1,4 +1,4 @@
-# Guarded native template-clone database append — v1.9 (troops: v1.11, items/effects/features: v1.20)
+# Guarded native template-clone database append — v1.9 (troops: v1.11, items/effects/features: v1.20, actors: v1.23, enemy actions/drops/features: v1.27, classes: v1.28, features_add/remove, HIT guard and in-place edit: v1.32)
 
 Use this narrow operation to add one new entry to an existing native Enemies, Items, Skills, States, Weapons or Armors database by cloning a reviewed template entry and overriding a small whitelist of fields. It does not delete, reuse or reorder entries, create other database objects, wire the new entry into troops/shops/drops/classes, or edit saves. Key items keep the separate [key-item append](key-item-append.md) (`append_key_item`), which is unchanged; usable items (potions, ethers, stat boosters) are cloned from a normal item template with `append_database_entry` on `items` (see [Items, effects and features](#items-effects-and-features-v120)).
 
@@ -10,7 +10,7 @@ Build a fresh external Project Reader index, then capture native array/template 
 python tools/vxace_database_entries.py PROJECT_INDEX --project PROJECT --table enemies --template-id 1 --output NEW_EXTERNAL_SNAPSHOT
 ```
 
-`--table` is one of `enemies`, `items`, `skills`, `states`, `weapons`, `armors`, `troops` (default `items`). `--table items --template-id N` is the template-clone snapshot described below; `--template-item N` remains the spelling for the unchanged key-item append snapshot only. The read-only snapshot requires byte-identical native decoding, matching indexed/native identities and a supported template schema. It returns the array and isolated template Marshal SHA-256 values, the next ID, the template's field values, a summary of everything the clone would inherit (features, effects, drop items, actions, damage, removal settings) and the overrides supported for that table. A full supported array (999 entries) reports `append_slot_supported: false`. A snapshot is not mutation permission.
+`--table` is one of `actors`, `classes`, `enemies`, `items`, `skills`, `states`, `weapons`, `armors`, `troops` (default `items`). `--table classes --template-id N` is the class-clone snapshot ([Classes](#classes-v128)); `--table classes --class-id N` stays the separate skill-learning snapshot ([Class skill learnings](#class-skill-learnings-v114)). `--table items --template-id N` is the template-clone snapshot described below; `--template-item N` remains the spelling for the unchanged key-item append snapshot only. The read-only snapshot requires byte-identical native decoding, matching indexed/native identities and a supported template schema. It returns the array and isolated template Marshal SHA-256 values, the next ID, the template's field values, a summary of everything the clone would inherit (features, effects, drop items, actions, damage, removal settings) and the overrides supported for that table. A full supported array (999 entries) reports `append_slot_supported: false`. A snapshot is not mutation permission.
 
 Use the captured hashes and the exact next ID in a reviewed spec (one change per transaction):
 
@@ -53,13 +53,14 @@ The array must have nil slot zero and every existing entry must be the table's n
 | Table | Overridable fields and ranges |
 | --- | --- |
 | all | `name` 1..100 chars, no control codes (required) |
-| enemies | `params` 8 ints (mhp 1..999999, mmp 0..9999, others 1..999), `exp` 0..9999999, `gold` 0..9999999, `battler_name` <=100 chars, no path separators/control characters, `battler_hue` 0..360 |
+| enemies | `params` 8 ints (mhp 1..999999, mmp 0..9999, others 1..999), `exp` 0..9999999, `gold` 0..9999999, `battler_name` <=100 chars, no path separators/control characters, `battler_hue` 0..360, `actions`, `drop_items` and `features` (v1.27, [Enemies](#enemies-v127)) |
 | skills | `description` <=1000 (newlines allowed), `icon_index` 0..4095, `mp_cost` 0..9999, `tp_cost` 0..100, `message1`/`message2` <=200, `damage_formula` (must parse in the `vxace_balance.py` formula parser; opaque formulas refuse), `damage_variance` 0..100, `damage_critical` bool, `effects` (v1.20, below) |
 | items (v1.20) | `description` <=1000, `icon_index` 0..4095, `price` 0..9999999, `consumable` bool, the same `damage_formula`/`damage_variance`/`damage_critical` as skills, `effects` (below) |
 | states | `icon_index`, `message1`..`message4` <=200, `priority` 0..100, `min_turns`/`max_turns` 0..9999 with min <= max (checked against the final merged values), `auto_removal_timing` 0..2, `features` (v1.20, below) |
 | weapons, armors | `description`, `icon_index`, `price` 0..9999999, `params` 8 ints each -999..999, `features` (v1.20, below) |
+| classes (v1.28) | `description`, `icon_index`, `exp_params` (4 ints), `params` (curves per parameter or `copy_from_class`), `learnings` (0..64), `features` (v1.20 codes plus 41, 42, 51..55, 61, 62; see [Classes](#classes-v128)) |
 
-Everything else is refused: unknown keys, wrong types (booleans are not integers), out-of-range values, `note`, `id`, drops/actions, scope, occasion, element, hit type, item type and so on (`effects` and `features` are accepted only where the table above lists them, as whole-list replacements). Editor-saved `RPG::Enemy` entries have no `description`/`icon_index` fields (they keep legacy `hit`/`eva` integers instead), and `RPG::State` entries have no `description` (they keep a legacy `release_by_damage` boolean); the template schemas follow that real data. Damage overrides require a template with a native damage type; a no-damage template refuses them.
+Everything else is refused: unknown keys, wrong types (booleans are not integers), out-of-range values, `note`, `id`, scope, occasion, element, hit type, item type and so on (`effects`, `features`, and for enemies `actions` and `drop_items`, are accepted only where the tables list them, as whole-list replacements). Editor-saved `RPG::Enemy` entries have no `description`/`icon_index` fields (they keep legacy `hit`/`eva` integers instead), and `RPG::State` entries have no `description` (they keep a legacy `release_by_damage` boolean); the template schemas follow that real data. Damage overrides require a template with a native damage type; a no-damage template refuses them.
 
 ## Inherited versus overridden
 
@@ -136,6 +137,43 @@ Codes 11 and 12 need a nonzero rate or flat amount. Parameters are 0 Max HP, 1 M
 | 31 | Attack element | element id | 0 | `expected_system_sha256` |
 | 32 | Attack state | state id | chance 0.0..1.0 | `expected_states_sha256` |
 | 43 | Add skill | skill id | 0 | `expected_skills_sha256` |
+
+### `features_add`, `features_remove` and the HIT guard (v1.32)
+
+`features` replaces the **whole** list. A clone of an Ogre that only wants a fire weakness used to lose every other row of the template, including the ex-parameter rows (HIT, critical): an enemy without a HIT row has hit rate 0 and misses every physical attack. Three keys now make single-row changes safe. They exist for every table that has `features` (actors, classes, enemies, states, weapons, armors).
+
+| Key | Meaning |
+| --- | --- |
+| `features_add` | 1..16 rows (classes 1..32) in the usual `{"code", "data_id", "value"}` form, appended to the **template's own list**. A row with the same `(code, data_id)` as an existing row replaces that row's value in place. |
+| `features_remove` | 1..16 `[code, data_id]` pairs dropped from the template list. A pair the entry does not have is refused. May be combined with `features_add`. |
+| `allow_drop_hit` | `true` only. Allows a `features` replacement (or a `features_remove`) that leaves the battler without HIT, see below. |
+
+`features` cannot be combined with `features_add` / `features_remove` (use one style per entry). Rows are validated exactly like `features` rows (codes, bounds, Float/Integer encoding, class-only codes, referenced-database hashes: `features_add` rows need `expected_states_sha256` / `expected_skills_sha256` / `expected_system_sha256` like `features` rows, `features_remove` needs none). Rows that are kept stay the **same native objects** as in the template (their Integer or Float value and ivar order are untouched); only new rows are built, as `RPG::BaseItem::Feature` with Float values (Integer `0` for codes 31/43).
+
+Order of operations: `features_remove` first, then each `features_add` row. An added row whose `(code, data_id)` matches exactly one existing row replaces that row's value at its position; otherwise it is appended at the end. Rows carry no other uniqueness rule, so the choices for repeated pairs are: an add that matches **several** existing rows is refused as ambiguous (remove them first), a pair listed twice in `features_add` or `features_remove` is refused, and removing and re-adding the same pair appends the new row at the end. No code in the engine data repeats a `(code, data_id)` on purpose, so this does not come up in practice.
+
+**HIT guard.** In Project3 every enemy and every class carries `(22, 0)` (ex-parameter HIT, usually `0.95`; the Ogre has `0.75`), and **no actor has any features at all**: an actor gets HIT from its class. The guard follows that:
+
+- a `features` replacement of an **enemy** or a **class** that has no `[22, 0]` row is refused with an explanation, as is a `features_remove` of `[22, 0]`;
+- for an **actor**, a `features` replacement without a HIT row (or a `features_remove` of `[22, 0]`) is refused only if the actor's class (`class_id` of the override, else the template's) does not carry HIT either; this needs `expected_classes_sha256` and is skipped when the replacement has a HIT row or `allow_drop_hit` is true;
+- `allow_drop_hit: true` overrides the refusal. `features_add` never trips the guard; weapons, armors and states are not guarded.
+
+**Dropped rows.** A full `features` replacement of an enemy or class that drops any template row produces a warning in the impact report and the recipe `plan` that lists the dropped rows in plain words, for example `The features override replaces the whole template list and drops 2 template rows: Ex-parameter: Evasion +5 points; Attack element: element 1. Use features_add / features_remove to change single rows and keep the rest.`
+
+Example, a fire weakness on a cloned Ogre without losing its HIT / critical rows:
+
+```json
+{"type": "append_entry", "table": "enemies", "template_id": 23,
+ "overrides": {"name": "Cave Troll", "features_add": [{"code": 11, "data_id": 3, "value": 2.0}]}}
+```
+
+Drop a state resist and make the clone less accurate (HIT replaced in place):
+
+```json
+{"overrides": {"name": "Blind Troll", "features_remove": [[14, 4]], "features_add": [{"code": 22, "data_id": 0, "value": 0.6}]}}
+```
+
+The same keys work in [`set_fields`](recipes.md#editing-an-existing-entry-set_fields-v132) on an existing entry.
 
 ### Referenced-database hashes
 
@@ -242,6 +280,255 @@ A four-step recipe on an editor-created project appended a Venom state (clone of
 - **Poison Dagger:** once equipped, it reported Venom in `atk_states` at rate 0.5 and element 1 in `atk_elements`. HIT was exactly +0.05 above the unarmed value. Element 3 rate was multiplied by 0.8.
 
 The template Hand Ax showed the editor's own encoding: attack element saved as Integer `0`, ex-param as Float. An existing save loaded with the new entries. Code 43 (add skill) has no editor-saved sample in that project, so its Integer `0` value is inferred.
+
+## Actors (v1.23)
+
+`--table actors` clones an `RPG::Actor` (`Data/Actors.rvdata2`) at the next id. Editor-saved actors (Project3) have the ivars `name, face_index, character_index, initial_level, face_name, class_id, character_name, id, features, note, equips, nickname, description, max_level`, and actors created in the editor also carry a trailing `icon_index`; both shapes are admitted and the clone keeps its template's shape. `equips` must be five native integers. The note is forced empty and `icon_index` is not overridable.
+
+Whitelisted `overrides` (`name` is required):
+
+| Override | Rule |
+|---|---|
+| `name` / `nickname` | literal, 1..100 / 0..100 characters |
+| `description` | literal, up to 1000 characters (newline allowed) |
+| `class_id` | an existing class; needs `expected_classes_sha256` |
+| `initial_level`, `max_level` | integers 1..99 with `initial_level <= max_level` (inherited values count) |
+| `character_name` + `character_index`, `face_name` + `face_index` | each pair together; the sheet is bound by `expected_assets` (below) |
+| `equips` | five slots: weapon, shield, head, body, accessory; each `0` or an existing item (see below) |
+| `features` | the v1.20 features override, allowed for actors too |
+
+Equips follow `Game_Actor#init_equips`: slot `i` is equip type `i`, so slot 0 takes a weapon and slots 1..4 take an armor whose `etype_id` equals the slot (weapons need `expected_weapons_sha256`, armors `expected_armors_sha256`). Because `Game_Actor#refresh` silently releases an item the class cannot equip, every item must also be allowed by the class and actor features (weapon type feature 51, armor type feature 52) and its equip type must not be sealed (feature 54); any equipped item therefore also needs `expected_classes_sha256`. A class or actor with dual wield (feature 55 value 1) keeps a weapon in slot 1; that case is unsupported, so `equips[1]` must be `0` there (Project3's Rick is the one such actor). Equips are placed directly in the actor slots; the party inventory is not changed.
+
+Hashes: only the needed `expected_*` hashes may appear (classes for `class_id` or any equip, weapons for slot 0, armors for slots 1..4, system/states/skills for the features codes that reference them, as in v1.20).
+
+### Graphics
+
+`character_name` and `face_name` are bare basenames. Character sheets use the v1.22 rules (eight-character grid, `!`/`$` single characters, index 0..7). Face sheets must be a 4x2 grid of 96x96 faces (exactly 384x192, index 0..7); a `$`-prefixed face is treated as a single face (index 0, at least 96x96). The default engine (`Window_Base#draw_face`) has no `$` rule, so that is a conservative restriction. The snapshot binds the sheets:
+
+```powershell
+python tools/vxace_database_entries.py INDEX --project PROJECT --table actors --template-id 1 --character-sheet Actor4 --face-sheet Actor4 [--rtp RTP] --output SNAP
+```
+
+and the spec carries `"expected_assets": {"characters": {"Actor4": {...}}, "faces": {"Actor4": {...}}}` (only the groups in use; the values are the full bindings from the snapshot). Sheets are looked up in the project first, then in the explicit `--rtp` (also pass `--rtp` to the copy patcher and the recipe runner). The binding records origin, path, SHA-256 and layout and is re-checked on the copy.
+
+### Example
+
+A new party member cloned from actor 1, with a class, level and starting weapon:
+
+```json
+{"action": "append_database_entry", "template_id": 1, "new_id": 11,
+ "expected_array_sha256": "...", "expected_template_sha256": "...",
+ "expected_classes_sha256": "...", "expected_weapons_sha256": "...",
+ "expected_assets": {"characters": {"Actor4": {"...": "..."}}, "faces": {"Actor4": {"...": "..."}}},
+ "overrides": {"name": "Lena", "nickname": "Spark", "class_id": 1, "initial_level": 3, "max_level": 50,
+               "character_name": "Actor4", "character_index": 3, "face_name": "Actor4", "face_index": 3, "equips": [61, 0, 0, 0, 0]}}
+```
+
+In a recipe, equips accept `{"from_step": k}` pointing at a weapons (slot 0) or armors (slots 1..4) append, and the new actor is usable in a staged or common event `party` command and in `set_system_fields.party_members` through `{"from_step": k}`.
+
+Impact: class, levels, equips by name, graphics and warnings (the actor is in no party until `set_system_fields` or a Change Party Member command adds it; an unsuitable inherited equip is released). The copy backend does not advance `System.version_id`. See [system-fields.md](system-fields.md) to make the actor the starting party.
+
+## Enemies (v1.27)
+
+Three more whole-list overrides for `enemies`: `actions`, `drop_items` and `features`. They are full replacements; an enemy that does not override a list keeps the template's list as before. Every id is checked against the database read from the same snapshot or copy and bound by its own hash.
+
+### `actions` (1..16 entries)
+
+Each entry is `{"skill_id": id, "rating": 1..9, "condition": COND}` and is saved as an `RPG::Enemy::Action`. `COND` has exactly one key:
+
+| Condition | `condition_type` | `condition_param1` | `condition_param2` | Hash needed |
+| --- | --- | --- | --- | --- |
+| `{"always": true}` | 0 | 0 | 0 | none |
+| `{"turn": [a, b]}` (each 0..999) | 1 | a | b | none |
+| `{"hp_percent": [min, max]}` (0..100, min <= max) | 2 | min / 100 | max / 100 | none |
+| `{"mp_percent": [min, max]}` (0..100, min <= max) | 3 | min / 100 | max / 100 | none |
+| `{"state": state_id}` | 4 | state id | 0 | `expected_states_sha256` |
+| `{"party_level_at_least": n}` (1..99) | 5 | n | 0 | none |
+| `{"switch": switch_id}` (1..len-1 of System switches) | 6 | switch id | 0 | `expected_system_sha256` |
+
+`skill_id` always needs `expected_skills_sha256`. The codes and parameter meanings follow `Game_Enemy#conditions_met_*`: a turn condition is true on turn `n` when `b` is 0 and `n == a`, otherwise when `n > 0 && n >= a && n % b == a % b` (so `[0, 3]` is every 3rd turn and `[1, 3]` is turns 1, 4, 7). HP and MP conditions compare the enemy's 0.0..1.0 rate with the two params. The editor saves a percent as a Float (an HP 0-80% condition is `param1` Integer `0`, `param2` Float `0.8`), so a percent is written as a Float rate and an exact `0` is left as Integer `0`; every other param is an Integer. The built object copies its class and ivar order from an existing action (the template's, else any enemy's) and falls back to the editor's order (`condition_type, rating, skill_id, condition_param2, condition_param1`).
+
+The enemy picks among the actions whose condition holds and whose skill is usable, weighted by rating; an action whose rating is 3 or more below the highest rating among the usable ones is never picked. The list is refused when every action can never be selected (`turn [0, 0]`: the turn count is already 1 when actions are made). The impact warns, in plain words, when:
+
+- every action has a condition that can be false (the enemy has no usable action on some turns);
+- an action is 3 or more ratings below the highest rating;
+- a skill's `scope` is 7..10 (allies only; as an enemy action it can only affect other enemies of the troop) or 0 (no target);
+- a skill costs more MP than the enemy's final MP parameter (it can never be used), or costs TP (enemies start with under 25 TP and gain it only from damage).
+
+### `drop_items` (exactly 3 slots)
+
+Each slot is `{"kind": "none"|"item"|"weapon"|"armor", "id": id, "denominator": 1..1000}` and is saved as an `RPG::Enemy::DropItem`. Kind `item`, `weapon` and `armor` are `kind` 1, 2 and 3 and bind `expected_items_sha256`, `expected_weapons_sha256` and `expected_armors_sha256`; the id must exist in that array. The drop chance is `1/denominator` times the troop's drop rate (`Game_Enemy#make_drop_items`).
+
+An empty slot is `{"kind": "none", "id": 0, "denominator": 1}` and is written the way the editor saves it: `kind` 0, `data_id` 1, `denominator` 1 (every empty slot in editor-saved data has `data_id` 1; the engine ignores the id when `kind` is 0). A `none` slot needs no hash. The ivar order is copied the same way (editor order `denominator, kind, data_id`).
+
+### `features` for enemies
+
+The v1.20 `features` override is now allowed for enemies, with the same codes, bounds, hashes and encodings (see [features override](#features-override-weapons-armors-and-states)). Since v1.32 a replacement must keep the HIT row (`allow_drop_hit` overrides) and `features_add` / `features_remove` change single rows, see [features_add, features_remove and the HIT guard](#features_add-features_remove-and-the-hit-guard-v132). Element rates (code 11, `expected_system_sha256`) and state rates and resists (codes 13, 14, `expected_states_sha256`) matter most. Editor-saved enemies keep the default attack element feature (code 31) as value `100`; the override writes the usual Integer `0` for it, which the engine ignores.
+
+### Hashes, snapshot and impact
+
+Only the hashes the overrides need may appear in the spec; extra, stale or missing ones refuse. The enemies snapshot now reports `states_sha256`, `skills_sha256`, `items_sha256`, `weapons_sha256`, `armors_sha256` and `system_sha256` (when those files can be read) and their counts. Templates whose actions carry Float condition params (any HP/MP condition) are admitted. The impact report adds `new_actions`, `new_drop_items` and `action_warnings`, for example `Fire (rating 5) when HP 0–50%` and `Slot 1: Potion 1/3`, and the recipe `plan` prints them as `Action:` and `Drop:` lines with the same warnings.
+
+### Examples
+
+A slime that always uses Attack and a new "Acid" skill when HP is 50% or lower, and drops a Potion one time in three. As a recipe (the Acid skill is created first and referenced with `from_step`):
+
+```json
+{"title": "Acid slime", "steps": [
+  {"type": "append_entry", "table": "skills", "template_id": 1, "overrides": {"name": "Acid", "mp_cost": 0, "damage_formula": "a.atk * 3 - b.def * 2"}},
+  {"type": "append_entry", "table": "enemies", "template_id": 1, "overrides": {
+    "name": "Acid Slime",
+    "actions": [
+      {"skill_id": 1, "rating": 5, "condition": {"always": true}},
+      {"skill_id": {"from_step": 1}, "rating": 5, "condition": {"hp_percent": [0, 50]}}],
+    "drop_items": [
+      {"kind": "item", "id": 1, "denominator": 3},
+      {"kind": "none", "id": 0, "denominator": 1},
+      {"kind": "none", "id": 0, "denominator": 1}]}}]}
+```
+
+The same enemy as a direct spec (the snapshot supplies the hashes):
+
+```json
+{"action": "append_database_entry", "template_id": 1, "new_id": 31,
+ "expected_array_sha256": "...", "expected_template_sha256": "...",
+ "expected_skills_sha256": "...", "expected_items_sha256": "...",
+ "overrides": {"name": "Acid Slime",
+   "actions": [{"skill_id": 1, "rating": 5, "condition": {"always": true}},
+               {"skill_id": 127, "rating": 5, "condition": {"hp_percent": [0, 50]}}],
+   "drop_items": [{"kind": "item", "id": 1, "denominator": 3}, {"kind": "none", "id": 0, "denominator": 1}, {"kind": "none", "id": 0, "denominator": 1}]}}
+```
+
+A boss that attacks, casts a skill every 3rd turn and is weak to fire (element 3 here; use your System's element ids):
+
+```json
+{"action": "append_database_entry", "template_id": 2, "new_id": 32,
+ "expected_array_sha256": "...", "expected_template_sha256": "...",
+ "expected_skills_sha256": "...", "expected_system_sha256": "...",
+ "overrides": {"name": "Flame Warden", "params": [900, 50, 20, 10, 12, 12, 14, 10],
+   "actions": [{"skill_id": 1, "rating": 5, "condition": {"always": true}},
+               {"skill_id": 8, "rating": 6, "condition": {"turn": [0, 3]}}],
+   "features": [{"code": 11, "data_id": 3, "value": 2.0}, {"code": 11, "data_id": 4, "value": 0.5}]}}
+```
+
+`turn [0, 3]` fires on turns 3, 6, 9 and so on; on those turns the rating 6 action is picked more often than the rating 5 attack. Limits: nothing adds the enemy to a troop (use a troops append or a recipe), condition `state` and `switch` ids are static, actions are replaced as a whole list, and skills the enemy cannot afford only produce a warning.
+
+### Native evidence (v1.27)
+
+A three-step recipe ran on the editor-saved Project3 and added three entries:
+- an Acid skill, cloned from skill 1;
+- an Acid Slime, with Attack rated 5 always, Acid via ``from_step`` rated 9 at HP 0–50%, slot 1 dropping a Potion at 1/1, and element 3 rate 2.0;
+- a Turn Boss, with skill 2 rated 9 on ``turn [0, 3]``.
+
+The dry-run's ids matched the run (skill 127, enemies 34 and 35), and the original was unchanged. In a real-engine smoke run with the party flagged in battle (battle-only skills are unusable otherwise):
+- At full HP only Attack was valid.
+- At 40% HP Acid became valid, and 30 action draws all picked Acid, because the rating gap of 4 drops the lower action.
+- ``make_drop_items`` returned exactly one Potion.
+- ``element_rate(3)`` was 2.0.
+- The boss's skill 2 was valid on turns 3 and 6 only, across turns 0–6.
+
+An existing save loaded with the new enemies.
+
+## Classes (v1.28)
+
+`--table classes --template-id N` clones an `RPG::Class` (`Data/Classes.rvdata2`) at the next id. The admitted shape is the editor-saved one: ivars `name, learnings, id, features, note, params, exp_params, icon_index, description`, where `params` is a `Table` (dim 2, `xsize` 8 parameters, `ysize` 100 levels, `zsize` 1, 800 cells, addressed `[param, level]`, i.e. cell `param + 8 * level`) whose level-0 column is the editor's unused all-zero column, `exp_params` is four Integers and every learning is an exact `RPG::Class::Learning` (`level, skill_id, note`). The note is forced empty and `id` is the next id. Unless overridden, the clone keeps the template's `exp_params`, `params` Table, `learnings` and `features` (as fresh objects, never aliased). `icon_index` and `description` exist in the saved data (always `0` and empty, because the editor has no field for them) and may be overridden like in the other tables.
+
+Whitelisted `overrides` (`name` is required):
+
+| Override | Rule |
+|---|---|
+| `name` | literal, 1..100 characters |
+| `description`, `icon_index` | literal up to 1000 characters; integer 0..4095 |
+| `exp_params` | `[basis, extra, acc_a, acc_b]`, integers: basis 10..50, extra 0..40, acc_a 10..50, acc_b 10..50 (the EXP curve dialog sliders; `acc_b` is a divisor in `exp_for_level`, so never 0) |
+| `params` | per-parameter growth, or `{"copy_from_class": id}` (below) |
+| `learnings` | full replacement list of 0..64 `{"skill_id": id, "level": 1..99}`; written sorted by level (stable); a skill may appear once |
+| `features` | the v1.20 features override, up to 32 rows, with the class codes below |
+
+### `params`
+
+An object with exactly the eight keys `mhp, mmp, atk, def, mat, mdf, agi, luk`, each `{"lv1": n, "lv99": m}` with an optional `"curve": "linear" | "early" | "late"` (default `linear`). Bounds follow the engine caps (`Game_Actor#param_max`: Max HP 9999, Max MP 9999, everything else 999): `mhp` 1..9999, `mmp` 0..9999, the others 1..999, and `lv99` must not be below `lv1` (growth never decreases). The table is generated by a fixed formula in exact integer arithmetic: with `k = level - 1` and `D = 98`, the share of the rise made by that level is `f = k/D` (linear), `1 - ((D-k)/D)^2` (early: fast first, then flattening) or `(k/D)^2` (late: slow first, steep at the end); the value is `lv1 + round_half_up((lv99 - lv1) * f)`. Levels 1 and 99 equal the endpoints exactly, every value is an Integer and the curve never decreases. Level 0 is written as eight zeros, exactly like the editor. Leaving `params` out keeps the template's curves; `{"copy_from_class": id}` copies the Table of another existing class (it needs `expected_classes_sha256`, which equals the array hash; in a recipe the id may be a `from_step` reference to a class appended earlier). It cannot be combined with curves.
+
+### `learnings`
+
+A full replacement. Each entry is exactly `{"skill_id": id, "level": 1..99}`; `skill_id` must exist in the fingerprinted Skills (`expected_skills_sha256`; the hash appears only when the list is non-empty). Each is saved as an `RPG::Class::Learning` with the ivar order `level, skill_id, note` and an empty-string note. The saved order is by level (stable for ties). The stock editor data is not sorted at all and the engine (`Game_Actor#init_skills`, `#level_up`) does not depend on the order, so sorting is a choice made for readability. In a recipe `skill_id` may be `{"from_step": k}` for a skills append. To add a single learning to an existing class use the separate [`append_class_learning`](#class-skill-learnings-v114).
+
+### Class feature codes
+
+`features` accepts the v1.20 codes (11, 13, 14, 21, 22, 23, 31, 32, 43) and, for classes only:
+
+| Code | Meaning | `data_id` | `value` |
+|---|---|---|---|
+| 41 / 42 | add / seal skill type | skill type 1..n of the fingerprinted System (`skill_types`) | `0` |
+| 51 | equip weapon type | weapon type 1..n (`weapon_types`) | `0` |
+| 52 | equip armor type | armor type 1..n (`armor_types`) | `0` |
+| 53 / 54 | fix / seal equip type | equip type 0..4 (weapon, shield, head, body, accessory) | `0` |
+| 55 | slot type (dual wield) | `1` | `0` |
+| 61 | action plus | `0` | 0.0..1.0 (chance of an extra action) |
+| 62 | special flag | 0 auto battle, 1 guard, 2 substitute, 3 preserve TP | `0` |
+
+Code 63 (collapse type) is refused for classes. The types are checked against the fingerprinted System (`expected_system_sha256`, needed exactly when a 41, 42, 51 or 52 row is present, together with the other hashes of v1.20). In the editor-saved classes of Project3 every class has rows 41 (add skill type), 51 and 52, and the data-only rows are stored as `RPG::BaseItem::Feature` with a Float `0.0` value (the default rows `41/1` and `52/1` of a stock class hold Integer `0`; the clone writes Float `0.0` for every row it builds, which the engine treats identically). Rows 53 and 61 do not occur in the stock class data; they use the same layout.
+
+### Hashes, snapshot and impact
+
+The snapshot reports `array_sha256`/`classes_sha256` (identical), `system_sha256`, `skills_sha256`, `states_sha256`, the type counts, the parameter and EXP ranges, and a summary of what the template would pass on: EXP curve, curve points at levels 1, 50 and 99 per parameter, learnings and features. Only the hashes the overrides reference may appear in the spec (skills: non-empty learnings or feature 43; system: feature 41/42/51/52 (or 11/31); states: 13/14/32; classes: `copy_from_class`).
+
+The impact report states the changes in plain terms: the EXP curve, each parameter as `Max HP: 400 at Lv1 -> 6000 at Lv99 (linear)`, learnings as `Spark @ Lv3, Fire @ Lv8`, and the new features by type name. It warns when the resulting class has no weapon type (51: its actors can equip no weapon) or no skill type (41: no skill menu), and when a `features` override drops one of the template's 41, 51 or 52 features. The new class is used by no actor until an actor is appended with, or changed to, its `class_id`; the actor append (v1.23) then checks the actor's equips against the new class' features, read from the same snapshot or copy.
+
+### Example
+
+A "Battle Mage" cloned from class 1 with magic-heavy curves, learning a new Spark skill at level 3 and Fire (skill 4) at level 8, wearing the template's weapon types and armors plus the Magic armor type (armor type 2), and an actor using it:
+
+```json
+{"title": "Battle Mage", "steps": [
+  {"type": "append_entry", "table": "skills", "template_id": 1, "overrides": {"name": "Spark", "mp_cost": 4}},
+  {"type": "append_entry", "table": "classes", "template_id": 1, "overrides": {
+    "name": "Battle Mage",
+    "exp_params": [35, 20, 30, 30],
+    "params": {"mhp": {"lv1": 400, "lv99": 6000}, "mmp": {"lv1": 80, "lv99": 1500, "curve": "early"},
+               "atk": {"lv1": 10, "lv99": 100}, "def": {"lv1": 10, "lv99": 120},
+               "mat": {"lv1": 20, "lv99": 200, "curve": "late"}, "mdf": {"lv1": 10, "lv99": 120},
+               "agi": {"lv1": 15, "lv99": 150}, "luk": {"lv1": 15, "lv99": 150}},
+    "learnings": [{"skill_id": {"from_step": 1}, "level": 3}, {"skill_id": 4, "level": 8}],
+    "features": [{"code": 23, "data_id": 0, "value": 1.0}, {"code": 22, "data_id": 0, "value": 0.95},
+                 {"code": 22, "data_id": 1, "value": 0.05}, {"code": 22, "data_id": 2, "value": 0.04},
+                 {"code": 41, "data_id": 1, "value": 0}, {"code": 41, "data_id": 2, "value": 0},
+                 {"code": 51, "data_id": 1, "value": 0},
+                 {"code": 52, "data_id": 1, "value": 0}, {"code": 52, "data_id": 3, "value": 0}, {"code": 52, "data_id": 4, "value": 0},
+                 {"code": 52, "data_id": 5, "value": 0}, {"code": 52, "data_id": 6, "value": 0}, {"code": 52, "data_id": 2, "value": 0}]}},
+  {"type": "append_entry", "table": "actors", "template_id": 1, "overrides": {"name": "Mia", "class_id": {"from_step": 2}, "initial_level": 3}}
+]}
+```
+
+The same overrides as a raw `append_database_entry` mutation need `expected_skills_sha256` (learnings) and `expected_system_sha256` (types) next to the array and template hashes. Verify the class in the editor (EXP curve, parameter curves, skills to learn, features) and level a test actor in a battle test.
+
+### Limits
+
+- Admitted templates are exactly the editor shape above; anything else (a non-8x100 Table, a non-zero level 0, extra ivars, odd learnings) is refused.
+- The EXP curve bounds are the dialog's slider ranges as specified for this tool; they are not stored in the data, so only the stock values (30/20/30/30) are confirmed in the files.
+- Learnings are a full replacement (no merge with the template's list) and are checked against the fingerprinted Skills only; they are not checked against actor initial levels or scripts that change classes.
+- A class is not an actor: nothing changes for existing actors or saves until an actor uses the class; an old save keeps its actors on their current class.
+- Skill and equip types are not cross-checked against weapons and armors that exist; the impact warnings cover the common mistakes (no weapon type, no skill type, dropped template features).
+- Up to 32 feature rows and 64 learnings per class here; a clone whose template already holds more keeps that list when the list is not overridden.
+
+### Native evidence (v1.28)
+
+The test ran on the editor-saved Project3 as a four-step recipe:
+1. a new Spark skill (id 127);
+2. a Battle Mage class cloned from class 1, with EXP params `[25, 15, 20, 20]`, all eight curves given (MMP ``early``, MAT ``late``), and learnings Spark (``from_step``) @3 and skill 2 @8;
+3. a Mira actor whose ``class_id`` came via ``from_step``;
+4. ``set_system_fields`` with party ``[Mira]``.
+
+The dry-run's ids matched the run, and the original project was unchanged.
+
+In a real-engine smoke run:
+- Mira led the party as a Battle Mage.
+- At level 1, ``param_base`` was MHP 400 and MAT 30; the displayed MAT was 35 because of the template actor's Talisman.
+- She learned nothing at level 1, skill 127 at level 3, and skill 2 at level 8.
+- At level 99 the base values were exactly MHP 6000, MMP 1500 and MAT 700.
+- At level 50 the early MMP curve was past half its rise and the late MAT curve below half.
+- ``exp_params`` read back as set.
+
+An existing save loaded with the new class and kept its own party. The project already had a different skill named "Spark" (id 61), so check ids, not names, when a project reuses names.
 
 ## Troops (v1.11)
 

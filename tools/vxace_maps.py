@@ -14,6 +14,18 @@ MAP_FIELDS={'autoplay_bgm','autoplay_bgs','battleback1_name','battleback2_name',
             'parallax_name','parallax_show','parallax_sx','parallax_sy','scroll_type','specify_battleback','tileset_id','width'}
 FIELDS={'action','template_map_id','new_id','name','expected_infos_sha256','expected_template_sha256',
         'expected_inventory_sha256','expected_tilesets_sha256'}
+# v1.26 optional parameters: a size / tileset / parent override and a bounded A5 floor fill (see references/new-areas.md).
+# v1.31 adds `layout` (fresh-map mode only): a bordered room with paths and landmarks (see references/map-layouts.md).
+OPTIONS=('width','height','tileset_id','parent_id','fill_floor','layout')
+FRESH_KEYS={'width','height','tileset_id'}   # all three given: fresh-map mode, the template supplies only the native schema (no content is copied)
+MIN_WIDTH,MIN_HEIGHT,MAX_SIZE=17,13,500
+A5_BASE,A5_COUNT=1536,128   # Tilemap A5: tile ids 1536..1663 are plain (non-autotile) tiles of the A5 sheet (tileset_names[4])
+
+
+def schema_ok(mutation,with_template=True):
+    """Exact required fields plus any subset of the optional ones."""
+    required=FIELDS if with_template else FIELDS-{'template_map_id'}
+    return isinstance(mutation,dict) and required<=set(mutation)<=required|set(OPTIONS)
 
 
 def digest(value):
@@ -71,6 +83,34 @@ def inert_map(root):
     return root
 
 
+def schema_map(root):
+    """Fresh-map mode: the template only has to be a native RPG::Map with the exact field set, a valid Table and native audio objects.
+    None of its content (events, encounters, regions, notes, audio names, backgrounds) is copied, so none of it is judged."""
+    from vxace_python_mutator import RubyString
+    exact(root,'RPG::Map',MAP_FIELDS);table_for(root);events_for(root)
+    for field,cls in (('bgm','RPG::BGM'),('bgs','RPG::BGS')):
+        exact(root.get(field),cls,{'name','volume','pitch'})
+    for field in ('battleback1_name','battleback2_name','display_name','note','parallax_name'):
+        if not isinstance(root.get(field),RubyString):raise ValueError('Native string field required in the schema template')
+    return root
+
+
+def fresh_map(native,plan):
+    """The editor's new-map defaults (RPG::Map#initialize; confirmed on the editor-created default map of project2.zip) in the template's object shapes."""
+    from vxace_python_mutator import marshal_rb,RubyString,RubyHash
+    new_map=marshal_rb.load(marshal_rb.dump(native))
+    empty=lambda:RubyString(b'',{})
+    for field,value in (('encounter_list',[]),('encounter_step',30),('autoplay_bgm',False),('autoplay_bgs',False),('specify_battleback',False),('disable_dashing',False),
+                        ('scroll_type',0),('parallax_loop_x',False),('parallax_loop_y',False),('parallax_show',False),('parallax_sx',0),('parallax_sy',0)):
+        new_map.set(field,value)
+    for field in ('display_name','note','parallax_name','battleback1_name','battleback2_name'):new_map.set(field,empty())
+    for field,volume in (('bgm',100),('bgs',80)):
+        audio=new_map.get(field);audio.set('name',empty());audio.set('volume',volume);audio.set('pitch',100)
+    new_map.set('events',RubyHash([],None))
+    new_map.set('width',plan['width']);new_map.set('height',plan['height']);new_map.set('tileset_id',plan['tileset_id']);new_map.set('data',new_table(plan))
+    return new_map
+
+
 def inventory(project):
     directory=unlinked(Path(project)/'Data');rows=[];total=0
     for file in sorted(directory.iterdir()):
@@ -87,7 +127,7 @@ def inventory(project):
     return rows,hashlib.sha256(json.dumps(rows,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 
-def context(infos,project,template_id):
+def context(infos,project,template_id,fresh=False):
     from vxace_python_mutator import load,RubyObject
     project=unlinked(project)
     actual,_=load(unlinked(project/'Data/MapInfos.rvdata2'))
@@ -96,11 +136,13 @@ def context(infos,project,template_id):
     if template_id not in lookup:raise ValueError('Template map missing from native map tree')
     rows,inventory_hash=inventory(project)
     if {row['id'] for row in rows}!=set(lookup):raise ValueError('Native map files/tree disagree; orphan files or missing maps refuse append')
-    native,raw=load(unlinked(project/f'Data/Map{template_id:03d}.rvdata2'));inert_map(native)
+    native,raw=load(unlinked(project/f'Data/Map{template_id:03d}.rvdata2'));schema_map(native) if fresh else inert_map(native)
     from vxace_python_mutator import marshal_rb
     if marshal_rb.dump(native)!=raw:raise ValueError('Template map must round-trip byte-identically immediately before use')
     tilesets,_=load(unlinked(project/'Data/Tilesets.rvdata2'));identifier=native.get('tileset_id')
-    if not isinstance(tilesets,list) or identifier>=len(tilesets) or not isinstance(tilesets[identifier],RubyObject) or tilesets[identifier].cls!='RPG::Tileset' or type(tilesets[identifier].get('id')) is not int or tilesets[identifier].get('id')!=identifier:
+    if fresh:
+        if not isinstance(tilesets,list):raise ValueError('Native Tilesets array required')
+    elif not isinstance(tilesets,list) or identifier>=len(tilesets) or not isinstance(tilesets[identifier],RubyObject) or tilesets[identifier].cls!='RPG::Tileset' or type(tilesets[identifier].get('id')) is not int or tilesets[identifier].get('id')!=identifier:
         raise ValueError('Actual native template tileset is missing or ambiguous')
     return native,{'expected_infos_sha256':digest(infos),'expected_template_sha256':digest(native),
                    'expected_inventory_sha256':inventory_hash,'expected_tilesets_sha256':digest(tilesets)},lookup
@@ -118,36 +160,105 @@ def plain(value,depth=0):
     raise ValueError('Opaque native snapshot value')
 
 
-def snapshot(data,project,template_id):
+def passable_floor(names,flags,index):
+    """Refuse unless the tileset's A5 sheet is set and the chosen plain A5 tile blocks no direction (same flag rules as tile_passage)."""
+    from vxace_map_audit import tile_passage
+    if type(index) is not int or not 0<=index<A5_COUNT:raise ValueError(f'fill_floor must be an A5 tile index 0..{A5_COUNT-1}')
+    if not names[4]:raise ValueError('fill_floor needs a tileset whose A5 sheet (tileset_names[4]) is set')
+    tile_id=A5_BASE+index
+    if not all(tile_passage([tile_id],flags).values()):raise ValueError('fill_floor tile is not passable in every direction (or carries the star flag) in this tileset')
+    return tile_id
+
+
+def resolve_options(native,lookup,project,options):
+    """Validated v1.26 options of a blank map: size, tileset, parent and floor fill. Returns the resolved plan of the new map."""
+    from vxace_python_mutator import RubyObject
+    from vxace_upper_tiles import tileset
+    if not isinstance(options,dict) or set(options)-set(OPTIONS):raise ValueError('Unknown blank-map option')
+    width=integer(options['width'],'new map width',MIN_WIDTH,MAX_SIZE) if 'width' in options else native.get('width')
+    height=integer(options['height'],'new map height',MIN_HEIGHT,MAX_SIZE) if 'height' in options else native.get('height')
+    tileset_id=integer(options['tileset_id'],'new map tileset ID',1,999) if 'tileset_id' in options else native.get('tileset_id')
+    parent=integer(options.get('parent_id',0),'parent map ID',0,999)
+    if parent and parent not in lookup:raise ValueError('Parent map is missing from the native map tree')
+    tile_id=None;layout=None
+    fresh=FRESH_KEYS<=set(options)
+    if 'layout' in options:
+        if not fresh:raise ValueError('layout needs fresh-map mode: give width, height and tileset_id')
+        if 'fill_floor' in options:raise ValueError('layout replaces fill_floor: give one of them')
+    if 'fill_floor' in options or 'layout' in options or tileset_id!=native.get('tileset_id'):   # the template's own tileset was already bound by context()
+        selected,names,flags=tileset(RubyObject('RPG::Map',{'@tileset_id':tileset_id}),project)
+        if 'fill_floor' in options:tile_id=passable_floor(names,flags,options['fill_floor'])
+        if 'layout' in options:
+            from vxace_map_layout import resolve
+            name=selected.get('name');name=name.data.decode('utf-8','strict') if hasattr(name,'data') else ''
+            layout=resolve(options['layout'],name,names,flags,width,height);tile_id=layout['floor_tile_id']
+    rebuilt=fresh or tile_id is not None or (width,height,tileset_id)!=(native.get('width'),native.get('height'),native.get('tileset_id'))
+    return {'fresh':fresh,'width':width,'height':height,'tileset_id':tileset_id,'parent_id':parent,'fill_floor':options.get('fill_floor'),'floor_tile_id':tile_id,'tiles_rebuilt':rebuilt,'layout':layout}
+
+
+def new_table(plan):
+    """Empty Table (all layers, regions and shadows 0); layer 0 is filled with the single A5 floor tile when requested, or painted by a layout."""
+    from vxace_python_mutator import Table
+    cells=plan['width']*plan['height']
+    if plan.get('layout'):
+        from vxace_map_layout import paint
+        return Table(plan['width'],plan['height'],4,dim=3,data=paint(plan['layout'],plan['width'],plan['height']))
+    return Table(plan['width'],plan['height'],4,dim=3,data=[plan['floor_tile_id'] or 0]*cells+[0]*(cells*3))
+
+
+def layout_summary(plan):
+    if not plan.get('layout'):return {}
+    from vxace_map_layout import summary
+    return {'layout':summary(plan['layout'])}
+
+
+def native_snapshot(project,template_id,options=None):
+    """Snapshot fields computed from the native files only (also used by the recipe dry-run on its in-memory state)."""
     from vxace_python_mutator import load
     infos,_=load(unlinked(Path(project)/'Data/MapInfos.rvdata2'))
-    native,guard,lookup=context(infos,project,template_id)
-    for relative,expected in [('database/map-infos.json',plain(infos)),(f'maps/map-{template_id:03d}.json',plain(native))]:
-        if json.dumps(data.json(relative),sort_keys=True)!=json.dumps(expected,sort_keys=True):raise ValueError('Native/indexed map template or tree disagree')
-    return {'version':VERSION,'template_map_id':template_id,'new_id':integer(max(lookup)+1,'next map ID',1,999),'width':native.get('width'),'height':native.get('height'),
+    native,guard,lookup=context(infos,project,template_id,FRESH_KEYS<=set(options or {}))
+    plan=resolve_options(native,lookup,project,options or {})
+    return infos,native,{'version':VERSION,'template_map_id':template_id,'new_id':integer(max(lookup)+1,'next map ID',1,999),'width':native.get('width'),'height':native.get('height'),
             'template_inert_event_count':len(native.get('events').pairs),'guard':guard,
-            'limits':['One new root-level map at the next maximum ID; inherited dimensions/tiles and no events.',
+            'planned_map':{**{key:plan[key] for key in ('fresh','width','height','tileset_id','parent_id','fill_floor','floor_tile_id','tiles_rebuilt')},**layout_summary(plan)},
+            'limits':['One new map at the next maximum ID, root-level unless a parent is given; inherited dimensions/tiles/tileset unless a size, tileset or floor fill is given, and no events.',
+                      'A size, tileset change or fill_floor rebuilds the tile Table: every layer, region and shadow is 0 except an optional single passable A5 tile on layer 0 (a walkable placeholder room, not level design).',
+                      'A layout (fresh-map mode only) paints plain A5 tiles on layer 0 (floor, a one-tile wall border, L-shaped paths) and optional B-E landmark tiles on upper layer 1 or 2; no autotiles, no room shapes beyond a bordered rectangle, not level design.',
                       'Template must have no logic, conditions, encounters, notes or automatic backgrounds/audio; only inert placeholder events can be discarded in the new map.',
-                      'No resize, delete, reparent, ID reuse, transfer authoring or general map writer; review dynamic map/save consumers.']}
+                      'No delete, reparent, ID reuse, transfer authoring in this operation or general map writer; review dynamic map/save consumers.']}
+
+
+def snapshot(data,project,template_id,options=None):
+    infos,native,result=native_snapshot(project,template_id,options)
+    if json.dumps(data.json('database/map-infos.json'),sort_keys=True)!=json.dumps(plain(infos),sort_keys=True):raise ValueError('Native/indexed map template or tree disagree')
+    indexed=data.json(f'maps/map-{template_id:03d}.json')
+    if result['planned_map']['fresh']:   # only the schema is used: size and tileset of the indexed template must agree, its content is never copied
+        if not isinstance(indexed,dict) or any(indexed.get(key)!=native.get(key) for key in ('width','height','tileset_id')):raise ValueError('Native/indexed map template or tree disagree')
+    elif json.dumps(indexed,sort_keys=True)!=json.dumps(plain(native),sort_keys=True):raise ValueError('Native/indexed map template or tree disagree')
+    return result
 
 
 def candidates(infos,mutation,project):
     from vxace_python_mutator import marshal_rb,RubyString,RubyHash
-    if not isinstance(mutation,dict) or set(mutation)!=FIELDS or mutation.get('action')!='append_blank_map':raise ValueError('Exact append_blank_map schema required')
-    native,guard,lookup=context(infos,project,mutation['template_map_id'])
+    if not schema_ok(mutation) or mutation.get('action')!='append_blank_map':raise ValueError('Exact append_blank_map schema required')
+    native,guard,lookup=context(infos,project,mutation['template_map_id'],FRESH_KEYS<=set(mutation))
     for field,value in guard.items():
         if not isinstance(mutation[field],str) or mutation[field]!=value:raise ValueError('Stale actual native map/tree/tileset/inventory guard')
     identifier=integer(mutation['new_id'],'new map ID',1,999)
     if identifier!=max(lookup)+1:raise ValueError('Append at next maximum map ID; no hole reuse')
     name=text(mutation['name'],'new map name',100)
     if any(info.get('name').data.decode('utf-8','strict')==name for info in lookup.values()):raise ValueError('Choose a unique new map name')
+    plan=resolve_options(native,lookup,project,{key:mutation[key] for key in OPTIONS if key in mutation})
     updated=marshal_rb.load(marshal_rb.dump(infos))
     new_info=marshal_rb.load(marshal_rb.dump(lookup[mutation['template_map_id']]))
     new_info.set('name',RubyString(name.encode('utf-8'),{'E':True}))
     order=integer(max(info.get('order') for info in lookup.values())+1,'next map order',1,2**31-1)
-    for key,value in {'parent_id':0,'order':order,'expanded':False,'scroll_x':0,'scroll_y':0}.items():new_info.set(key,value)
+    for key,value in {'parent_id':plan['parent_id'],'order':order,'expanded':False,'scroll_x':0,'scroll_y':0}.items():new_info.set(key,value)
     updated.pairs.append((identifier,new_info))
+    if plan['fresh']:return updated,fresh_map(native,plan)
     new_map=marshal_rb.load(marshal_rb.dump(native));new_map.set('events',RubyHash([],None))
+    if plan['tiles_rebuilt']:
+        new_map.set('width',plan['width']);new_map.set('height',plan['height']);new_map.set('tileset_id',plan['tileset_id']);new_map.set('data',new_table(plan))
     return updated,new_map
 
 
@@ -160,8 +271,13 @@ def verify(infos,after_infos,after_map,mutation,project):
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('index');parser.add_argument('--project',required=True)
-    parser.add_argument('--template-map',type=int,required=True);parser.add_argument('--output',required=True);args=parser.parse_args(argv)
-    try:result=execute(args.index,args.project,args.output,lambda data:snapshot(data,args.project,args.template_map),'map-append-snapshot')
+    parser.add_argument('--template-map',type=int,required=True);parser.add_argument('--output',required=True)
+    parser.add_argument('--width',type=int);parser.add_argument('--height',type=int);parser.add_argument('--tileset-id',type=int)
+    parser.add_argument('--parent-id',type=int);parser.add_argument('--fill-floor',type=int,help='A5 tile index 0..127 for layer 0 of the whole new map')
+    parser.add_argument('--layout',type=json.loads,help='JSON layout object (fresh-map mode: needs --width, --height and --tileset-id)')
+    args=parser.parse_args(argv)
+    options={key:getattr(args,key) for key in OPTIONS if getattr(args,key) is not None}
+    try:result=execute(args.index,args.project,args.output,lambda data:snapshot(data,args.project,args.template_map,options),'map-append-snapshot')
     except Exception as error:print('Map append snapshot refused: '+str(error),file=sys.stderr);return 2
     print(json.dumps({'status':'ok','new_id':result['new_id'],'mutation_authorized':False}));return 0
 

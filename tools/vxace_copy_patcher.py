@@ -9,7 +9,7 @@ def mutator_command(ruby, mutator, *args):
     return [sys.executable if mutator.suffix == '.py' else ruby, str(mutator), *map(str, args)]
 DB_FILES={'actors':'Actors.rvdata2','classes':'Classes.rvdata2','skills':'Skills.rvdata2','items':'Items.rvdata2','weapons':'Weapons.rvdata2','armors':'Armors.rvdata2','enemies':'Enemies.rvdata2','troops':'Troops.rvdata2','states':'States.rvdata2','animations':'Animations.rvdata2','tilesets':'Tilesets.rvdata2','common-events':'CommonEvents.rvdata2','common_events':'CommonEvents.rvdata2','system':'System.rvdata2','map-infos':'MapInfos.rvdata2','map_infos':'MapInfos.rvdata2'}
 
-ENTRY_TABLES={'items','enemies','skills','states','weapons','armors','troops'}
+ENTRY_TABLES={'actors','classes','items','enemies','skills','states','weapons','armors','troops'}
 
 
 def sha256(path:Path)->str:
@@ -41,11 +41,26 @@ def run(cmd:list[str], *, capture=True)->subprocess.CompletedProcess:
     return subprocess.run(cmd,stdout=subprocess.PIPE if capture else None,stderr=subprocess.PIPE if capture else None,text=True,check=False)
 
 def inspect_file(ruby:str, mutator:Path, file:Path)->dict:
+    import vxace_cache
+    digest=vxace_cache.key('inspect',vxace_cache.tool_identity(mutator),ruby if mutator.suffix!='.py' else sys.executable,vxace_cache.file_sha256(file)) if vxace_cache.directory() else None
+    cached=vxace_cache.get_json('inspect',digest) if digest else None
+    if cached is not None: return cached
     p=run(mutator_command(ruby,mutator,'inspect',file))
     if p.returncode: raise RuntimeError(f'inspect failed for {file.name}: {p.stderr.strip()}')
-    return json.loads(p.stdout)
+    result=json.loads(p.stdout)
+    if digest: vxace_cache.put_json('inspect',digest,result)
+    return result
 
 def roundtrip_preflight(ruby:str, mutator:Path, file:Path)->dict:
+    import vxace_cache
+    digest=vxace_cache.key('preflight',vxace_cache.tool_identity(mutator),ruby if mutator.suffix!='.py' else sys.executable,vxace_cache.file_sha256(file)) if vxace_cache.directory() else None
+    cached=vxace_cache.get_json('preflight',digest) if digest else None
+    if cached and cached.get('status')=='passed' and cached.get('file')==file.name: return cached
+    result=_roundtrip_preflight(ruby,mutator,file)
+    if digest: vxace_cache.put_json('preflight',digest,result)
+    return result
+
+def _roundtrip_preflight(ruby:str, mutator:Path, file:Path)->dict:
     with tempfile.TemporaryDirectory() as td:
         out=Path(td)/file.name
         before=inspect_file(ruby,mutator,file)
@@ -92,7 +107,13 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             if table not in DB_FILES: raise ValueError(f'unsupported database table: {table}')
             if 'id' not in loc or not mut.get('field'): raise ValueError(f'database change #{n} requires locator.id and mutation.field')
             out.append({'kind':'database','target':'Data/'+DB_FILES[table],'ruby_spec':{'type':'database','mutation':{'id':loc['id'],'field':mut['field'],'value':mut.get('value')}},'description':c.get('description',''),'locator':loc,'mutation':mut})
-        elif kind=='database_entry' and isinstance(loc,dict) and loc.get('table')=='classes':
+        elif kind=='database_entry' and isinstance(mut,dict) and mut.get('action')=='edit_database_entry':
+            from vxace_database_edit import native_mutation as edit_mutation
+            native=edit_mutation(loc,mut)
+            out.append({'kind':'database_entry','target':'Data/'+DB_FILES[loc['table']],
+                        'ruby_spec':{'type':'database_entry','mutation':native},'description':c.get('description',''),
+                        'locator':loc,'mutation':mut})
+        elif kind=='database_entry' and isinstance(loc,dict) and loc.get('table')=='classes' and ('id' in loc or (isinstance(mut,dict) and mut.get('action')=='append_class_learning')):
             from vxace_class_learning import native_mutation
             out.append({'kind':'database_entry','target':'Data/'+DB_FILES['classes'],
                         'ruby_spec':{'type':'database_entry','mutation':native_mutation(loc,mut)},'description':c.get('description',''),
@@ -102,15 +123,27 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
                 raise ValueError('Entry creation supports only an exact items or append-table locator')
             action=mut.get('action') if isinstance(mut,dict) else None
             if action!='append_database_entry' and (loc['table'],action)!=('items','append_key_item'):
-                raise ValueError('Entry action does not match the table: items use append_key_item (key items) or append_database_entry (template clones); enemies/skills/states/weapons/armors/troops use append_database_entry')
+                raise ValueError('Entry action does not match the table: items use append_key_item (key items) or append_database_entry (template clones); actors/classes/enemies/skills/states/weapons/armors/troops use append_database_entry')
             out.append({'kind':'database_entry','target':'Data/'+DB_FILES[loc['table']],
                         'ruby_spec':{'type':'database_entry','mutation':mut},'description':c.get('description',''),
                         'locator':loc,'mutation':mut})
+        elif kind=='common_event':
+            from vxace_common_event_append import schema
+            if loc!={'table':'common_events'}:raise ValueError('Common event append locator must be exactly {"table": "common_events"}')
+            schema(mut)
+            out.append({'kind':'common_event','target':'Data/CommonEvents.rvdata2','ruby_spec':{'type':'common_event','mutation':mut},
+                        'description':c.get('description',''),'locator':loc,'mutation':mut})
+        elif kind=='system_fields':
+            from vxace_system_fields import schema
+            if loc!={'table':'system'}:raise ValueError('System fields locator must be exactly {"table": "system"}')
+            schema(mut)
+            out.append({'kind':'system_fields','target':'Data/System.rvdata2','ruby_spec':{'type':'system_fields','mutation':mut},
+                        'description':c.get('description',''),'locator':loc,'mutation':mut})
         elif kind=='map_entry':
-            from vxace_maps import FIELDS,integer
+            from vxace_maps import FIELDS,integer,schema_ok
             if not isinstance(loc,dict) or set(loc)!={'template_map_id'}:raise ValueError('Map append requires exactly template_map_id locator')
             tid=integer(loc['template_map_id'],'template map ID',1,999)
-            if not isinstance(mut,dict) or set(mut)!=FIELDS-{'template_map_id'} or mut.get('action')!='append_blank_map':raise ValueError('Exact append_blank_map mutation required')
+            if not isinstance(mut,dict) or not schema_ok(mut,False) or mut.get('action')!='append_blank_map':raise ValueError('Exact append_blank_map mutation required')
             native_mutation={'template_map_id':tid,**mut}
             out.append({'kind':'map_entry','target':'Data/MapInfos.rvdata2','ruby_spec':{'type':'map_entry','mutation':native_mutation},
                         'description':c.get('description',''),'locator':loc,'mutation':native_mutation})
@@ -285,9 +318,16 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         from vxace_database_append import snapshot as table_snapshot, snapshot_refs, required_refs, REF_FILES, SNAPSHOT_REFS
         entry_table=change['locator']['table']
         entry_key_item=entry_table=='items' and mutation.get('action')=='append_key_item'
-        entry_enemies=snapshot_refs(target,entry_table) if entry_table in SNAPSHOT_REFS and not entry_key_item else None
+        entry_learning=entry_table=='classes' and mutation.get('action')=='append_class_learning'
+        entry_edit=mutation.get('action')=='edit_database_entry'
+        entry_enemies=snapshot_refs(target,entry_table) if entry_table in SNAPSHOT_REFS and not entry_key_item and not entry_learning else None
         entry_ref_hashes={}
-        if entry_table=='classes':
+        if entry_edit:
+            from vxace_database_edit import snapshot as edit_snapshot
+            entry_snapshot=lambda root,eid:edit_snapshot(root,entry_table,eid,entry_enemies)
+            entry_key=mutation['entry_id']
+            entry_ref_hashes={n:sha256(target.parent/(REF_FILES[n]+'.rvdata2')) for n in required_refs(entry_table,mutation.get('overrides'))-{entry_table}}
+        elif entry_learning:
             from vxace_class_learning import snapshot as learning_snapshot, skills_for
             entry_skills=skills_for(target);entry_skills_sha=sha256(target.parent/'Skills.rvdata2')
             entry_snapshot=lambda root,cid:learning_snapshot(root,entry_skills,cid)
@@ -298,6 +338,15 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
             entry_ref_hashes={n:sha256(target.parent/(REF_FILES[n]+'.rvdata2')) for n in required_refs(entry_table,mutation.get('overrides'))-{entry_table}}
         before_entry_root=load(target)[0]
         before_entry=entry_snapshot(before_entry_root,entry_key)
+    before_system_root=None
+    if change['kind']=='system_fields':
+        from vxace_python_mutator import load
+        from vxace_system_fields import current as system_current
+        before_system_root=load(target)[0];before_system=system_current(before_system_root)
+    before_ce_root=None
+    if change['kind']=='common_event':
+        from vxace_python_mutator import load
+        before_ce_root=load(target)[0]
     before_shop_root=None
     if change['kind']=='map_shop':
         from vxace_python_mutator import load
@@ -306,9 +355,9 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     before_event_root=None
     if change['kind']=='map_event':
         from vxace_python_mutator import load
-        from vxace_map_events import snapshot as event_snapshot,blank_snapshot
+        from vxace_map_events import snapshot as event_snapshot,blank_snapshot,donor_root_of
         before_event_root=load(target)[0]
-        before_event=blank_snapshot(before_event_root,mutation['donor_event_id']) if mutation['action']=='append_blank_event' else event_snapshot(before_event_root,mutation['template_id'])
+        before_event=blank_snapshot(before_event_root,mutation['donor_event_id'],donor_root_of(mutation,copy_root)) if mutation['action']=='append_blank_event' else event_snapshot(before_event_root,mutation['template_id'])
     before_tile_root=None
     if change['kind']=='map_tile':
         from vxace_python_mutator import load
@@ -358,12 +407,22 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         if entry_key_item:
             from vxace_database_entries import verify_transition as verify_entry
             verify_entry(before_entry_root,load(tmp)[0],mutation)
-        elif entry_table=='classes':
+        elif entry_edit:
+            from vxace_database_edit import verify_transition as verify_edit
+            verify_edit(before_entry_root,load(tmp)[0],mutation,entry_enemies,copy_root if 'expected_assets' in mutation else None,change['ruby_spec'].get('context',{}).get('rtp'))
+        elif entry_learning:
             from vxace_class_learning import verify_transition as verify_learning
             verify_learning(before_entry_root,load(tmp)[0],mutation,entry_skills)
         else:
             from vxace_database_append import verify_transition as verify_table_entry
-            verify_table_entry(before_entry_root,load(tmp)[0],entry_table,mutation,entry_enemies)
+            entry_rtp=change['ruby_spec'].get('context',{}).get('rtp')
+            verify_table_entry(before_entry_root,load(tmp)[0],entry_table,mutation,entry_enemies,copy_root if 'expected_assets' in mutation else None,entry_rtp)
+    if change['kind']=='system_fields':
+        from vxace_system_fields import verify_transition as verify_system
+        verify_system(before_system_root,load(tmp)[0],mutation,copy_root)
+    if change['kind']=='common_event':
+        from vxace_common_event_append import verify_transition as verify_common_event
+        verify_common_event(before_ce_root,load(tmp)[0],mutation,copy_root)
     if change['kind']=='map_event':
         from vxace_map_events import verify_transition as verify_event
         verify_event(before_event_root,load(tmp)[0],mutation,copy_root,change['ruby_spec'].get('context',{}).get('rtp'))
@@ -407,16 +466,40 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         rec['diff']=''.join(difflib.unified_diff([],[json.dumps(row)+chr(10) for row in rec['shop']['inserted_rows']],fromfile='source-shop-rows',tofile='staged-shop-rows'))
     if change['kind']=='map_event':
         blank=mutation['action']=='append_blank_event'
-        rec['map_event']={'before':before_event,'after':blank_snapshot(load(target)[0],mutation['donor_event_id']) if blank else event_snapshot(load(target)[0],mutation['template_id']),
+        rec['map_event']={'before':before_event,'after':blank_snapshot(load(target)[0],mutation['donor_event_id'],donor_root_of(mutation,copy_root)) if blank else event_snapshot(load(target)[0],mutation['template_id']),
                           'new_id':mutation['new_id'],'name':mutation['name'],'x':mutation['x'],'y':mutation['y'],
                           'old_events_and_other_map_fields_preserved':True}
-        if blank:rec['map_event'].update(action='append_blank_event',donor_event_id=mutation['donor_event_id'],blank_template_predicate_ok=True)
+        if blank:rec['map_event'].update(action='append_blank_event',donor_event_id=mutation['donor_event_id'],blank_template_predicate_ok=True,**({'donor_map_id':mutation['donor_map_id']} if 'donor_map_id' in mutation else {}))
         elif mutation['action']=='append_staged_event':
             rec['map_event'].update(action='append_staged_event',template_id=mutation['template_id'],page_count=len(mutation['pages']),pages=mutation['pages'],
                                     expected_system_sha256=mutation['expected_system_sha256'],system_read_only_hash_bound=True,
-                                    reference_hashes={key:value for key,value in mutation.items() if key.startswith('expected_') and key not in ('expected_map_sha256','expected_template_sha256','expected_system_sha256')})
+                                    reference_hashes={key:value for key,value in mutation.items() if key.startswith('expected_') and key not in ('expected_map_sha256','expected_template_sha256','expected_system_sha256','expected_assets')})
+            from vxace_staged_commands import graphic_names
+            if graphic_names(mutation['pages']):rec['map_event']['page_assets']=mutation['expected_assets']
         else:rec['map_event']['text']=mutation['text']
-        if 'graphic' in mutation:rec['map_event'].update(graphic=mutation['graphic'],asset=mutation['expected_asset'])
+        if 'graphic' in mutation:rec['map_event'].update(graphic=mutation['graphic'],asset=mutation['expected_asset'],**({'options':mutation['options']} if 'options' in mutation else {}))
+    if change['kind']=='common_event':
+        from vxace_common_event_append import IVAR_ORDER
+        created=load(target)[0][-1]
+        from vxace_event_structure import command_rows
+        rows=command_rows(created.get('list'))
+        rec['common_event']={'action':'append_common_event','new_id':mutation['new_id'],'name':mutation['name'],'trigger':mutation['trigger'],
+                             'stored_trigger':created.get('trigger'),'stored_switch_id':created.get('switch_id'),'field_order':list(IVAR_ORDER),
+                             'operation_count':len(mutation['commands']),'native_command_count':len(rows),'commands':mutation['commands'],'native_rows':rows,
+                             'expected_common_events_sha256':mutation['expected_common_events_sha256'],'expected_system_sha256':mutation['expected_system_sha256'],
+                             'system_read_only_hash_bound':True,'system_version_unchanged':True,
+                             'reference_hashes':{key:value for key,value in mutation.items() if key.startswith('expected_') and key not in ('expected_common_events_sha256','expected_system_sha256')},
+                             'existing_entries_unchanged':True,'approved_factory_result_verified':True,'only_common_events_file_changed':True}
+        rec['diff']=''.join(difflib.unified_diff([],[json.dumps(row,ensure_ascii=False)+chr(10) for row in rows],fromfile='source-common-event',tofile='staged-common-event-'+str(mutation['new_id'])))
+    if change['kind']=='system_fields':
+        from vxace_system_fields import current as system_current,changed_ivars
+        after_system=system_current(load(target)[0])
+        rec['system_fields']={'locator':change['locator'],'fields':sorted(k for k in ('game_title','currency_unit','party_members','start','terms','switch_names','variable_names') if k in mutation),
+                              'before':before_system,'after':after_system,
+                              'changed_ivars':sorted(changed_ivars(mutation)),'version_id_unchanged':before_system['version_id']==after_system['version_id'],
+                              'all_other_system_fields_deep_equal':True,'only_system_file_changed':True,'system_version_unchanged':True,
+                              'reference_hashes':{key:value for key,value in mutation.items() if key.startswith('expected_') and key!='expected_system_sha256'}}
+        rec['diff']=''.join(difflib.unified_diff(json.dumps(before_system,ensure_ascii=False,indent=2).splitlines(True),json.dumps(after_system,ensure_ascii=False,indent=2).splitlines(True),fromfile='source-system-fields',tofile='staged-system-fields'))
     if change['kind']=='map_tile':
         after_tiles=upper_snapshot(load(target)[0],copy_root,tile_cells,tile_values,tile_rtp)
         rec['upper_tiles']={'locator':change['locator'],'before':before_tiles,'after':after_tiles,
@@ -433,7 +516,13 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         rec['diff']=''.join(difflib.unified_diff(json.dumps(before_regions,indent=2).splitlines(True),json.dumps(after_regions,indent=2).splitlines(True),fromfile='source-regions',tofile='staged-regions'))
     if change['kind']=='database_entry':
         after_entry=entry_snapshot(load(target)[0],entry_key)
-        if entry_table=='classes':
+        if entry_edit:
+            for ref_name,ref_hash in entry_ref_hashes.items():
+                if sha256(target.parent/(REF_FILES[ref_name]+'.rvdata2'))!=ref_hash:raise RuntimeError(REF_FILES[ref_name]+' file changed during database entry edit')
+            rec['entry']={'before':before_entry,'after':after_entry,'edited_id':mutation['entry_id'],'fields':sorted(mutation['overrides']),
+                          'other_entries_unchanged':True,'only_target_entry_changed':True,'approved_factory_result_verified':True,'table':entry_table,
+                          **({'referenced_files_unchanged':sorted(REF_FILES[n] for n in entry_ref_hashes)} if entry_ref_hashes else {})}
+        elif entry_learning:
             if sha256(target.parent/'Skills.rvdata2')!=entry_skills_sha:raise RuntimeError('Skills file changed during class learning append')
             rec['entry']={'before':before_entry,'after':after_entry,'class_id':mutation['class_id'],'skill_id':mutation['skill_id'],'level':mutation['level'],
                           'other_classes_and_existing_learnings_unchanged':True,'skills_unchanged':True,'approved_class_learning_verified':True,'table':'classes'}
@@ -443,7 +532,8 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
             rec['entry']={'before':before_entry,'after':after_entry,'created_id':mutation['new_id'],
                       'existing_entries_unchanged':True,
                       ('approved_inert_key_item_verified' if entry_key_item else 'approved_template_clone_verified'):True,
-                      'table':entry_table,**({'referenced_files_unchanged':sorted(REF_FILES[n] for n in entry_ref_hashes)} if entry_ref_hashes else {})}
+                      'table':entry_table,**({'referenced_files_unchanged':sorted(REF_FILES[n] for n in entry_ref_hashes)} if entry_ref_hashes else {}),
+                      **({'actor_assets':mutation['expected_assets']} if 'expected_assets' in mutation else {})}
         rec['diff']=''.join(difflib.unified_diff(json.dumps(before_entry,indent=2).splitlines(True),json.dumps(after_entry,indent=2).splitlines(True),fromfile='source-'+entry_table,tofile='staged-'+entry_table))
     if change['kind']=='script_slot':
         after_slot=slot_snapshot(load(target)[0],mutation['before_index']+1)
@@ -504,6 +594,7 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
     slots=[c for c in changes if c['kind']=='script_slot']
     upper_tiles=[c for c in changes if c['kind']=='map_tile']
     map_events=[c for c in changes if c['kind']=='map_event']
+    common_events=[c for c in changes if c['kind']=='common_event']
     map_entries=[c for c in changes if c['kind']=='map_entry']
     from vxace_transfers import has_transfers
     transfers=[c for c in structural if has_transfers(c['ruby_spec']['mutation'])]
@@ -557,32 +648,54 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         for c in map_labels:
             label_data=Index(index);indexed_snapshot(label_data,project,c['locator']['map_id']);label_data.unchanged()
             validate_label(load(unlinked(project/c['target']))[0],c['mutation'],project)
-    post_required=bool(reload_required or entries or slots or map_entries or map_labels)
+    system_edits=[c for c in changes if c['kind']=='system_fields']
+    if system_edits:
+        if len(changes)!=1:raise ValueError('System fields edit requires its own single-change transaction')
+        if no_reindex or mutator.resolve()!=(Path(__file__).resolve().parent/'vxace_python_mutator.py'):
+            raise ValueError('System fields edit requires the explicit Python backend and mandatory post-copy re-indexing')
+        from vxace_system_fields import indexed_snapshot as system_snapshot,validate as system_validate
+        from vxace_index_query import Index,unlinked
+        from vxace_python_mutator import load
+        for c in system_edits:
+            system_data=Index(index);system_snapshot(system_data,project,c['mutation'].get('start',{}).get('map_id'));system_data.unchanged()
+            system_validate(load(unlinked(project/c['target']))[0],c['mutation'],project)
+    post_required=bool(reload_required or entries or slots or map_entries or map_labels or common_events or system_edits)
     if map_entries:
         if len(changes)!=1:raise ValueError('Map append requires its own single-change transaction')
         if no_reindex or mutator.resolve()!=(Path(__file__).resolve().parent/'vxace_python_mutator.py'):
             raise ValueError('Map append requires explicit Python backend and mandatory post-copy indexing')
-        from vxace_maps import snapshot as map_snapshot,candidates as map_candidates
+        from vxace_maps import snapshot as map_snapshot,candidates as map_candidates,OPTIONS as MAP_OPTIONS
         from vxace_index_query import Index,unlinked
         from vxace_python_mutator import load
         for c in map_entries:
-            map_data=Index(index);map_snapshot(map_data,project,c['mutation']['template_map_id']);map_data.unchanged()
+            map_data=Index(index);map_snapshot(map_data,project,c['mutation']['template_map_id'],{k:c['mutation'][k] for k in MAP_OPTIONS if k in c['mutation']});map_data.unchanged()
             map_candidates(load(unlinked(project/c['target']))[0],c['mutation'],project)
+    if common_events:
+        if len(common_events)!=1 or len(changes)!=1:raise ValueError('Common event append requires its own single-change transaction')
+        if no_reindex or mutator.resolve()!=(Path(__file__).resolve().parent/'vxace_python_mutator.py'):
+            raise ValueError('Common event append requires the explicit Python backend and mandatory post-copy re-indexing')
+        from vxace_common_event_append import indexed_snapshot as common_event_snapshot,new_common_event
+        from vxace_index_query import Index,unlinked
+        from vxace_python_mutator import load
+        for c in common_events:
+            common_data=Index(index);common_event_snapshot(common_data,project);common_data.unchanged()
+            new_common_event(load(unlinked(project/c['target']))[0],c['mutation'],project)
     if map_events:
         if len({c['target'] for c in map_events})!=len(map_events) or any(sum(other['target']==c['target'] for other in changes)!=1 for c in map_events):
             raise ValueError('Append one dialogue event per map without other edits to that map')
         if no_reindex or mutator.resolve()!=(Path(__file__).resolve().parent/'vxace_python_mutator.py'):
             raise ValueError('Event creation requires explicit Python backend and mandatory post-copy re-indexing')
         from vxace_map_events import indexed_snapshot as event_indexed_snapshot,new_event
+        from vxace_staged_commands import graphic_names
         from vxace_index_query import Index,unlinked
         from vxace_python_mutator import load
         for c in map_events:
             event_data=Index(index)
             blank=c['mutation']['action']=='append_blank_event'
-            event_indexed_snapshot(event_data,project,c['locator']['map_id'],c['mutation']['donor_event_id'] if blank else c['mutation']['template_id'],c['mutation'].get('graphic'),rtp,blank)
+            event_indexed_snapshot(event_data,project,c['locator']['map_id'],c['mutation']['donor_event_id'] if blank else c['mutation']['template_id'],c['mutation'].get('graphic'),rtp,blank,donor_map=c['mutation'].get('donor_map_id'))
             event_data.unchanged()
             new_event(load(unlinked(project/c['target']))[0],c['mutation'],project,rtp)
-            if 'graphic' in c['mutation']:c['ruby_spec']['context']={'rtp':str(rtp) if rtp else None}
+            if 'graphic' in c['mutation'] or graphic_names(c['mutation'].get('pages')):c['ruby_spec']['context']={'rtp':str(rtp) if rtp else None}
     if upper_tiles:
         if len({c['target'] for c in upper_tiles})!=len(upper_tiles) or any(sum(other['target']==c['target'] for other in changes)!=1 for c in upper_tiles):
             raise ValueError('Use one upper tile operation per map without other mutations to that map')
@@ -621,11 +734,18 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
             raise ValueError('Entry creation requires the explicit Python backend and mandatory post-copy re-indexing')
         from vxace_python_mutator import load
         from vxace_database_entries import new_key_item, indexed_snapshot
-        from vxace_database_append import new_entry, mutation_refs
+        from vxace_database_append import new_entry, mutation_refs, actor_graphics, snapshot_refs
         from vxace_index_query import Index, unlinked
         for c in entries:
             table=c['locator']['table']
-            if table=='classes':
+            if c['mutation'].get('action')=='edit_database_entry':
+                from vxace_database_edit import indexed_snapshot as edit_indexed,edit_entry
+                edit_names=actor_graphics(c['mutation'].get('overrides')) if table=='actors' else (set(),set())
+                edit_indexed(Index(index),project,table,c['locator']['id'],tuple(sorted(edit_names[0])),tuple(sorted(edit_names[1])),rtp)
+                edit_entry(load(unlinked(project/c['target']))[0],c['ruby_spec']['mutation'],snapshot_refs(project/c['target'],table),project,rtp)
+                if 'expected_assets' in c['mutation']:c['ruby_spec']['context']={'rtp':str(rtp) if rtp else None}
+                continue
+            if table=='classes' and c['mutation'].get('action')=='append_class_learning':
                 if any(o['target']=='Data/Skills.rvdata2' for o in changes):
                     raise ValueError('Class learning append reads Skills read-only; it cannot be combined with changes to Skills')
                 from vxace_class_learning import indexed_snapshot as learning_indexed, validate as learning_validate, skills_for as learning_skills
@@ -633,10 +753,13 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
                 learning_validate(load(unlinked(project/c['target']))[0],c['ruby_spec']['mutation'],learning_skills(project/c['target']))
                 continue
             key_item=table=='items' and c['mutation'].get('action')=='append_key_item'
-            indexed_snapshot(Index(index),project,c['mutation']['template_id'],table,clone=not key_item)
+            asset_names=sorted(set(actor_graphics(c['mutation'].get('overrides'))[0]))if table=='actors' else []
+            face_names=sorted(set(actor_graphics(c['mutation'].get('overrides'))[1]))if table=='actors' else []
+            indexed_snapshot(Index(index),project,c['mutation']['template_id'],table,clone=not key_item,characters=tuple(asset_names),faces=tuple(face_names),rtp=rtp)
             native=load(unlinked(project/c['target']))[0]
             if key_item:new_key_item(native,c['mutation'])
-            else:new_entry(native,table,c['mutation'],mutation_refs(project/c['target'],table,c['mutation']))
+            else:new_entry(native,table,c['mutation'],mutation_refs(project/c['target'],table,c['mutation']),project,rtp)
+            if 'expected_assets' in c['mutation']:c['ruby_spec']['context']={'rtp':str(rtp) if rtp else None}
     if regions:
         if len({c['target'] for c in regions}) != len(regions):
             raise ValueError('Use one bounded region operation per map per transaction')
@@ -689,6 +812,14 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         if map_names:
             name_inventory={**source_before,**{record['target']:record['after_sha256'] for record in applied}}
             if current_inventory(copy_root)!=name_inventory:raise RuntimeError('Display-name edit changed unapproved copied files')
+        system_inventory=None
+        if system_edits:
+            system_inventory={**source_before,**{record['target']:record['after_sha256'] for record in applied}}
+            if current_inventory(copy_root)!=system_inventory:raise RuntimeError('System fields edit changed unapproved copied files')
+        common_event_inventory=None
+        if common_events:
+            common_event_inventory={**source_before,**{record['target']:record['after_sha256'] for record in applied}}
+            if current_inventory(copy_root)!=common_event_inventory:raise RuntimeError('Common event append changed unapproved copied files')
         shop_inventory=None
         if shops:
             shop_inventory={**source_before,**{record['target']:record['after_sha256'] for record in applied}}
@@ -735,10 +866,21 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
             from vxace_python_mutator import load
             for c in upper_tiles:asset_context(load(copy_root/c['target'])[0],c['mutation'],copy_root,rtp)
         if map_events:
-            from vxace_character_graphics import binding
+            from vxace_character_graphics import binding,staged_assets
+            from vxace_staged_commands import graphic_names
             for c in map_events:
                 if 'graphic' in c['mutation'] and binding(copy_root,rtp,c['mutation']['graphic'])!=c['mutation']['expected_asset']:
                     raise RuntimeError('Character asset changed during final verification')
+                names=graphic_names(c['mutation'].get('pages'))
+                if names and staged_assets(copy_root,rtp,names)!=c['mutation']['expected_assets']:
+                    raise RuntimeError('Character asset changed during final verification')
+        for c in entries:
+            if 'expected_assets' in c['mutation']:
+                from vxace_character_graphics import actor_assets
+                from vxace_database_append import actor_graphics
+                characters,faces=actor_graphics(c['mutation']['overrides'])
+                if actor_assets(copy_root,rtp,characters,faces)!=c['mutation']['expected_assets']:
+                    raise RuntimeError('Actor graphics asset changed during final verification')
         if reward_changes:
             from vxace_event_rewards import item_context
             for c in reward_changes:item_context(c['ruby_spec']['mutation'],copy_root/c['target'])
@@ -752,6 +894,8 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
             from vxace_map_shops import final_context as shop_final_context
             for c in shops:shop_final_context(c['ruby_spec']['mutation'],copy_root)
             if current_inventory(copy_root)!=shop_inventory:raise RuntimeError('Shop final copied-file preservation check failed')
+        if system_edits and current_inventory(copy_root)!=system_inventory:raise RuntimeError('System fields final copied-file preservation check failed')
+        if common_events and current_inventory(copy_root)!=common_event_inventory:raise RuntimeError('Common event append final copied-file preservation check failed')
         if map_labels and current_inventory(copy_root)!=label_inventory:raise RuntimeError('Map-tree name final copied-file preservation check failed')
         if map_names and current_inventory(copy_root)!=name_inventory:raise RuntimeError('Display-name final copied-file preservation check failed')
         if current_inventory(project)!=source_before: raise RuntimeError('SOURCE_CHANGED: source changed during final verification')
@@ -770,11 +914,13 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
 
 def main(argv=None)->int:
     here=Path(__file__).resolve().parent
-    ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('index'); ap.add_argument('--project',required=True); ap.add_argument('--spec',required=True); ap.add_argument('--copy',required=True); ap.add_argument('--audit',required=True); ap.add_argument('--ruby',default=shutil.which('ruby')); ap.add_argument('--mutator'); ap.add_argument('--backend',choices=['ruby','python'],default='ruby'); ap.add_argument('--reader',default=str(here/'vxace_project_reader.py')); ap.add_argument('--diff-tool',default=str(here/'vxace_index_diff.py')); ap.add_argument('--no-reindex',action='store_true'); ap.add_argument('--rtp'); a=ap.parse_args(argv)
+    ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('index'); ap.add_argument('--project',required=True); ap.add_argument('--spec',required=True); ap.add_argument('--copy',required=True); ap.add_argument('--audit',required=True); ap.add_argument('--ruby',default=shutil.which('ruby')); ap.add_argument('--mutator'); ap.add_argument('--backend',choices=['ruby','python'],default='ruby'); ap.add_argument('--reader',default=str(here/'vxace_project_reader.py')); ap.add_argument('--diff-tool',default=str(here/'vxace_index_diff.py')); ap.add_argument('--no-reindex',action='store_true'); ap.add_argument('--rtp',help='explicit RTP root (default: auto-detected, see vxace_rtp.py)'); ap.add_argument('--no-rtp-autodetect',action='store_true'); a=ap.parse_args(argv)
     if a.mutator is None: a.mutator=str(here/('vxace_python_mutator.py' if a.backend=='python' else 'rvdata2_mutator.rb'))
     try:
         if not a.ruby: raise ValueError('Ruby not found; pass --ruby PATH')
-        r=build(Path(a.index),Path(a.project),Path(a.spec),Path(a.copy),Path(a.audit),a.ruby,Path(a.mutator),Path(a.reader),Path(a.diff_tool),a.no_reindex,Path(a.rtp) if a.rtp else None)
+        from vxace_rtp import resolve as resolve_rtp
+        rtp_text,_=resolve_rtp(a.project,a.rtp,a.no_rtp_autodetect)
+        r=build(Path(a.index),Path(a.project),Path(a.spec),Path(a.copy),Path(a.audit),a.ruby,Path(a.mutator),Path(a.reader),Path(a.diff_tool),a.no_reindex,Path(rtp_text) if rtp_text else None)
     except RuntimeError as e:
         msg=str(e)
         reason='stale_index' if msg.startswith('STALE_INDEX:') else ('source_changed' if msg.startswith('SOURCE_CHANGED:') else 'runtime_error')

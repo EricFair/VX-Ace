@@ -10,7 +10,7 @@ from pathlib import Path
 from vxace_copy_patcher import verify_fresh, current_inventory
 from vxace_index_query import Index, unlinked
 
-VERSION = '1.7.0'
+VERSION = '1.8.0'
 PARAMS = ('mhp', 'mmp', 'atk', 'def', 'mat', 'mdf', 'agi', 'luk')
 ACTOR_ATTRS = PARAMS + ('hp', 'mp', 'level')
 ENEMY_ATTRS = PARAMS + ('hp', 'mp')
@@ -31,6 +31,8 @@ LIMITS = [
     'The EXP curve uses the ' + EXP_NOTE + '.',
     'Enemy rows use database parameters only; enemy actions are listed regardless of conditions or rating.',
     'Only HP damage and HP drain skills are matched up for hits-to-kill; MP damage is listed in the formula table only.',
+    'Enemy-vs-actor rows add hit chance for physical skills (hit type 1): skill success rate x the enemy HIT ex-parameter x (1 - the actor EVA ex-parameter), both read from features only (an actor: class + actor features, no equipment or states). Certain-hit skills use the success rate alone and magical skills do not model magic evasion.',
+    'Troop battles (--troop, v1.34): expected values only. The party is every actor at the stated level with initial equipment (flat parameters and HIT/EVA features; parameter-rate features, states and skills other than Attack are ignored). Enemy actions are picked like the engine (ratings above max-3, weighted) but action conditions are ignored; single-target hits are spread evenly over the party. The race simulation pools party HP and kills enemies in listed order, so treat it as a rough indication, not a prediction.',
     'Shop prices follow command 302/605 as written; shops built with scripts or variables are not seen.',
     'Warnings are heuristics, not defects; no result authorizes mutation.',
 ]
@@ -179,6 +181,20 @@ def exp_for_level(level, exp_params):
     return int(math.floor(value + 0.5)) if value >= 0 else -int(math.floor(-value + 0.5))
 
 
+def xparam(rows, data_id):
+    """Sum of the ex-parameter features (code 22) with this data id in a features list (HIT 0, EVA 1); a battler without the row has 0."""
+    return sum(f['value'] for f in rows if isinstance(f, dict) and f.get('code') == 22 and f.get('data_id') == data_id and type(f.get('value')) in (int, float))
+
+
+def hit_chance(skill, hit, eva):
+    """Chance the skill lands, like Game_Battler#item_hit / item_eva for a physical skill (hit type 1); other hit types ignore HIT and EVA."""
+    success = skill.get('success_rate') if type(skill.get('success_rate')) in (int, float) else 100
+    kind = skill.get('hit_type')
+    if kind == 1:
+        return round(min(max(success * 0.01 * hit, 0.0), 1.0) * (1 - min(max(eva, 0.0), 1.0)), 4)
+    return round(min(max(success * 0.01, 0.0), 1.0), 4)
+
+
 def class_params(klass, level):
     """Eight base parameters at a level from the class Table (index x + y*xsize)."""
     table = klass.get('params') if isinstance(klass, dict) else None
@@ -284,7 +300,170 @@ def sample_levels(top):
     return sorted({1, top} | set(range(10, top, 10)))
 
 
-def analyze(data, levels=(1, 10, 20, 50), max_rows=200, variables=None, actor_ids=None, enemy_ids=None):
+# --- troop battles (v1.34) -----------------------------------------------------
+
+ALL_PARTY_SCOPES = (2,)
+
+
+def with_pools(stats, extra=None):
+    return {**stats, 'hp': stats['mhp'], 'mp': stats['mmp'], **(extra or {})}
+
+RANDOM_SCOPES = {3: 1, 4: 2, 5: 3, 6: 4}
+MAX_SIM_TURNS = 99
+
+
+def feature_rows(*owners):
+    rows = []
+    for owner in owners:
+        if isinstance(owner, dict) and isinstance(owner.get('features'), list): rows += owner['features']
+    return rows
+
+
+def equipment_of(actor, weapons, armors):
+    """Initial equipment of an actor: (flat parameter bonus dict, feature rows, labels). Slot 0 is the weapon, later slots armor; 0 means empty."""
+    bonus, features, labels = dict.fromkeys(PARAMS, 0), [], []
+    equips = actor.get('equips') if isinstance(actor.get('equips'), list) else []
+    for slot, item_id in enumerate(equips):
+        table = weapons if slot == 0 else armors
+        if type(item_id) is not int or item_id <= 0 or item_id >= len(table) or not isinstance(table[item_id], dict): continue
+        item = table[item_id]; labels.append(('weapon' if slot == 0 else 'armor') + ' ' + str(item_id) + ' ' + name_of(item))
+        params = item.get('params')
+        if isinstance(params, list) and len(params) == 8:
+            for key, value in zip(PARAMS, params):
+                if type(value) is int: bonus[key] += value
+        features += feature_rows(item)
+    return bonus, features, labels
+
+
+def action_weights(enemy):
+    """Enemy action choice like Game_Enemy#select_enemy_action: only ratings above (max - 3) count, weighted by rating - (max - 3). Conditions are ignored."""
+    actions = [a for a in (enemy.get('actions') or []) if isinstance(a, dict) and type(a.get('skill_id')) is int and type(a.get('rating')) is int]
+    if not actions: return []
+    zero = max(a['rating'] for a in actions) - 3
+    chosen = [a for a in actions if a['rating'] > zero]
+    total = sum(a['rating'] - zero for a in chosen)
+    return [(a['skill_id'], (a['rating'] - zero) / total) for a in chosen]
+
+
+def troop_battles(troop_ids, party_ids, levels, tables, formula_rows, variables, data):
+    """Expected-value matchup of each requested troop against the party at each requested level. Static and rough; see LIMITS."""
+    actors, classes, skills, enemies, troops, weapons, armors = (tables[k] for k in ('actors', 'classes', 'skills', 'enemies', 'troops', 'weapons', 'armors'))
+    out = []
+    for troop_id in troop_ids:
+        data.spend()
+        if type(troop_id) is not int or not 0 < troop_id < len(troops) or not isinstance(troops[troop_id], dict): raise ValueError('Troop %s does not exist' % troop_id)
+        troop = troops[troop_id]; foes = []
+        for member in troop.get('members') or []:
+            eid = member.get('enemy_id') if isinstance(member, dict) else None
+            enemy = enemies[eid] if type(eid) is int and 0 < eid < len(enemies) else None
+            if not isinstance(enemy, dict): raise ValueError('Troop %d has a member with an unknown enemy' % troop_id)
+            params = enemy.get('params')
+            if not isinstance(params, list) or len(params) != 8 or any(type(x) is not int for x in params): raise ValueError('Enemy %d has opaque parameters' % eid)
+            stats = dict(zip(PARAMS, params))
+            foes.append({'enemy_id': eid, 'name': name_of(enemy), 'stats': stats, 'hit': xparam(feature_rows(enemy), 0), 'eva': xparam(feature_rows(enemy), 1),
+                         'actions': action_weights(enemy)})
+        if not foes: raise ValueError('Troop %d has no members' % troop_id)
+        rows = []
+        for level in levels:
+            party = []
+            for aid in party_ids:
+                actor = actors[aid] if type(aid) is int and 0 < aid < len(actors) else None
+                klass = classes[actor['class_id']] if isinstance(actor, dict) and type(actor.get('class_id')) is int and 0 < actor['class_id'] < len(classes) else None
+                if not isinstance(klass, dict): raise ValueError('Party actor %s or its class does not exist' % aid)
+                table = klass['params']; top = min(actor.get('max_level') if type(actor.get('max_level')) is int else 99, table['ysize'] - 1)
+                lv = min(max(level, 1), top); base = class_params(klass, lv)
+                bonus, equip_features, labels = equipment_of(actor, weapons, armors)
+                stats = {k: base[k] + bonus[k] for k in PARAMS}
+                rows_f = feature_rows(klass, actor) + equip_features
+                party.append({'actor_id': aid, 'name': name_of(actor), 'level': lv, 'stats': stats, 'hit': xparam(rows_f, 0), 'eva': xparam(rows_f, 1), 'equipment': labels})
+            n = len(party)
+            # Enemy side: expected damage per turn to the party, per enemy and per member.
+            per_member = [0.0] * n; opaque = []; enemy_rows = []
+            for foe in foes:
+                total_party = 0.0; own = [0.0] * n
+                for sid, weight in foe['actions']:
+                    skill = skills[sid] if 0 < sid < len(skills) and isinstance(skills[sid], dict) else None
+                    f = formula_rows.get(('skill', sid))
+                    if skill is None or not f or f['damage_type_id'] not in HP_DAMAGE: continue
+                    if f['status'] != 'evaluable':
+                        opaque.append({'enemy_id': foe['enemy_id'], 'skill_id': sid}); continue
+                    scope, repeats = skill.get('scope'), skill.get('repeats') if type(skill.get('repeats')) is int else 1
+                    if scope == 1: targets, spread = 1, True
+                    elif scope in RANDOM_SCOPES: targets, spread = RANDOM_SCOPES[scope], True
+                    elif scope in ALL_PARTY_SCOPES: targets, spread = n, False
+                    else: continue
+                    for i, member in enumerate(party):
+                        try: dmg = max(base_value(f['tree'], with_pools(foe['stats']), with_pools(member['stats'], {'level': member['level']}), variables), 0)
+                        except EvalError: continue
+                        expected = dmg * hit_chance(skill, foe['hit'], member['eva']) * repeats
+                        share = expected * targets / n if spread else expected
+                        own[i] += weight * share
+                per_member = [p + o for p, o in zip(per_member, own)]
+                enemy_rows.append({'enemy_id': foe['enemy_id'], 'enemy': foe['name'], 'expected_damage_per_turn': round(sum(own), 1)})
+            total = sum(per_member)
+            # Plain attacks (skill 1) by the whole troop against one member: turns to kill each member.
+            attack, plain = skills[1] if len(skills) > 1 and isinstance(skills[1], dict) else None, formula_rows.get(('skill', 1))
+            kill = []
+            for i, member in enumerate(party):
+                focus = None
+                if attack and plain and plain['status'] == 'evaluable' and plain['damage_type_id'] in HP_DAMAGE:
+                    focus = 0.0
+                    for foe in foes:
+                        try: dmg = max(base_value(plain['tree'], with_pools(foe['stats']), with_pools(member['stats'], {'level': member['level']}), variables), 0)
+                        except EvalError: continue
+                        focus += dmg * hit_chance(attack, foe['hit'], member['eva'])
+                kill.append({'actor_id': member['actor_id'], 'actor': member['name'], 'mhp': member['stats']['mhp'], 'troop_attack_damage_per_turn': None if focus is None else round(focus, 1),
+                             'turns_to_kill_with_plain_attacks': (math.ceil(member['stats']['mhp'] / focus) if focus else None),
+                             'turns_to_kill_with_action_mix': math.ceil(member['stats']['mhp'] / per_member[i]) if per_member[i] > 0 else None})
+            party_hp = sum(m['stats']['mhp'] for m in party)
+            # The party's plain attacks against the troop (expected, no focus loss) and a pooled turn-by-turn simulation.
+            offence = 0.0
+            if attack and plain and plain['status'] == 'evaluable' and plain['damage_type_id'] in HP_DAMAGE:
+                for member in party:
+                    best = 0.0
+                    for foe in foes:
+                        try: dmg = max(base_value(plain['tree'], with_pools(member['stats'], {'level': member['level']}), with_pools(foe['stats']), variables), 0)
+                        except EvalError: continue
+                        best += dmg * hit_chance(attack, member['hit'], foe['eva'])
+                    offence += best / len(foes)
+            sim = simulate(foes, enemy_rows, party_hp, offence)
+            rows.append({'party_level': level, 'party': [{k: v for k, v in m.items() if k != 'hit'} for m in party], 'party_total_mhp': party_hp,
+                         'enemies': enemy_rows, 'troop_expected_damage_per_turn': round(total, 1),
+                         'per_member_expected_damage_per_turn': {m['name']: round(p, 1) for m, p in zip(party, per_member)},
+                         'kill_turns': kill, 'party_survives_turns_estimate': round(party_hp / total, 1) if total > 0 else None,
+                         'first_member_dies_turn_estimate': min((k['turns_to_kill_with_action_mix'] for k in kill if k['turns_to_kill_with_action_mix']), default=None),
+                         'party_plain_attack_damage_per_turn': round(offence, 1), 'simulation': sim, 'opaque_enemy_actions': opaque})
+        out.append({'troop_id': troop_id, 'name': name_of(troop), 'enemies': [{'enemy_id': f['enemy_id'], 'name': f['name'], 'mhp': f['stats']['mhp']} for f in foes],
+                    'equipment_included': True, 'rows': rows})
+    return out
+
+
+def simulate(foes, enemy_rows, party_hp, offence):
+    """Pooled expected-value race: the party's plain attacks kill enemies in listed order, surviving enemies hurt the party. Rough."""
+    alive = [[f['stats']['mhp'], row['expected_damage_per_turn']] for f, row in zip(foes, enemy_rows)]
+    hp = float(party_hp)
+    for turn in range(1, MAX_SIM_TURNS + 1):
+        pool = offence
+        for foe in alive:
+            if foe[0] > 0:
+                spent = min(foe[0], pool); foe[0] -= spent; pool -= spent
+        if all(f[0] <= 0 for f in alive):
+            return {'result': 'party_wins', 'turn': turn, 'party_hp_left_percent': round(100 * max(hp, 0) / party_hp, 1)}
+        hp -= sum(f[1] for f in alive if f[0] > 0)
+        if hp <= 0: return {'result': 'party_wiped', 'turn': turn, 'party_hp_left_percent': 0.0}
+    return {'result': 'unresolved_after_%d_turns' % MAX_SIM_TURNS, 'turn': MAX_SIM_TURNS, 'party_hp_left_percent': round(100 * max(hp, 0) / party_hp, 1) if party_hp else None}
+
+
+def party_ids_for(data, actors, requested):
+    if requested: return sorted(requested)
+    if data.path('database/system.json').is_file():
+        system = data.json('database/system.json')
+        members = system.get('party_members') if isinstance(system, dict) else None
+        if isinstance(members, list) and members and all(type(x) is int for x in members): return list(members)
+    return [i for i, a in enumerate(actors) if a]
+
+
+def analyze(data, levels=(1, 10, 20, 50), max_rows=200, variables=None, actor_ids=None, enemy_ids=None, troop_ids=None):
     if type(max_rows) is not int or not 1 <= max_rows <= 5000: raise ValueError('max-rows must be 1..5000')
     variables = variables or {}
     levels = tuple(levels)
@@ -313,7 +492,8 @@ def analyze(data, levels=(1, 10, 20, 50), max_rows=200, variables=None, actor_id
         ysize = klass['params']['ysize'] if isinstance(klass.get('params'), dict) and type(klass['params'].get('ysize')) is int else 0
         picked = level_set(levels, actor, ysize)
         stats = {lv: class_params(klass, lv) for lv in picked}
-        actor_stats[slot] = {'name': name_of(actor), 'stats': stats, 'klass': klass, 'initial': actor['initial_level'] if type(actor.get('initial_level')) is int else 1}
+        actor_stats[slot] = {'name': name_of(actor), 'stats': stats, 'klass': klass, 'initial': actor['initial_level'] if type(actor.get('initial_level')) is int else 1,
+                             'eva': xparam((klass.get('features') or []) + (actor.get('features') or []), 1)}
         top = min(actor.get('max_level') if type(actor.get('max_level')) is int else 99, ysize - 1)
         curve = []
         for lv in sample_levels(top):
@@ -323,14 +503,15 @@ def analyze(data, levels=(1, 10, 20, 50), max_rows=200, variables=None, actor_id
                              'max_level': top, 'exp_params': klass.get('exp_params'), 'exp_formula': EXP_NOTE, 'curve': curve,
                              'evidence': {'file': t['classes'][0], 'path': [actor['class_id'], 'params']}})
 
-    # Enemy parameters.
-    enemy_stats = {}
+    # Enemy parameters (and the HIT ex-parameter of each enemy).
+    enemy_stats, enemy_hit = {}, {}
     for slot, enemy in enumerate(enemies):
         if enemy is None or (enemy_ids and slot not in enemy_ids): continue
         data.spend(); params = enemy.get('params')
         if not isinstance(params, list) or len(params) != 8 or any(type(x) is not int for x in params):
             warn('enemy_opaque_params', 'Enemy params are not eight integers', {'file': t['enemies'][0], 'path': [slot, 'params']}, enemy_id=slot); continue
         enemy_stats[slot] = dict(zip(PARAMS, params))
+        enemy_hit[slot] = xparam(enemy.get('features') or [], 0)
 
     def with_pools(stats, extra=None):
         return {**stats, 'hp': stats['mhp'], 'mp': stats['mmp'], **(extra or {})}
@@ -377,11 +558,21 @@ def analyze(data, levels=(1, 10, 20, 50), max_rows=200, variables=None, actor_id
                     data.spend()
                     try: dmg = base_value(f['tree'], with_pools(es), with_pools(stats, {'level': lv}), variables)
                     except EvalError as exc: skip(str(exc)); continue
+                    physical = skills[sid].get('hit_type') == 1
+                    chance = hit_chance(skills[sid], enemy_hit[eid], info['eva'])
                     row = {'enemy_id': eid, 'enemy': name_of(enemies[eid]), 'skill_id': sid, 'skill': name_of(skills[sid]), 'actor_id': aid, 'actor': info['name'],
-                           'level': lv, 'base_damage': dmg, 'actor_mhp': stats['mhp'], 'hits_to_kill': math.ceil(stats['mhp'] / dmg) if dmg > 0 else None}
+                           'level': lv, 'base_damage': dmg, 'actor_mhp': stats['mhp'], 'hits_to_kill': math.ceil(stats['mhp'] / dmg) if dmg > 0 else None,
+                           'hit_rate': round(enemy_hit[eid], 4) if physical else None, 'evasion': round(info['eva'], 4) if physical else None,
+                           'hit_chance': chance, 'expected_damage': round(dmg * chance, 1)}
                     record('enemy_vs_actor', row)
                     if row['hits_to_kill'] == 1 and lv == info['initial']: enemy_oneshot.setdefault((eid, sid), []).append(aid)
 
+    for eid in sorted(enemy_stats):
+        physical = [a['skill_id'] for a in enemies[eid].get('actions') or [] if isinstance(a, dict) and type(a.get('skill_id')) is int and 0 < a['skill_id'] < len(skills)
+                    and skills[a['skill_id']] and skills[a['skill_id']].get('hit_type') == 1 and (formula_rows.get(('skill', a['skill_id'])) or {}).get('damage_type_id') in HP_DAMAGE]
+        if physical and enemy_hit[eid] <= 0:
+            warn('enemy_never_hits', 'Enemy can never hit (HIT 0%): its physical attacks always miss (no HIT ex-parameter feature, code 22 data_id 0, or it sums to 0)',
+                 {'file': t['enemies'][0], 'path': [eid, 'features']}, enemy_id=eid, skill_ids=sorted(set(physical)), hit_rate=round(enemy_hit[eid], 4))
     for (aid, sid), eids in sorted(nonpositive.items()):
         warn('nonpositive_damage', 'Base damage is zero or negative at the actor\'s lowest sampled level against these enemies', {'file': t['skills'][0], 'path': [sid, 'damage', 'formula']},
              actor_id=aid, skill_id=sid, enemy_ids=eids[:10], enemy_count=len(eids))
@@ -419,6 +610,9 @@ def analyze(data, levels=(1, 10, 20, 50), max_rows=200, variables=None, actor_id
         elif not members: warn('troop_empty', 'Troop has no members', row['evidence'], troop_id=slot)
         troop_report.append(row)
 
+    battle_report = troop_battles(list(troop_ids), party_ids_for(data, actors, actor_ids), sorted(set(levels)), {'actors': actors, 'classes': classes, 'skills': skills, 'enemies': enemies, 'troops': troops, 'weapons': weapons, 'armors': armors},
+                                  formula_rows, variables, data) if troop_ids else []
+
     # Economy.
     economy = {}
     for kind, plural, rows_ in (('item', 'items', items), ('weapon', 'weapons', weapons), ('armor', 'armors', armors)):
@@ -436,7 +630,7 @@ def analyze(data, levels=(1, 10, 20, 50), max_rows=200, variables=None, actor_id
             warn('shop_below_database_price', 'Shop override is below the database price', row['evidence'], goods_type=row['goods_type'], goods_id=row['goods_id'], price=price, database_price=base)
     counts = {'actors': len(actor_report), 'enemies': len(enemy_stats), 'formulas': len(formula_report),
               'formulas_opaque': sum(1 for r in formula_report if r['status'] == 'opaque'), 'troops': len(troop_report), 'shop_goods': len(shop_rows),
-              'actor_vs_enemy_rows': counters['actor_vs_enemy'], 'enemy_vs_actor_rows': counters['enemy_vs_actor'], 'warnings': len(warnings)}
+              'actor_vs_enemy_rows': counters['actor_vs_enemy'], 'enemy_vs_actor_rows': counters['enemy_vs_actor'], 'troop_battles': len(battle_report), 'warnings': len(warnings)}
     return {'version': VERSION, 'read_only': True, 'mutation_authorized': False, 'levels_requested': list(levels), 'max_rows': max_rows,
             'variable_defaults': {str(k): v for k, v in sorted(variables.items())}, 'database_files_present': present, 'counts': counts,
             'exp_formula': EXP_NOTE, 'formulas': formula_report[:max_rows], 'formulas_truncated': len(formula_report) > max_rows,
@@ -444,7 +638,7 @@ def analyze(data, levels=(1, 10, 20, 50), max_rows=200, variables=None, actor_id
                 'actor_vs_enemy': rows['actor_vs_enemy'], 'actor_vs_enemy_total': counters['actor_vs_enemy'], 'actor_vs_enemy_truncated': counters['actor_vs_enemy'] > max_rows,
                 'enemy_vs_actor': rows['enemy_vs_actor'], 'enemy_vs_actor_total': counters['enemy_vs_actor'], 'enemy_vs_actor_truncated': counters['enemy_vs_actor'] > max_rows,
                 'skipped_rows': counters['skipped']},
-            'troops': troop_report[:max_rows], 'troops_truncated': len(troop_report) > max_rows,
+            'troops': troop_report[:max_rows], 'troops_truncated': len(troop_report) > max_rows, 'troop_battles': battle_report,
             'economy': {k: v[:max_rows] for k, v in economy.items()}, 'economy_truncated': any(len(v) > max_rows for v in economy.values()),
             'shops': shop_rows[:max_rows], 'shops_truncated': len(shop_rows) > max_rows,
             'warnings': warnings[:max_rows], 'warnings_truncated': len(warnings) > max_rows,
@@ -464,8 +658,22 @@ def markdown(r):
     m = r['matchups']
     out += ['## Actor vs enemy (%d rows%s)' % (m['actor_vs_enemy_total'], ', truncated' if m['actor_vs_enemy_truncated'] else ''), '', '| actor | lv | skill | enemy | damage | hits |', '|---|---|---|---|---|---|']
     out += ['| %s | %d | %s | %s | %d | %s |' % (x['actor'], x['level'], x['skill'], x['enemy'], x['base_damage'], x['hits_to_kill'] if x['hits_to_kill'] is not None else '-') for x in m['actor_vs_enemy']] + ['']
-    out += ['## Enemy vs actor (%d rows%s)' % (m['enemy_vs_actor_total'], ', truncated' if m['enemy_vs_actor_truncated'] else ''), '', '| enemy | skill | actor | lv | damage | hits |', '|---|---|---|---|---|---|']
-    out += ['| %s | %s | %s | %d | %d | %s |' % (x['enemy'], x['skill'], x['actor'], x['level'], x['base_damage'], x['hits_to_kill'] if x['hits_to_kill'] is not None else '-') for x in m['enemy_vs_actor']] + ['']
+    out += ['## Enemy vs actor (%d rows%s)' % (m['enemy_vs_actor_total'], ', truncated' if m['enemy_vs_actor_truncated'] else ''), '', '| enemy | skill | actor | lv | damage | hits | hit | eva | chance | expected |', '|---|---|---|---|---|---|---|---|---|---|']
+    pct = lambda v: '-' if v is None else '%g%%' % round(v * 100, 2)
+    out += ['| %s | %s | %s | %d | %d | %s | %s | %s | %s | %g |' % (x['enemy'], x['skill'], x['actor'], x['level'], x['base_damage'], x['hits_to_kill'] if x['hits_to_kill'] is not None else '-',
+                                                                pct(x['hit_rate']), pct(x['evasion']), pct(x['hit_chance']), x['expected_damage']) for x in m['enemy_vs_actor']] + ['']
+    for b in r.get('troop_battles', []):
+        out += ['## Troop %d %s vs the party' % (b['troop_id'], b['name']), '', 'Enemies: ' + ', '.join('%d %s (HP %d)' % (e['enemy_id'], e['name'], e['mhp']) for e in b['enemies']) + '. Equipment: initial equips included.', '']
+        out += ['| party lv | party HP | troop dmg/turn (expected) | party survives (turns, est.) | first member dies (turn) | party dmg/turn | race result |', '|---|---|---|---|---|---|---|']
+        for row in b['rows']:
+            sim = row['simulation']
+            out += ['| %d | %d | %g | %s | %s | %g | %s turn %s, %g%% HP left |' % (row['party_level'], row['party_total_mhp'], row['troop_expected_damage_per_turn'], row['party_survives_turns_estimate'] if row['party_survives_turns_estimate'] is not None else '-',
+                                                                                row['first_member_dies_turn_estimate'] if row['first_member_dies_turn_estimate'] is not None else '-', row['party_plain_attack_damage_per_turn'], sim['result'], sim['turn'], sim['party_hp_left_percent'] or 0)]
+        out += ['', '| party lv | member | HP | troop attack dmg/turn | turns to kill (plain attacks) | turns to kill (action mix) |', '|---|---|---|---|---|---|']
+        for row in b['rows']:
+            out += ['| %d | %s | %d | %s | %s | %s |' % (row['party_level'], k['actor'], k['mhp'], k['troop_attack_damage_per_turn'] if k['troop_attack_damage_per_turn'] is not None else '-',
+                                                       k['turns_to_kill_with_plain_attacks'] or '-', k['turns_to_kill_with_action_mix'] or '-') for k in row['kill_turns']]
+        out += ['']
     out += ['## Troops', '', '| id | name | members | exp | gold | drops |', '|---|---|---|---|---|---|']
     out += ['| %d | %s | %d | %d | %d | %s |' % (t['id'], t['name'], t['members'], t['total_exp'], t['total_gold'], ', '.join('%s %s (%s)' % (d['goods_type'], d['name'] or d['goods_id'], d['chance']) for d in t['drops'])) for t in r['troops']] + ['']
     out += ['## Shops', '', '| where | good | price | database price | price type |', '|---|---|---|---|---|']
@@ -527,12 +735,14 @@ def main(argv=None):
     ap.add_argument('--json', help='New JSON report file outside project and index'); ap.add_argument('--markdown', help='New Markdown report file outside project and index')
     ap.add_argument('--levels', type=parse_levels, default=(1, 10, 20, 50), help='Comma-separated actor levels to sample (initial and max levels are always added)')
     ap.add_argument('--var', type=parse_var, action='append', default=[], metavar='N=VALUE', help='Value for v[N] in formulas (default 0)')
-    ap.add_argument('--actor', type=int, action='append'); ap.add_argument('--enemy', type=int, action='append')
+    ap.add_argument('--actor', type=int, action='append', help='Repeatable: limit actor tables to these actors, and use them as the party for --troop (default party: the System starting party)')
+    ap.add_argument('--enemy', type=int, action='append', help='Repeatable: limit the enemy tables to these enemies')
+    ap.add_argument('--troop', type=int, action='append', help='Repeatable: expected-value battle of this troop against the party at each --levels value (sum of enemy damage per turn with hit/eva, turns to kill each member, party survival estimate, with initial equipment)')
     ap.add_argument('--max-rows', type=int, default=200)
     a = ap.parse_args(argv)
     try:
         r = run(a.index, a.project, a.json, a.markdown, levels=a.levels, max_rows=a.max_rows, variables=dict(a.var),
-                actor_ids=set(a.actor) if a.actor else None, enemy_ids=set(a.enemy) if a.enemy else None)
+                actor_ids=set(a.actor) if a.actor else None, enemy_ids=set(a.enemy) if a.enemy else None, troop_ids=a.troop or None)
         print(json.dumps({'status': 'ok', 'counts': r['counts']})); return 0
     except Exception as exc:
         print('Balance analysis refused: ' + str(exc), file=sys.stderr); return 2

@@ -1,6 +1,6 @@
-# Guarded quest-stage event pages — v1.18, nested commands v1.19
+# Guarded quest-stage event pages — v1.18, nested commands v1.19, triggers and movement v1.25
 
-`append_staged_event` is a third action on the existing `map_event` change kind. It creates **one new event** on an existing map from an exact blank template event (the same predicate as [`append_dialogue_event`](map-event-creation.md); `append_blank_event` can create one). The event has 1..8 action-button pages, each with an optional condition and a list of commands that can nest choices, conditions and battles (v1.19). It is meant for quest-stage NPCs that react to switches and variables set by earlier stages. See also the [quest state machine pattern](../patterns/quest-state-machine.md).
+`append_staged_event` is a third action on the existing `map_event` change kind. It creates **one new event** on an existing map from an exact blank template event (the same predicate as [`append_dialogue_event`](map-event-creation.md); `append_blank_event` can create one). The event has 1..8 pages (action-button by default; touch or parallel triggers and autonomous movement since v1.25), each with an optional condition and a list of commands that can nest choices, conditions and battles (v1.19). It is meant for quest-stage NPCs that react to switches and variables set by earlier stages. See also the [quest state machine pattern](../patterns/quest-state-machine.md).
 
 Python backend, mandatory re-indexing, one event append per map per transaction; the Ruby backend and `--no-reindex` are refused. System is read only (never written except the usual single `version_id` advance).
 
@@ -33,7 +33,11 @@ The engine runs, on action-button interaction, the **highest-numbered page whose
 ### Page fields
 
 - `condition` (required, may be `{}`): any subset of `switch1` (switch id), `switch2` (switch id), `variable` (`{"id": N, "at_least": int}`, value is greater than or equal to `at_least`, bounds -99999999..99999999) and `self_switch` (`"A"`..`"D"`). Item and actor conditions are not supported.
-- `trigger` (optional): only `"action"`. Autorun and parallel process are deliberately excluded (no termination proof).
+- `trigger` (optional, v1.25): `"action"` (default, 0), `"player_touch"` (1), `"event_touch"` (2) or `"parallel"` (4). `"parallel"` is accepted only when the page commands contain a `wait` (at any nesting depth, the same rule as a parallel [common event](common-event-append.md)). Autorun (3) is refused (no termination proof). See [Triggers](#triggers) and [touch triggers](touch-triggers.md).
+- `move` (optional, v1.25): `{"type": "fixed"|"random"|"approach"|"custom", "speed": 1..6, "frequency": 1..5, "route": [...], "repeat": bool, "skippable": bool}`. `type` is required and sets `move_type` 0..3. `speed` and `frequency` (optional) set `move_speed` and `move_frequency`; leave them out to keep the template's. `route`, `repeat` and `skippable` are allowed only for `"custom"`, which requires a `route` of 1..40 commands (`repeat` defaults to true and `skippable` to false, the editor's defaults). `fixed`, `random` and `approach` keep the template's `move_route` object (the editor stores a default route holding only the terminator even for those types). See [Move routes](#move-routes).
+- `graphic` (optional, v1.22): `{"character_name": str, "character_index": 0..7, "direction": 2/4/6/8, "pattern": 0..2}`, validated exactly like the [character graphic of a dialogue event](character-event-graphics.md) (`!`/`$` prefix rules, the sheet must exist in the project's `Graphics/Characters` or in an explicit RTP root, PNG, whole frame grid). `{}` or no key keeps the template's blank graphic. Because the sheet is a file the event depends on, the mutation also carries `expected_assets` (`{"<character_name>": binding}`, one per distinct sheet, taken from the `--staged --asset NAME [--rtp ROOT]` snapshot), present exactly when a page has a graphic; the copy patcher takes `--rtp ROOT` and rechecks the bindings at the end, and a stale or missing sheet rolls the copy back.
+- `options` (optional, v1.22): a non-empty subset of `walk_anime`, `step_anime`, `direction_fix`, `through` (booleans) and `priority` (`"below"`/`"same"`/`"above"` = priority_type 0/1/2). Every other page field (move route, speed, frequency, trigger, remaining flags) comes from the blank template page unless `trigger` or `move` sets it. Priority defaults (v1.30): a page that sets a character `graphic` and has no `priority` option is stored with priority `same` (1), because a "below" graphic event does not collide with the player and has to be walked onto (the original v1.22 behaviour inherited the template's, usually "below"). A graphic-less touch-triggered page (`player_touch` / `event_touch`) with no `priority` option is stored with `below` (2.0; v1.25–v1.34 stored `same`, an invisible wall). A touch page with a graphic follows the graphic rule (`same`). A page with neither a graphic nor a touch trigger keeps the template page's priority. An explicit `priority` always wins. Impact and `plan` warn when a page has a character graphic but priority `below` or `above` ("graphic event below the player: it will not collide and must be walked onto"); the one exception is a `player_touch` page with priority `below`, which is a deliberate floor trigger. The page graphic block is the editor's `RPG::Event::Page::Graphic` (`tile_id, character_name, character_index, direction, pattern`); `tile_id` stays 0.
+- An opened-state page (a conditional page with `"commands": []`) is allowed; it contains only the list terminator. An unconditional page still needs at least one command.
 - `commands` (required): 1..40 operations, in order (each nested body also holds at most 40):
 
 | Operation | Native commands |
@@ -48,9 +52,15 @@ The engine runs, on action-button interaction, the **highest-numbered page whose
 | `{"party": "add"/"remove", "actor": id, "initialize": bool}` | `129 [actor, 0 add / 1 remove, 0/1 initialize]`; `remove` cannot initialize |
 | `{"common_event": id}` | `117 [id]` (a plain call) |
 | `{"gold": +/-int}` | `125 [0 increase / 1 decrease, 0, abs]`, nonzero, up to 99999999 |
+| `{"weapon": id, "amount": +/-int}` (v1.22) | `127 [id, 0 gain / 1 lose, 0, abs, false]`, nonzero, up to 99; the last parameter is include-equipment, always false (equipped copies are never taken) |
+| `{"armor": id, "amount": +/-int}` (v1.22) | `128 [id, 0 gain / 1 lose, 0, abs, false]`, same rules |
 | `{"item": id, "amount": +/-int}` | `126 [id, 0 gain / 1 lose, 0, abs]`, nonzero, up to 99 |
 | `{"transfer": {"map_id", "x", "y", "direction": 0/2/4/6/8, "fade": 0/1/2}}` | `201 [0, map_id, x, y, direction, fade]` (direct designation; 0 keeps the facing; fade 0 black, 1 white, 2 none) |
 | `{"wait": 1..999}` | `230 [frames]` |
+| `{"erase_event": true}` (v1.25) | `214 []`. Refused in a common event (no owning event). The erase is temporary: the event returns when the map is reloaded |
+| `{"move_route": {"target": "player"/"this", "route": [...], "repeat": false, "skippable": bool, "wait": bool}}` (v1.25) | `205 [char_id, RPG::MoveRoute]` then one `505 [RPG::MoveCommand]` per route command; `char_id` is -1 for the player and 0 for this event. `this` is refused in a common event. See [Move routes](#move-routes) |
+| `{"shop": {"goods": [{"type": "item"/"weapon"/"armor", "id": id, "price": null or 0..9999999}, ...1..32], "purchase_only": bool}}` (v1.33) | `302 [type, id, price_type, price, purchase_only]` for the first good, then one `605 [type, id, price_type, price]` per further good, all at the block's indent. Type is 0 item, 1 weapon, 2 armor; `price: null` is price type 0 (database price, stored price 0), an integer is price type 1. The rows come from the same factory as `add_shop` (`vxace_map_shops.goods_rows`) and equal the editor's layout; goods follow the `add_shop` rules (ids 1..999, no duplicate `(type, id)`). See [shops and inns](shops-and-inns.md) |
+| `{"recover_all": "party"}` or `{"recover_all": actor_id}` (v1.33) | `314 [0, 0]` for the entire party, `314 [0, actor_id]` for one actor. The first parameter is the designation (0 fixed; variable designation `1` is not offered), the second the actor id, 0 meaning the whole party (`Game_Interpreter#iterate_actor_var`) |
 
 `COND` is exactly one of (the first key picks the form):
 
@@ -74,13 +84,56 @@ Troops, Actors, CommonEvents, Items and transfer destination maps are only read,
 | `party` | `expected_actors_sha256` | actor id exists in `Data/Actors.rvdata2` |
 | `common_event` | `expected_common_events_sha256` | id exists in `Data/CommonEvents.rvdata2` |
 | `item`, `has_item` | `expected_items_sha256` | id exists in `Data/Items.rvdata2` |
+| `weapon` | `expected_weapons_sha256` | id exists in `Data/Weapons.rvdata2` |
+| `armor` | `expected_armors_sha256` | id exists in `Data/Armors.rvdata2` |
 | `transfer` | `expected_mapinfos_sha256`, `expected_destination_maps_sha256` (`{"<map_id>": sha}`) | map is in MapInfos, its `MapNNN.rvdata2` exists and `x`/`y` are inside its size |
 
-Each hash is the SHA-256 of the Marshal dump of the file's root (array or hash). The `--staged` snapshot reports them as `troops_sha256`, `actors_sha256`, `common_events_sha256`, `items_sha256`, `mapinfos_sha256` (null when the file is absent) plus counts, and `--transfer-map N` (repeatable) adds `destination_maps` with each map's `sha256`, `width` and `height`. The impact report additionally checks the ids against the fresh index and warns for battles, transfers and gold removal.
+Each hash is the SHA-256 of the Marshal dump of the file's root (array or hash). The `--staged` snapshot reports them as `troops_sha256`, `actors_sha256`, `common_events_sha256`, `items_sha256`, `weapons_sha256`, `armors_sha256`, `mapinfos_sha256` (null when the file is absent) plus counts, and `--transfer-map N` (repeatable) adds `destination_maps` with each map's `sha256`, `width` and `height`. The impact report additionally checks the ids against the fresh index and warns for battles, transfers, gold removal and weapon/armor removal (the engine clamps at zero; equipped copies stay). It also describes treasure chests (`staged.chests`: a page that gives gold/goods and turns a self switch ON, with the later page conditioned on it) and lists page graphics and options (`staged.graphic_changes`).
+
+Weapon and armor commands follow `Game_Interpreter#command_127` / `command_128`: `operate_value(params[1], params[2], params[3])` and `params[4]` as include-equipment. See [treasure chests](treasure-chests.md).
+
+### Shop and Recover All (v1.33)
+
+- `shop` is bound by the `expected_items_sha256` / `expected_weapons_sha256` / `expected_armors_sha256` of the goods types it uses (only those), and every listed good must exist; `recover_all` with an actor id is bound by `expected_actors_sha256` (and `recover_all: "party"` needs no hash). In a recipe, a good's `id` and a `recover_all` actor id may be `{"from_step": k}` (a weapon/armor `append_entry` step, an item `append_key_item`/`append_entry` step, an actors `append_entry` step).
+- **A shop ends the current command, not the event.** `Game_Interpreter#command_302` gathers the `302` row and the `605` rows after it, calls `Scene_Shop`, prepares it with the goods and `purchase_only`, and then `Fiber.yield`s. When the shop closes the interpreter resumes at the next command, so any text, switch or gold command written after the `shop` runs once the shop is closed (it is not skipped and it does not run first). It is skipped completely in battle (`return if $game_party.in_battle`). Put the greeting before the `shop`; put farewell lines after it only if you want them shown after leaving.
+- `recover_all` runs `Game_Battler#recover_all` (clears every state, including death, then HP = MHP and MP = MMP; TP is untouched). A fixed actor id works for actors that are not in the party (`$game_actors[id]`); the party designation covers all members, reserve included (`$game_party.members` outside battle).
+- Impact and `plan` describe a shop as `Shop: Potion (default price), Hunter's Dirk 600 G` (the currency unit comes from System; `[purchase only]` is appended when set), a recover as `Recover all: the entire party (HP, MP, states)`, and warn about the two notes above.
 
 ### System ids
 
 Every switch and variable id used in a condition or command must be `1..len-1` of the native `System.switches` / `System.variables` (the project's own count), read from `Data/System.rvdata2` and bound by `expected_system_sha256` (Marshal dump SHA-256). Raise the counts in the editor first if you need more ids.
+
+## Move routes
+
+The route language is shared by the page `move` field (`custom`) and the `move_route` command. Each entry is one of:
+
+| Entry | `RPG::MoveCommand` |
+| --- | --- |
+| `"down"`, `"left"`, `"right"`, `"up"` | code 1, 2, 3, 4 (`move_straight`) |
+| `"random"`, `"toward_player"`, `"away_from_player"` | 9, 10, 11 |
+| `"forward"`, `"backward"` | 12, 13 (one step forward / backward) |
+| `{"wait": 1..999}` | 15 `[frames]` |
+| `{"turn": "down"/"left"/"right"/"up"}` | 16, 17, 18, 19 |
+| `{"turn": "random"/"toward_player"/"away_from_player"}` | 24, 25, 26 |
+
+Jump, diagonal moves, graphic/opacity/blending changes, speed and frequency changes, switches, through/transparent/animation flags, play SE and script commands are refused. The codes are those of `Game_Character#process_move_command` in the project's own scripts (the `ROUTE_*` constants, checked in Project3). The route is always stored with the editor's terminator (`RPG::MoveCommand`, code 0, parameters `[]`). `RPG::MoveRoute` has the ivars `@repeat, @skippable, @wait, @list` in that order and `RPG::MoveCommand` has `@code, @parameters`, as in the editor-saved default route of every Project3 event page. A page route is stored with `wait` false.
+
+`move_route` command keys: `target` and `route` are required; `repeat` (default false), `skippable` (default false) and `wait` (default true, the editor's default for Set Move Route) are optional booleans. `repeat: true` together with `wait: true` is refused for **any** target: `Game_Interpreter#command_205` waits `while character.move_route_forcing`, and a repeating forced route never clears that flag, so the interpreter would stall forever (for a player route the player could never move again either). Other hazards are impact warnings: a player route locks the player until it ends, and a non-skippable route retries a blocked step forever (set `skippable` true when the path may be blocked).
+
+The 505 lines carry the route's commands without the terminator. Project3 holds no editor-saved Set Move Route, so the 205/505 layout is checked against `Game_Interpreter#command_205` (it reads `@params[0]` as the character and `@params[1]` as the `RPG::MoveRoute`, and the 505 lines are display continuations) rather than against editor data; the 505 convention follows the editor's one-line-per-command display. Verify one in the editor after the first use.
+
+## Triggers
+
+`Game_Event` and `Game_Player` in the project's scripts (Project3) decide how a trigger starts:
+
+- Action button (0): `check_action_event` starts events on the player's own cell whose priority is not "same", then the faced cell (and across a counter) whose priority is "same".
+- Player touch (1) and event touch (2): `check_touch_event` (the player overlaps the cell) starts triggers 1 and 2 of events with priority **below or above** the characters, so such a page only starts when the player steps onto its cell. For priority **same**, the player walking into the event starts it (`Game_Player#check_event_trigger_touch` also uses triggers 1 and 2), and the action button starts it when facing it. A priority-same event-touch page also starts when the event itself walks into the player (`Game_Event#check_event_trigger_touch`), which needs a move type other than fixed.
+- Parallel (4): `Game_Event#setup_page` creates an interpreter for the page, which runs every frame while the page's conditions hold.
+- Autorun (3): refused.
+
+A same-priority `player_touch` page that is fixed in place starts when the player bumps into it (`Game_CharacterBase#move_straight` calls `check_event_trigger_touch_front` when the step is blocked, and `Game_Player#check_event_trigger_touch` starts triggers 1 and 2 of priority-same events). A *moving* `event_touch` page starts when the event itself is blocked by the player only if the move type steps with `turn_ok` (approach and custom routes do; **random movement does not**: `move_random` calls `move_straight(d, false)`), so a random wanderer starts only when the player walks into it. See [monsters](monsters.md).
+
+Impact warns about each touch page according to its priority, about parallel pages (they repeat until a condition changes) and about a wait that exists only inside a branch.
 
 ## Examples (v1.19)
 
@@ -130,11 +183,11 @@ The impact report lists every page's condition and command count (`staged.pages`
 {"type": "append_staged_event", "map_id": 1, "template_event": {"from_step": 1}, "x": 8, "y": 8, "name": "Quest Elder", "pages": [ ... ]}
 ```
 
-`template_event` is an integer or `{"from_step": k}` pointing at an `append_blank_event` step on the same map; `pages` is the list above. Inside `pages`, a `battle` troop id may be `{"from_step": k}` (an `append_entry` step on table `troops`) and an `item` / `has_item` id may be `{"from_step": k}` (an `append_key_item` step). The referenced database hashes come only from the step's snapshot (the runner passes `--transfer-map` for every transfer destination); a recipe cannot supply them. The step creates the next event id (cross-checked against the audit). See [recipes](recipes.md).
+`template_event` is an integer or `{"from_step": k}` pointing at an `append_blank_event` step on the same map; `pages` is the list above. Inside `pages`, a `battle` troop id may be `{"from_step": k}` (an `append_entry` step on table `troops`) and an `item` / `has_item` id may be `{"from_step": k}` (an `append_key_item` step, or an `append_entry` step on table `items`), a `weapon` id one pointing at an `append_entry` step on table `weapons` and an `armor` id one on table `armors`. The referenced database hashes come only from the step's snapshot (the runner passes `--transfer-map` for every transfer destination); a recipe cannot supply them. The step creates the next event id (cross-checked against the audit). See [recipes](recipes.md).
 
 ## Limits
 
-- No loops, labels, jumps, move routes, shops, scripts, autorun, parallel process, item/actor page conditions, graphics or faces. No cancel branch (`403`) for choices, no variable operands, and no variable (indirect) transfer destinations.
+- No loops, labels, jumps, scripts, autorun, item/actor page conditions or faces; move routes are limited to the bounded language above (no jump, graphic, script, switch, speed or frequency changes); page graphics are limited to character sheets (no tile graphics). No cancel branch (`403`) for choices, no variable operands, and no variable (indirect) transfer destinations.
 - `battle` uses a fixed troop (no random encounter); a battle without `can_lose` and a `lose` branch ends in Game Over on defeat, as in the editor.
 - The page text is plain literal text; variable and switch semantics are not simulated. Check runtime behavior in the game.
 - Self-switch state of the new event id may pre-exist in old saves; an appended static id can collide with runtime-created events.

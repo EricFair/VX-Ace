@@ -9,12 +9,14 @@ import re
 import sys
 from vxace_index_query import execute, unlinked
 from vxace_map_regions import integer, table_for
-from vxace_staged_commands import commands_shape, staged_ids as _staged_ids, ref_fields, check_references, native_rows, structure_check, reference_snapshot
+from vxace_staged_commands import (commands_shape, staged_ids as _staged_ids, ref_fields, check_references, native_rows, structure_check, reference_snapshot, graphic_names,
+                                   iter_ops, route_shape, plain_route, native_route, PAGE_TRIGGERS, TOUCH_TRIGGERS, MOVE_TYPES)
 
-VERSION = '1.19.0'
+VERSION = '2.0.0'
 FIELDS = {'action','template_id','new_id','name','x','y','text',
           'expected_map_sha256','expected_template_sha256'}
 BLANK_FIELDS = {'action','donor_event_id','new_id','name','x','y','expected_map_sha256','expected_donor_sha256'}
+BLANK_OPTIONAL = {'donor_map_id'}   # v1.26: the schema donor may live on another map (a new map has no events of its own)
 EVENT_FIELDS = {'id','name','x','y','pages'}
 PAGE_FIELDS = {'condition','graphic','move_type','move_speed','move_frequency','move_route',
                'walk_anime','step_anime','direction_fix','through','priority_type','trigger','list'}
@@ -27,6 +29,9 @@ VALUE_LIMIT = 99999999
 CONDITION_KEYS = {'switch1','switch2','variable','self_switch'}
 VARIABLE_OPS = {'set':0,'add':1,'sub':2}
 GRAPHIC_FIELDS = {'tile_id','character_name','character_index','direction','pattern'}
+PAGE_KEYS = {'condition','commands','trigger','graphic','options','move'}
+OPTION_FLAGS = ('walk_anime','step_anime','direction_fix','through')
+PRIORITIES = {'below':0,'same':1,'above':2}
 
 
 def plain_int(value,label,low,high):
@@ -40,14 +45,59 @@ def condition_key(condition):
     return (condition.get('switch1'),condition.get('switch2'),(variable['id'],variable['at_least']) if variable else None,condition.get('self_switch'))
 
 
+def page_graphic_shape(graphic):
+    """An empty object keeps the template's blank graphic; otherwise the exact character-graphic fields of the dialogue feature."""
+    if isinstance(graphic,dict) and not graphic:return
+    from vxace_character_graphics import graphic_schema
+    graphic_schema(graphic)
+
+
+def page_options_shape(options):
+    if not isinstance(options,dict) or not options or set(options)-set(OPTION_FLAGS)-{'priority'}:
+        raise ValueError('Page options must be a non-empty object with only walk_anime, step_anime, direction_fix, through and priority')
+    for key in OPTION_FLAGS:
+        if key in options and type(options[key]) is not bool:raise ValueError('Page option '+key+' must be true or false')
+    if 'priority' in options and (not isinstance(options['priority'],str) or options['priority'] not in PRIORITIES):
+        raise ValueError('Page option priority must be below, same or above')
+
+
+def page_trigger_shape(page):
+    """action (default), player_touch, event_touch, or parallel (only with a wait command); autorun stays refused."""
+    trigger=page['trigger']
+    if not isinstance(trigger,str) or trigger not in PAGE_TRIGGERS:
+        raise ValueError('Page trigger must be action, player_touch, event_touch or parallel (autorun is refused: it has no termination proof)')
+    if trigger=='parallel' and not any('wait' in op for op in iter_ops(page['commands'])):
+        raise ValueError('A parallel page needs at least one wait command (it repeats every frame while its conditions hold)')
+
+
+def page_move_shape(move):
+    """{"type": fixed|random|approach|custom, "speed": 1..6, "frequency": 1..5, and for custom only route, repeat, skippable}."""
+    if not isinstance(move,dict) or 'type' not in move or not isinstance(move['type'],str) or move['type'] not in MOVE_TYPES:
+        raise ValueError('Page move needs a type of fixed, random, approach or custom')
+    custom=move['type']=='custom'
+    if set(move)-{'type','speed','frequency'}-({'route','repeat','skippable'} if custom else set()):
+        raise ValueError('Page move keys are type, speed and frequency (route, repeat and skippable only for custom)')
+    if 'speed' in move:plain_int(move['speed'],'move speed',1,6)
+    if 'frequency' in move:plain_int(move['frequency'],'move frequency',1,5)
+    if custom:
+        if 'route' not in move:raise ValueError('A custom move needs a route of 1..40 commands')
+        route_shape(move['route'],'custom move route')
+        for key in ('repeat','skippable'):
+            if key in move and type(move[key]) is not bool:raise ValueError('Page move '+key+' must be true or false')
+
+
 def staged_shape(pages):
     """Pure shape/bounds validation of staged pages (no System ranges). Raises ValueError."""
     if not isinstance(pages,list) or not 1<=len(pages)<=MAX_PAGES:raise ValueError(f'Staged event needs 1..{MAX_PAGES} pages')
     seen=set()
     for page in pages:
-        if not isinstance(page,dict) or not {'condition','commands'}<=set(page) or set(page)-{'condition','commands','trigger'}:
-            raise ValueError('Each page needs exactly condition and commands (optional trigger "action")')
-        if 'trigger' in page and page['trigger']!='action':raise ValueError('Only the "action" trigger is supported for staged pages')
+        if not isinstance(page,dict) or not {'condition','commands'}<=set(page) or set(page)-PAGE_KEYS:
+            raise ValueError('Each page needs condition and commands (optional trigger "action", graphic and options)')
+        if 'graphic' in page:page_graphic_shape(page['graphic'])
+        if 'options' in page:page_options_shape(page['options'])
+        if 'trigger' in page and isinstance(page['commands'],list):page_trigger_shape(page)
+        elif 'trigger' in page:raise ValueError('Each page commands must be a list')
+        if 'move' in page:page_move_shape(page['move'])
         condition=page['condition']
         if not isinstance(condition,dict) or set(condition)-CONDITION_KEYS:raise ValueError('Page condition keys must be a subset of switch1, switch2, variable, self_switch')
         for key in ('switch1','switch2'):
@@ -61,7 +111,8 @@ def staged_shape(pages):
         key=condition_key(condition)
         if key in seen:raise ValueError('Two pages have identical conditions; the later page would shadow the earlier one')
         seen.add(key)
-        commands_shape(page['commands'])
+        if page['commands']==[] and condition:pass   # a conditional page with no commands (for example an opened chest) only changes appearance
+        else:commands_shape(page['commands'])
 
 
 def staged_ids(pages,switch_count,variable_count):
@@ -90,7 +141,7 @@ def system_info(project,expected=None):
     return result
 
 
-def staged_event(root,mutation,project):
+def staged_event(root,mutation,project,rtp=None):
     """Build the staged event: template clone with 1..8 pages generated from the validated page specs."""
     from vxace_python_mutator import RubyString, RubyObject, convert, marshal_rb
     for field in ('expected_map_sha256','expected_template_sha256','expected_system_sha256'):
@@ -101,6 +152,10 @@ def staged_event(root,mutation,project):
     if mutation['expected_map_sha256']!=digest(root) or mutation['expected_template_sha256']!=digest(selected):raise ValueError('Native map/template is stale')
     info=system_info(project,mutation['expected_system_sha256'])
     pages=mutation['pages'];staged_shape(pages);staged_ids(pages,len(info['switches']),len(info['variables']));check_references(mutation,project)
+    names=graphic_names(pages)
+    if names:
+        from vxace_character_graphics import staged_assets
+        if mutation['expected_assets']!=staged_assets(project,rtp,names):raise ValueError('Character asset binding is stale or inconsistent')
     name=text(mutation['name'],'new event name',100)
     for _,event in events.pairs:
         if event.get('name').data.decode('utf-8','strict')==name:raise ValueError('New event name must be unique')
@@ -119,7 +174,24 @@ def staged_event(root,mutation,project):
         if 'variable' in wanted:
             condition.set('variable_valid',True);condition.set('variable_id',wanted['variable']['id']);condition.set('variable_value',wanted['variable']['at_least'])
         if 'self_switch' in wanted:condition.set('self_switch_valid',True);condition.set('self_switch_ch',convert(wanted['self_switch'],condition.get('self_switch_ch')))
-        rows=native_rows(spec['commands'],lambda code,indent,parameters:RubyObject('RPG::EventCommand',{'@code':code,'@indent':indent,'@parameters':parameters}),literal)
+        if spec.get('graphic'):
+            from vxace_character_graphics import write_graphic
+            write_graphic(page,spec['graphic'])
+        options=spec.get('options',{})
+        for key in OPTION_FLAGS:
+            if key in options:page.set(key,options[key])
+        if 'priority' in options:page.set('priority_type',PRIORITIES[options['priority']])
+        elif spec.get('graphic'):page.set('priority_type',PRIORITIES['same'])   # v1.30: a page with a character graphic defaults to Same as Characters
+        elif spec.get('trigger') in TOUCH_TRIGGERS:page.set('priority_type',PRIORITIES['below'])   # 2.0: a graphic-less touch page (door, trap, cutscene tile) is stepped onto, never an invisible wall; other graphic-less pages keep the template's priority
+        if 'trigger' in spec:page.set('trigger',PAGE_TRIGGERS[spec['trigger']])
+        move=spec.get('move')
+        if move:
+            page.set('move_type',MOVE_TYPES[move['type']])
+            if 'speed' in move:page.set('move_speed',move['speed'])
+            if 'frequency' in move:page.set('move_frequency',move['frequency'])
+            if move['type']=='custom':   # other types keep the template's default route object, as the editor does
+                page.set('move_route',native_route(plain_route(move['route'],move.get('repeat',True),move.get('skippable',False),False)))
+        rows=native_rows(spec['commands'],lambda code,indent,parameters:RubyObject('RPG::EventCommand',{'@indent':indent,'@code':code,'@parameters':parameters}),literal)   # editor-saved ivar order (Project3)
         structure_check(rows)
         page.set('list',rows)
         built.append(page)
@@ -130,16 +202,23 @@ def staged_event(root,mutation,project):
 
 def schema(mutation):
     if isinstance(mutation,dict) and mutation.get('action')=='append_staged_event':
-        if set(mutation)!=STAGED_FIELDS|ref_fields(mutation.get('pages')):raise ValueError('Exact append_staged_event schema required (plus one expected hash per referenced database)')
-        staged_shape(mutation['pages']);return
-    if isinstance(mutation,dict) and mutation.get('action')=='append_blank_event':
-        if set(mutation)!=BLANK_FIELDS:raise ValueError('Exact append_blank_event schema required')
+        pages=mutation.get('pages');names=graphic_names(pages)
+        if set(mutation)!=STAGED_FIELDS|ref_fields(pages)|({'expected_assets'} if names else set()):
+            raise ValueError('Exact append_staged_event schema required (plus one expected hash per referenced database and expected_assets when pages carry graphics)')
+        staged_shape(pages)
+        if names and (not isinstance(mutation['expected_assets'],dict) or set(mutation['expected_assets'])!=names):
+            raise ValueError('expected_assets must hold exactly one asset binding per page graphic character sheet')
         return
-    if not isinstance(mutation,dict) or set(mutation) not in (FIELDS,FIELDS|{'graphic','expected_asset'}) or mutation.get('action')!='append_dialogue_event':
-        raise ValueError('Exact append_dialogue_event schema required; optional graphic and expected_asset must appear together')
+    if isinstance(mutation,dict) and mutation.get('action')=='append_blank_event':
+        if not BLANK_FIELDS<=set(mutation)<=BLANK_FIELDS|BLANK_OPTIONAL:raise ValueError('Exact append_blank_event schema required')
+        if 'donor_map_id' in mutation:integer(mutation['donor_map_id'],'donor map ID',1,999)
+        return
+    if not isinstance(mutation,dict) or set(mutation) not in (FIELDS,FIELDS|{'graphic','expected_asset'},FIELDS|{'graphic','expected_asset','options'}) or mutation.get('action')!='append_dialogue_event':
+        raise ValueError('Exact append_dialogue_event schema required; optional graphic and expected_asset must appear together, and options (v1.33) only with them')
     if 'graphic' in mutation:
         from vxace_character_graphics import graphic_schema
         graphic_schema(mutation['graphic'])
+    if 'options' in mutation:page_options_shape(mutation['options'])
 
 
 def digest(value):
@@ -179,7 +258,8 @@ def events_for(root):
     return events
 
 
-def template(root,template_id,blank_list=True):
+def template(root,template_id,blank_list=True,allow_graphic=False):
+    """Validate the one-page stationary action-button event. `allow_graphic` (v1.33, shop append) also accepts a character graphic (tile_id 0, any name)."""
     from vxace_python_mutator import RubyString
     events=events_for(root);integer(template_id,'template event ID',1,999)
     selected=next((event for key,event in events.pairs if key==template_id),None)
@@ -204,8 +284,9 @@ def template(root,template_id,blank_list=True):
     if not isinstance(ch,RubyString) or ch.ivars not in ({},{'E':True},{'E':False}) or ch.data not in (b'A',b'B',b'C',b'D'):raise ValueError('Native self-switch letter required')
     graphic=exact(page.get('graphic'),'RPG::Event::Page::Graphic',GRAPHIC_FIELDS)
     empty=graphic.get('character_name')
-    if type(graphic.get('tile_id')) is not int or graphic.get('tile_id')!=0 or not isinstance(empty,RubyString) or empty.data or empty.ivars not in ({},{'E':True},{'E':False}):
+    if type(graphic.get('tile_id')) is not int or graphic.get('tile_id')!=0 or not isinstance(empty,RubyString) or (empty.data and not allow_graphic) or empty.ivars not in ({},{'E':True},{'E':False}):
         raise ValueError('Only blank native graphics are enabled for new dialogue events')
+    if allow_graphic and empty.data:empty.data.decode('utf-8','strict')
     integer(graphic.get('character_index'),'character index',0,7);integer(graphic.get('pattern'),'pattern',0,2)
     if type(graphic.get('direction')) is not int or graphic.get('direction') not in (2,4,6,8):raise ValueError('Native graphic direction required')
     route=exact(page.get('move_route'),'RPG::MoveRoute',{'repeat','skippable','wait','list'})
@@ -249,8 +330,18 @@ def donor_event(root,donor_id):
     return event
 
 
-def blank_snapshot(root,donor_id):
-    events=events_for(root);selected=donor_event(root,donor_id)
+def donor_root_of(mutation,project,target_root=None):
+    """Map that holds the schema donor: the target map itself, or (v1.26 donor_map_id) another native map of the same project."""
+    from vxace_staged_commands import load_native
+    if 'donor_map_id' not in mutation:return target_root
+    if project is None:raise ValueError('A donor on another map needs the native project')
+    root=load_native(project,f'Map{integer(mutation["donor_map_id"],"donor map ID",1,999):03d}.rvdata2')
+    table_for(root)
+    return root
+
+
+def blank_snapshot(root,donor_id,donor_root=None):
+    events=events_for(root);selected=donor_event(root if donor_root is None else donor_root,donor_id)
     next_id=max((key for key,_ in events.pairs),default=0)+1
     return {'version':VERSION,'map_sha256':digest(root),'donor_sha256':digest(selected),'donor_event_id':donor_id,'donor_schema_ok':True,
             'next_event_id':next_id,'default_name':'EV%03d'%next_id,'event_count':len(events.pairs),
@@ -272,12 +363,12 @@ def snapshot(root,template_id):
                       'Next maximum ID only; review runtime-created IDs, coordinate consumers and native action-button access.']}
 
 
-def blank_event(root,mutation):
+def blank_event(root,mutation,project=None):
     from vxace_python_mutator import convert, marshal_rb
     schema(mutation)
     for field in ('expected_map_sha256','expected_donor_sha256'):
         if not isinstance(mutation[field],str) or not re.fullmatch('[a-f0-9]{64}',mutation[field]):raise ValueError('Exact native map/donor SHA required')
-    donor=donor_event(root,mutation['donor_event_id']);events=events_for(root)
+    donor=donor_event(donor_root_of(mutation,project,root),mutation['donor_event_id']);events=events_for(root)
     identifier=integer(mutation['new_id'],'new event ID',1,999)
     if identifier!=max((key for key,_ in events.pairs),default=0)+1:raise ValueError('Append at the next maximum event ID; never reuse holes')
     if mutation['expected_map_sha256']!=digest(root) or mutation['expected_donor_sha256']!=digest(donor):raise ValueError('Native map/donor is stale')
@@ -310,8 +401,8 @@ def blank_event(root,mutation):
 def new_event(root,mutation,project=None,rtp=None):
     from vxace_python_mutator import RubyString, RubyObject, convert, marshal_rb
     schema(mutation)
-    if mutation['action']=='append_blank_event':return blank_event(root,mutation)
-    if mutation['action']=='append_staged_event':return staged_event(root,mutation,project)
+    if mutation['action']=='append_blank_event':return blank_event(root,mutation,project)
+    if mutation['action']=='append_staged_event':return staged_event(root,mutation,project,rtp)
     for field in ('expected_map_sha256','expected_template_sha256'):
         if not isinstance(mutation[field],str) or not re.fullmatch('[a-f0-9]{64}',mutation[field]):raise ValueError('Exact native map/template SHA required')
     selected=template(root,mutation['template_id']);events=events_for(root)
@@ -333,7 +424,14 @@ def new_event(root,mutation,project=None,rtp=None):
     event.get('pages')[0].set('list',[command(101,[RubyString(b'',{'E':True}),0,0,2])]+[command(401,[RubyString(line.encode('utf-8'),{'E':True})]) for line in lines]+[command(0,[])])
     if 'graphic' in mutation:
         from vxace_character_graphics import set_graphic
-        set_graphic(event.get('pages')[0],mutation['graphic'],mutation['expected_asset'],project,rtp)
+        page=event.get('pages')[0]
+        set_graphic(page,mutation['graphic'],mutation['expected_asset'],project,rtp)
+        # v1.33: a dialogue event with a character graphic defaults to Same as Characters (as a staged page does since v1.30), so the player bumps into it;
+        # the options may set walk_anime, step_anime, direction_fix, through and an explicit priority. A graphic-less dialogue event keeps the template's page.
+        options=mutation.get('options',{})
+        for key in OPTION_FLAGS:
+            if key in options:page.set(key,options[key])
+        page.set('priority_type',PRIORITIES[options.get('priority','same')])
     return event
 
 
@@ -354,12 +452,16 @@ def verify_transition(before,after,mutation,project=None,rtp=None):
     if unrelated(before)!=unrelated(after):raise ValueError('Candidate changed unrelated map fields or unknown aliases')
 
 
-def indexed_snapshot(data,project,map_id,template_id,graphic=None,rtp=None,donor=False,staged=False,transfer_maps=()):
+def indexed_snapshot(data,project,map_id,template_id,graphic=None,rtp=None,donor=False,staged=False,transfer_maps=(),assets=(),donor_map=None):
     from vxace_python_mutator import load, RubyObject, RubyString
     integer(map_id,'map ID',1,999999)
     root,_=load(unlinked(Path(project)/f'Data/Map{map_id:03d}.rvdata2'))
     indexed=data.json(f'maps/map-{map_id:03d}.json')
-    events=events_for(root);selected=donor_event(root,template_id) if donor else template(root,template_id)
+    donor_root=None
+    if donor_map is not None:
+        if not donor or donor_map==map_id:raise ValueError('A donor map must be a different map and only applies to a blank-event donor')
+        donor_root,_=load(unlinked(Path(project)/f'Data/Map{integer(donor_map,"donor map ID",1,999):03d}.rvdata2'))
+    events=events_for(root);selected=donor_event(root if donor_root is None else donor_root,template_id) if donor else template(root,template_id)
     def plain(value):
         if isinstance(value,RubyString):return value.data.decode('utf-8','strict')
         if isinstance(value,RubyObject):return {'__class__':value.cls,**{key[1:]:plain(item) for key,item in value.ivars.items()}}
@@ -374,19 +476,28 @@ def indexed_snapshot(data,project,map_id,template_id,graphic=None,rtp=None,donor
     indexed_events=indexed.get('events')
     if not isinstance(indexed_events,dict) or set(indexed_events)!={str(key) for key,_ in events.pairs} or (not donor and indexed_events.get(str(template_id))!=plain(selected)):
         raise ValueError('Native/indexed event identities or selected template disagree')
+    if donor_root is not None:
+        indexed_donor=data.json(f'maps/map-{donor_map:03d}.json')
+        if not isinstance(indexed_donor,dict) or not isinstance(indexed_donor.get('events'),dict) or indexed_donor['events'].get(str(template_id))!=plain(selected):
+            raise ValueError('Native/indexed donor event on the donor map disagrees')
     for key,event in events.pairs:
         observed=indexed_events[str(key)]
         if not isinstance(observed,dict) or any(observed.get(field)!=plain(event.get(field)) for field in ('id','name','x','y')):
             raise ValueError('Native/indexed existing event identity/position disagrees')
-    result={'map_id':map_id,**(blank_snapshot(root,template_id) if donor else snapshot(root,template_id))}
+    result={'map_id':map_id,**(blank_snapshot(root,template_id,donor_root) if donor else snapshot(root,template_id))}
+    if donor_root is not None:result['donor_map_id']=donor_map
     if staged:
         info=system_info(project)
         result.update(system_sha256=info['system_sha256'],switch_count=len(info['switches'])-1,variable_count=len(info['variables'])-1,
                       switch_names=info['switches'][1:],variable_names=info['variables'][1:])
         result.update(reference_snapshot(project,transfer_maps))
-        result['limits']=['One blank-graphic action-button event with 1..8 condition pages built from literal text, switch/variable/self-switch, choices, if/else, battle, party, common-event, gold, item, transfer and wait commands (nesting <= 4).',
+        result['limits']=['One blank-graphic event with 1..8 condition pages built from literal text, switch/variable/self-switch, choices, if/else, battle, party, common-event, gold, item, weapon, armor, transfer, wait, erase-event and move-route commands (nesting <= 4).',
                           'Switch/variable ids must exist in the native System (bound by system_sha256); referenced Troops/Actors/CommonEvents/Items/MapInfos and transfer destination maps are bound by their own hashes. The highest valid page wins at runtime, so review page order.',
-                          'No autorun, parallel process, graphics or item/actor conditions. Next maximum ID only.']
+                          'Pages may carry a character graphic (bound by its own asset hash, see assets) and walk/step/direction-fix/through/priority options; every other page field comes from the blank template.',
+                          'Pages may set a trigger (action, player_touch, event_touch, or parallel with a wait command) and autonomous movement (fixed, random, approach or a bounded custom route). No autorun or item/actor conditions. Next maximum ID only.']
+        if assets:
+            from vxace_character_graphics import staged_assets
+            result['assets']=staged_assets(project,rtp,assets)
     if graphic is not None:
         from vxace_character_graphics import binding
         result.update(proposed_graphic=graphic,asset=binding(project,rtp,graphic))
@@ -397,9 +508,11 @@ def indexed_snapshot(data,project,map_id,template_id,graphic=None,rtp=None,donor
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('index');parser.add_argument('--project',required=True)
     parser.add_argument('--map',dest='map_id',type=int,required=True);group=parser.add_mutually_exclusive_group(required=True);group.add_argument('--template-event',type=int);group.add_argument('--donor-event',type=int)
+    parser.add_argument('--donor-map',type=int,help='With --donor-event: the schema donor lives on this other map (v1.26)')
     parser.add_argument('--staged',action='store_true',help='With --template-event: also report the native System hash, switch/variable counts and names')
     parser.add_argument('--transfer-map',type=int,action='append',default=[],help='With --staged: also report the hash and size of a transfer destination map')
     parser.add_argument('--output',required=True)
+    parser.add_argument('--asset',action='append',default=[],help='With --staged: also bind the character sheet of a page graphic (repeatable; project first, optional --rtp)')
     parser.add_argument('--character');parser.add_argument('--character-index',type=int);parser.add_argument('--direction',type=int,default=2);parser.add_argument('--pattern',type=int,default=1);parser.add_argument('--rtp')
     args=parser.parse_args(argv)
     try:
@@ -412,9 +525,11 @@ def main(argv=None):
         graphic={'character_name':args.character,'character_index':args.character_index,'direction':args.direction,'pattern':args.pattern} if args.character is not None else None
         if args.donor_event is not None and (graphic is not None or args.rtp):raise ValueError('Donor snapshots take no graphic options')
         if args.staged and (args.template_event is None or graphic is not None):raise ValueError('--staged needs --template-event and takes no graphic options')
+        if args.donor_map is not None and args.donor_event is None:raise ValueError('--donor-map needs --donor-event')
         if args.transfer_map and not args.staged:raise ValueError('--transfer-map needs --staged')
-        if graphic is None and (args.rtp or args.direction!=2 or args.pattern!=1):raise ValueError('Graphic-only options require a selected character')
-        result=execute(args.index,project,output,lambda data:indexed_snapshot(data,project,args.map_id,args.template_event if args.donor_event is None else args.donor_event,graphic,rtp,args.donor_event is not None,args.staged,tuple(args.transfer_map)),'map-event-snapshot')
+        if args.asset and not args.staged:raise ValueError('--asset needs --staged')
+        if graphic is None and ((args.rtp and not args.asset) or args.direction!=2 or args.pattern!=1):raise ValueError('Graphic-only options require a selected character')
+        result=execute(args.index,project,output,lambda data:indexed_snapshot(data,project,args.map_id,args.template_event if args.donor_event is None else args.donor_event,graphic,rtp,args.donor_event is not None,args.staged,tuple(args.transfer_map),tuple(args.asset),args.donor_map),'map-event-snapshot')
     except Exception as error:print('Event snapshot refused: '+str(error),file=sys.stderr);return 2
     print(json.dumps({'version':VERSION,'next_event_id':result['next_event_id']}));return 0
 

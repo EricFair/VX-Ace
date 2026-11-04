@@ -9,7 +9,7 @@ The event must already exist on the map and satisfy the same strict predicate as
 - **blank**: only the root terminator, or
 - **dialogue**: exactly one literal Show Text block (a `101` header `["",0,0,2]`, one to four literal `401` lines, no escape codes) followed by the terminator — the shape [map event creation](map-event-creation.md) produces.
 
-Anything else (conditions, touch/autorun triggers, movement, a graphic, an existing shop, other commands, a second block) is refused. Use `append_dialogue_event` to create a suitable event first when the map has none.
+Since v1.33 a *dialogue* event may carry a character graphic (any priority; the shop append does not change it), so a visible shopkeeper can be made with `append_dialogue_event` + `graphic`, then `add_shop`; a *blank* event with a graphic is still refused. Anything else (conditions, touch/autorun triggers, movement, a graphic on a blank event, an existing shop, other commands, a second block) is refused. For a shopkeeper in one step, or a shop on a conditional page, use the `shop` command in a staged page or the `add_shopkeeper` macro ([shops and inns](shops-and-inns.md)). Use `append_dialogue_event` to create a suitable event first when the map has none.
 
 ## Fresh read-only evidence
 
@@ -68,7 +68,7 @@ Exactly one shop per transaction, Python backend and post-copy re-indexing only;
 
 ## Native evidence and limits
 
-Inspect the event in VX Ace (`Shop Processing` plus the following goods rows), open the shop in play, buy and (unless purchase-only) sell, test an older save and a native save/restart. Custom shop scenes or price scripts can change what is displayed or charged; the tool cannot prove that. Specified prices are constants. Variable-driven shops, multiple shops per event, shops on events with graphics, conditions, several pages or extra logic, editing or removing an existing shop, and creating items or the event inside this operation remain deferred. No in-engine runtime run has been performed for this release; the independent Ruby-authored native fixture tests cover file-level behavior only.
+Inspect the event in VX Ace (`Shop Processing` plus the following goods rows), open the shop in play, buy and (unless purchase-only) sell, test an older save and a native save/restart. Custom shop scenes or price scripts can change what is displayed or charged; the tool cannot prove that. Specified prices are constants. Variable-driven shops, multiple shops per event, shops on blank events with graphics, conditions, several pages or extra logic (use the `shop` command of a staged page, v1.33), editing or removing an existing shop, and creating items or the event inside this operation remain deferred. No in-engine runtime run has been performed for this release; the independent Ruby-authored native fixture tests cover file-level behavior only.
 
 ## Native evidence (v1.15)
 

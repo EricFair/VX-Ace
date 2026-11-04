@@ -11,11 +11,12 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from vxace_copy_patcher import current_inventory
 from vxace_index_query import unlinked
 
-VERSION='1.8.0'
+VERSION='2.0.0'
 ROOT=Path(__file__).resolve().parent
 RUNTIME=ROOT/'smoke'/'vxa_smoke_runtime.rb'
 SLOT_NAME='VXA Smoke Harness'
@@ -25,6 +26,11 @@ STAGE_FILE='smoke-stage.json'
 RECORD_TYPES=('PASS','FAIL','ERROR','INFO')
 NONCE_PATTERN=re.compile('[a-f0-9]{32}')
 STEP_TIMEOUT=900
+SHOT_PATTERN=re.compile(r'([A-Za-z0-9_-]{1,40})@([1-9][0-9]{0,6})')
+LABEL_PATTERN=re.compile(r'[A-Za-z0-9_-]{1,40}')
+MAX_SHOTS=20
+MAX_SHOT_BYTES=8*1024*1024
+PNG_SIGNATURE=bytes([137,80,78,71,13,10,26,10])
 
 
 def sha256(raw):return hashlib.sha256(raw).hexdigest()
@@ -180,15 +186,54 @@ def kill_tree(proc):
     except Exception:pass
 
 
-def run(work,mode,start,frames,auto_confirm,timeout,json_out,markdown_out,launcher=None):
+def check_shots(shots):
+    parsed=[]
+    for text in shots or ():
+        match=SHOT_PATTERN.fullmatch(text) if isinstance(text,str) else None
+        if not match:raise ValueError('--screenshot must look like LABEL@FRAME (label: letters, digits, _ or -, up to 40; frame >= 1): '+repr(text))
+        parsed.append((match.group(1),int(match.group(2))))
+    if len(parsed)>MAX_SHOTS:raise ValueError('At most '+str(MAX_SHOTS)+' screenshots per run')
+    if len({label for label,_ in parsed})!=len(parsed):raise ValueError('Screenshot labels must be distinct')
+    return parsed
+
+
+def read_png_info(raw):
+    """(width, height) of a PNG, or None when the bytes are not a PNG with a plausible IHDR."""
+    if len(raw)<33 or raw[:8]!=PNG_SIGNATURE or raw[12:16]!=b'IHDR':return None
+    width=int.from_bytes(raw[16:20],'big');height=int.from_bytes(raw[20:24],'big')
+    return (width,height) if 0<width<=4096 and 0<height<=4096 else None
+
+
+def collect_screenshots(copy,nonce,shots_dir):
+    """Copy the screenshots the harness wrote (vxa_smoke_<nonce>_shot_NN_<label>.png) into shots_dir; returns (rows, problems)."""
+    rows=[];problems=[]
+    found=sorted(copy.glob('vxa_smoke_'+nonce+'_shot_*.png'))
+    for path in found[:MAX_SHOTS]:
+        if not path.is_file() or path.is_symlink():continue
+        raw=path.read_bytes()
+        if len(raw)>MAX_SHOT_BYTES:problems.append('screenshot too large: '+path.name);continue
+        size=read_png_info(raw)
+        if size is None:problems.append('screenshot is not a valid PNG: '+path.name);continue
+        shots_dir.mkdir(exist_ok=True)
+        name=path.name[len('vxa_smoke_'+nonce+'_'):]
+        (shots_dir/name).write_bytes(raw)
+        rows.append({'file':shots_dir.name+'/'+name,'label':re.sub(r'^shot_\d+_|\.png$','',name),'bytes':len(raw),'width':size[0],'height':size[1]})
+    if len(found)>MAX_SHOTS:problems.append('more than '+str(MAX_SHOTS)+' screenshots; extra ignored')
+    return rows,problems
+
+
+def run(work,mode,start,frames,auto_confirm,timeout,json_out,markdown_out,launcher=None,shots=(),shots_dir=None):
     if mode not in ('test','normal'):raise ValueError('--mode must be test or normal')
     if start!='new' and not re.fullmatch('save:(?:[1-9]|1[0-6])',start):raise ValueError('--start must be new or save:1..save:16')
     if type(frames) is not int or not 1<=frames<=1000000:raise ValueError('--frames must be 1..1000000')
     if type(auto_confirm) is not int or not 0<=auto_confirm<=1000000:raise ValueError('--auto-confirm must be 0..1000000')
     if not 0<timeout<=3600:raise ValueError('--timeout must be >0 and <=3600 seconds')
+    shots=check_shots(shots)
     work,stage_record,copy,scripts=load_stage(work);project=unlinked(stage_record['project'])
     json_out=new_output(json_out,project,copy);markdown_out=new_output(markdown_out,project,copy)
     if json_out==markdown_out:raise ValueError('JSON and Markdown outputs must differ')
+    shots_dir=unlinked(shots_dir) if shots_dir else json_out.with_name(json_out.stem+'-screenshots')
+    if shots_dir.exists() or inside(shots_dir,project) or inside(shots_dir,copy):raise ValueError('Screenshot folder must be new and outside the original project and staged copy: '+str(shots_dir))
     if launcher is None:
         if sys.platform!='win32':raise ValueError('Launching Game.exe is Windows-only')
         game=copy/'Game.exe'
@@ -202,6 +247,7 @@ def run(work,mode,start,frames,auto_confirm,timeout,json_out,markdown_out,launch
     if result_path.exists():raise ValueError('Results file already exists')
     env={key:value for key,value in os.environ.items() if not key.startswith('VXA_SMOKE_')}
     env.update({'VXA_SMOKE_NONCE':nonce,'VXA_SMOKE_OUT':out_name,'VXA_SMOKE_START':start,'VXA_SMOKE_FRAMES':str(frames),'VXA_SMOKE_AUTO_CONFIRM':str(auto_confirm)})
+    if shots:env['VXA_SMOKE_SHOTS']=','.join(label+'@'+str(frame) for label,frame in shots)
     options={'cwd':str(copy),'env':env,'stdin':subprocess.DEVNULL,'stdout':subprocess.DEVNULL,'stderr':subprocess.DEVNULL}
     if sys.platform!='win32':options['start_new_session']=True
     started=time.monotonic();timed_out=False
@@ -218,6 +264,8 @@ def run(work,mode,start,frames,auto_confirm,timeout,json_out,markdown_out,launch
         parsed=parse_results(raw,nonce,complete=not timed_out);problems=list(parsed['problems'])
         if mode=='test' and parsed['header'] and not parsed['header']['test']:problems.append('header reports $TEST false in test mode')
         if mode=='normal' and parsed['header'] and parsed['header']['test']:problems.append('header reports $TEST true in normal mode')
+    screenshots,shot_problems=collect_screenshots(copy,nonce,shots_dir) if result_path.is_file() else ([],[])
+    problems+=shot_problems
     unchanged=scripts.is_file() and file_sha256(scripts)==stage_record['scripts_sha256']
     records=parsed['records'];counts={kind:sum(r['type']==kind for r in records) for kind in RECORD_TYPES}
     uncaught=sum(r['type']=='ERROR' and r['name']=='uncaught' for r in records)
@@ -228,7 +276,8 @@ def run(work,mode,start,frames,auto_confirm,timeout,json_out,markdown_out,launch
     else:status='pass'
     report={'version':VERSION,'status':status,'mode':mode,'start':start,'frames':frames,'auto_confirm':auto_confirm,'timeout_seconds':timeout,
             'nonce':nonce,'results_file':out_name,'runtime':parsed['header'],'records':records,'counts':counts,'uncaught':uncaught,
-            'problems':problems,'timed_out':timed_out,'duration_seconds':duration,'process_exit_code':proc.returncode,
+            'screenshots':screenshots,'problems':problems,'timed_out':timed_out,'duration_seconds':duration,'process_exit_code':proc.returncode,
+            'timing':timing_of(records),
             'script_refs':script_refs(records,stage_record['script_names']),'copy':str(copy),'project':str(project),
             'scripts_unchanged_after_run':unchanged,'slot_source_sha256':stage_record['slot_source_sha256'],'suite_sha256':stage_record.get('suite_sha256'),
             'runtime_compatibility_proven':False,'mutation_authorized':False,
@@ -239,21 +288,111 @@ def run(work,mode,start,frames,auto_confirm,timeout,json_out,markdown_out,launch
     return report
 
 
+def timing_of(records):
+    """{'frames', 'seconds', 'fps'} from the runtime's INFO timing record, or None (older runtime, crash before the end)."""
+    for record in reversed(records):
+        if record.get('type')=='INFO' and record.get('name')=='timing':
+            values=dict(part.split('=',1) for part in str(record.get('detail','')).split() if '=' in part)
+            try:return {'frames':int(values['frames']),'seconds':float(values['seconds']),'fps':float(values['fps'])}
+            except (KeyError,ValueError):return None
+    return None
+
+
 def markdown(report):
     def cell(text):return str(text).replace('|','\\|').replace('\n',' ')
     lines=['# VX Ace smoke test report','',f"Status: **{report['status']}**",
            f"Mode: {report['mode']} / start: {report['start']} / frames: {report['frames']} / auto-confirm: {report['auto_confirm']}",
            f"Duration: {report['duration_seconds']} s, process exit code: {report['process_exit_code']}",
+           *( [f"Game speed: {report['timing']['frames']} frames in {report['timing']['seconds']} s = {report['timing']['fps']} fps"
+               + (' (below 50 fps: the run was throttled; RGSS pauses while its window is not active, so do not hide or minimise it)' if report['timing']['fps']<50 else '')] if report.get('timing') else []),
            'Counts: '+', '.join(f'{key} {value}' for key,value in report['counts'].items()),
            f"Runtime: {cell(report['runtime'])}",'']
     if report['problems']:lines+=['## Problems','']+['- '+cell(p) for p in report['problems']]+['']
     lines+=['## Records','','| Type | Name | Detail |','| --- | --- | --- |']
     lines+=[f"| {r['type']} | {cell(r['name'])} | {cell(r['detail'])} |" for r in report['records']]
+    if report['screenshots']:
+        lines+=['','## Screenshots','']+[f"- {cell(s['label'])}: {s['file']} ({s['width']}x{s['height']}, {s['bytes']} bytes)" for s in report['screenshots']]
     if report['script_refs']:
         lines+=['','## Script references','']+[f"- {cell(r['record'])}: {{{r['id']}}} -> {cell(r['script'])}" for r in report['script_refs']]
     lines+=['','Runtime compatibility proven: **False**. Mutation authorized: **False**.']
     lines+=['- '+text for text in report['limits']]
     return '\n'.join(lines)+'\n'
+
+
+def ruby_string(text):
+    """A double-quoted Ruby 1.9.2 literal for text: backslash, quote and # escaped, non-ASCII as \\u{...} escapes."""
+    if not isinstance(text,str) or not text or len(text)>200 or any(ord(c)<32 or ord(c)==127 for c in text):
+        raise ValueError('Names must be 1..200 characters without control characters')
+    out=[]
+    for c in text:
+        if c in '\\"#':out.append('\\'+c)
+        elif ord(c)<127:out.append(c)
+        else:out.append('\\u{%x}'%ord(c))
+    return '"'+''.join(out)+'"'
+
+
+def check_suite(start_map,x,y,direction,expect_events,steps,talk,auto_battle,labels):
+    """Ruby suite text for the one-line check command: arrive, look for events, walk, talk, screenshot."""
+    if type(start_map) is not int or not 1<=start_map<=999:raise ValueError('--start-map must be 1..999')
+    if (x is None)!=(y is None):raise ValueError('--x and --y go together')
+    for value in (x,y):
+        if value is not None and (type(value) is not int or not 0<=value<=255):raise ValueError('--x/--y must be 0..255')
+    if direction not in (0,2,4,6,8):raise ValueError('--direction must be 0, 2, 4, 6 or 8')
+    if auto_battle not in (None,'attack','win','lose'):raise ValueError('--auto-battle must be attack, win or lose')
+    lines=['VXA_Smoke.script do','  goto %d, %s, %s, %d'%(start_map,'nil' if x is None else x,'nil' if y is None else y,direction)]
+    if auto_battle:lines.append('  auto_battle :'+auto_battle)
+    for name in expect_events:lines.append('  expect_event '+ruby_string(name))
+    for text in steps:
+        if isinstance(text,str):text=re.sub(r'^(down|left|right|up):',lambda m:{'down':'2','left':'4','right':'6','up':'8'}[m.group(1)]+':',text.strip().lower())
+        match=re.fullmatch(r'([2468]):([1-9][0-9]{0,2})',text) if isinstance(text,str) else None
+        if not match:raise ValueError('--step must look like DIR:COUNT with DIR 2/4/6/8 or down/left/right/up (for example 6:3 or right:3): '+repr(text))
+        lines+=['  step %s, %s'%(match.group(1),match.group(2)),'  wait_idle 900']
+    if talk:lines+=['  talk '+ruby_string(talk),'  wait_idle 900']
+    elif not steps and auto_battle is None:lines.append('  wait_idle 300')
+    for label in labels:lines.append('  screenshot '+ruby_string(label))
+    lines+=["  info 'check_position', position_text",'end','']
+    return '\r\n'.join(lines)
+
+
+def remove_tree(path):
+    def onerror(function,target,_):
+        try:os.chmod(target,0o700);function(target)
+        except OSError:pass
+    shutil.rmtree(path,onerror=onerror)
+    return not Path(path).exists()
+
+
+def check(project,results,start_map,x=None,y=None,direction=0,expect_events=(),steps=(),talk=None,screenshots=(),frames=1800,
+          mode='test',timeout=300,auto_battle=None,ruby=None,keep_work=False,work_root=None,launcher=None):
+    """Stage one temporary copy with a generated suite, run it, delete the copy and keep only the results folder."""
+    project=project_root(project);results=unlinked(results)
+    if results.exists() or inside(results,project) or inside(project,results):raise ValueError('--results must be a new folder outside the project')
+    labels=[];shots=[]
+    for text in screenshots or ():
+        if SHOT_PATTERN.fullmatch(text or ''):shots.append(text)
+        elif LABEL_PATTERN.fullmatch(text or ''):labels.append(text)
+        else:raise ValueError('--screenshot must be LABEL or LABEL@FRAME (label: letters, digits, _ or -, up to 40): '+repr(text))
+    check_shots(shots)
+    names=labels+[s.split('@')[0] for s in shots]
+    if len(names)>MAX_SHOTS or len(set(names))!=len(names):raise ValueError('Screenshot labels must be distinct, at most '+str(MAX_SHOTS))
+    suite_text=check_suite(start_map,x,y,direction,list(expect_events or ()),list(steps or ()),talk,auto_battle,labels)
+    root=unlinked(work_root) if work_root else None
+    if root is not None and (not root.is_dir() or inside(root,project)):raise ValueError('--work-root must be an existing folder outside the project')
+    temp=Path(tempfile.mkdtemp(prefix='vxace-check-',dir=str(root) if root else None)).resolve()
+    work=temp/'work';work_removed=None
+    try:
+        suite=temp/'suite.rb';suite.write_bytes(suite_text.encode('utf-8'))
+        results.mkdir(parents=True)
+        stage(project,work,suite,ruby)
+        report=run(work,mode,'new',frames,0,timeout,results/'report.json',results/'report.md',launcher,shots,results/'screenshots')
+    finally:
+        work_removed=False if keep_work else remove_tree(temp)
+    report['check']={'start_map':start_map,'x':x,'y':y,'direction':direction,'expect_events':list(expect_events or ()),'steps':list(steps or ()),'talk':talk,
+                     'auto_battle':auto_battle,'screenshots_requested':labels+shots,'temporary_copy_removed':work_removed,'work_kept':str(temp) if keep_work else None,
+                     'results':str(results)}
+    (results/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    (results/'suite.rb').write_bytes(suite_text.encode('utf-8'))
+    return report
 
 
 def json_argv(text):
@@ -269,14 +408,35 @@ def main(argv=None):
     item.add_argument('--start',default='new');item.add_argument('--frames',type=int,default=600);item.add_argument('--auto-confirm',type=int,default=0)
     item.add_argument('--timeout',type=float,default=120);item.add_argument('--json',required=True);item.add_argument('--markdown',required=True)
     item.add_argument('--launcher',type=json_argv,help=argparse.SUPPRESS)
+    item.add_argument('--screenshot',action='append',default=[],metavar='LABEL@FRAME',help='save a screenshot at this frame (repeatable, up to 20); written into <json stem>-screenshots/')
+    item=commands.add_parser('check',help='one-line feature check: stage a temporary copy, run a generated suite, delete the copy, keep the results')
+    item.add_argument('project');item.add_argument('--start-map',type=int,required=True);item.add_argument('--x',type=int);item.add_argument('--y',type=int)
+    item.add_argument('--direction',type=int,default=0,help='facing on arrival: 2,4,6,8 (default: keep)')
+    item.add_argument('--expect-event',action='append',default=[],metavar='NAME',help='PASS/FAIL that an event with this name is on the map (repeatable)')
+    item.add_argument('--step',action='append',default=[],metavar='DIR:N',help='walk N tiles (DIR 2,4,6,8) with virtual input, for example 6:3 to bump into a monster; repeatable')
+    item.add_argument('--talk',metavar='NAME',help='stand next to this event, press the action key and let it finish')
+    item.add_argument('--auto-battle',choices=['attack','win','lose'],help='play any battle: attack (Fight > Attack first target), win (kill the troop), lose')
+    item.add_argument('--screenshot',action='append',default=[],metavar='LABEL[@FRAME]',help='screenshot at the end of the script, or at a frame (repeatable)')
+    item.add_argument('--frames',type=int,default=1800);item.add_argument('--mode',choices=['test','normal'],default='test');item.add_argument('--timeout',type=float,default=300)
+    item.add_argument('--results',required=True,help='new folder that receives report.json, report.md, suite.rb and screenshots/')
+    item.add_argument('--ruby');item.add_argument('--work-root',help='existing folder for the temporary copy (default: the system temp folder)')
+    item.add_argument('--keep-work',action='store_true',help='do not delete the temporary copy (debugging)')
+    item.add_argument('--launcher',type=json_argv,help=argparse.SUPPRESS)
     args=parser.parse_args(argv)
     try:
         if args.command=='stage':
             record=stage(args.project,args.work,args.suite,args.ruby)
             print(json.dumps({k:record[k] for k in ('version','copy','slot_index','scripts_sha256','slot_source_sha256')}));return 0
-        report=run(args.work,args.mode,args.start,args.frames,args.auto_confirm,args.timeout,args.json,args.markdown,args.launcher)
+        if args.command=='check':
+            report=check(args.project,args.results,args.start_map,args.x,args.y,args.direction,args.expect_event,args.step,args.talk,args.screenshot,args.frames,
+                         args.mode,args.timeout,args.auto_battle,args.ruby,args.keep_work,args.work_root,args.launcher)
+            print(json.dumps({**{k:report[k] for k in ('version','status','counts','duration_seconds','timing')},'screenshots':[s['file'] for s in report['screenshots']],
+                              'temporary_copy_removed':report['check']['temporary_copy_removed'],'results':report['check']['results']}))
+            if report['status']=='integrity_failure':return 2
+            return 0 if report['status']=='pass' else 3
+        report=run(args.work,args.mode,args.start,args.frames,args.auto_confirm,args.timeout,args.json,args.markdown,args.launcher,args.screenshot)
     except Exception as error:print('Smoke test refused: '+str(error),file=sys.stderr);return 2
-    print(json.dumps({k:report[k] for k in ('version','status','counts','duration_seconds','runtime_compatibility_proven')}))
+    print(json.dumps({k:report[k] for k in ('version','status','counts','duration_seconds','timing','runtime_compatibility_proven')}))
     if report['status']=='integrity_failure':return 2
     return 0 if report['status']=='pass' else 3
 

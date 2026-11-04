@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v1.20.0
+# VX Ace Masterfile — v2.0.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -29,6 +29,36 @@ v1.18 adds guarded [quest-stage events](references/staged-events.md): one new ev
 v1.19 lets quest-stage pages nest [choices, if/else conditions and battles](references/staged-events.md) (depth 4) and adds party, common-event, gold, item, transfer and wait commands; every referenced Troops/Actors/CommonEvents/Items/MapInfos file and destination map is bound by its own hash.
 
 v1.20 adds usable [items](references/database-append.md) to the database append and bounded overrides for skill/item **effects** (recover, states, buffs, grow, learn skill, common event) and weapon/armor/state **features** (element/state rates, param rates, attack element/state, add skill); each referenced States/Skills/CommonEvents/System file is bound by its own hash.
+
+v1.21 adds a guarded [common event append](references/common-event-append.md): one call-only or switch-gated parallel common event using the staged-event command language, callable from staged events and item/skill effect 44.
+
+v1.22 adds weapon/armor commands and page graphics/options to the command language and an `add_treasure_chest` [recipe macro](references/treasure-chests.md) (closed and opened chest pages, self switch A).
+
+v1.23 adds actors to the database append (class, levels, graphics, slot-checked equipment) and a guarded [System fields](references/system-fields.md) edit for the starting party, start position, title, currency and menu terms.
+
+v1.24 adds `vxace_recipe.py plan`, a read-only [recipe dry-run](references/recipes.md): it simulates the whole chain in memory and reports each step's predicted id, resolved `from_step` links, summary and warnings without making any project copy.
+
+v1.25 adds page triggers (player/event touch, parallel with a wait), autonomous movement (random, approach, bounded custom routes), Set Move Route (205/505) and Erase Event (214) commands, and an `add_touch_trigger` [recipe macro](references/touch-triggers.md).
+
+v1.26 adds a fresh-map mode to the blank-map append (any existing map as schema template, editor new-map defaults, size, tileset and an optional passable A5 floor), a cross-map blank-event donor, map ids via `from_step`, and an `add_area` [recipe macro](references/new-areas.md) with a door in and a return door out.
+
+v1.27 adds enemy `actions` (skill, rating and always/turn/HP/MP/state/party-level/switch conditions), `drop_items` (three editor slots) and `features` overrides to the [database append](references/database-append.md), with per-reference hashes and `from_step` for new skills and drops.
+
+v1.28 adds classes to the [database append](references/database-append.md): EXP parameters, generated stat curves (linear, early or late between level-1 and level-99 values), learnings and class features (skill, weapon and armor types, equip fixes, dual wield, action plus, special flags).
+
+v1.29 adds in-place recipes (`--in-place --confirm-in-place NAME`: one verified backup, every gate per step, promotion of verified files only, rollback on failure, one-command undo, no retained copies), default cleanup of per-step indexes and intermediate copies in the copy chain, and relative report paths.
+
+v1.30 makes staged pages with a character graphic default to priority same (they collide and are triggered by facing; impact warns about graphic events below the player), adds the `add_monster` [macro](references/monsters.md) (battle on touch, one-time or respawning), and lets `add_area` doors be locked behind a condition.
+
+v1.31 adds a `layout` option for fresh maps and `add_area` ([map layouts](references/map-layouts.md)): A5 floor, impassable border wall, visible paths from the anchor, B-E landmarks, stock-tileset presets, and plan/impact reachability warnings for placed events.
+
+v1.32 adds `features_add`/`features_remove` and a HIT guard for features overrides, a `set_fields` recipe step (guarded `edit_database_entry` on existing entries), switch/variable names in `set_system_fields`, and hit/evasion in the balance analysis.
+
+v1.33 adds Shop Processing and Recover All to the shared command language, graphics on dialogue events, and the `add_shopkeeper`, `add_inn` and `add_intro` recipe macros.
+
+2.0 hardens the toolchain: a content-hash cache makes each recipe step about four times faster, `plan` estimates every new troop against the starting party, `set_fields` can change actor graphics (hash-bound), `add_monster` chases by default, graphic-less touch pages default to priority below (no invisible walls), and smoke reports record the game's frame rate. Tests no longer read the live test project.
+
+v1.34 adds RTP auto-detection (registry, Steam libraries, common files), a one-page project overview, an RTP sprite catalogue with `graphic: {"sprite": ...}` lookup, troop-level balance (hit/eva, damage per turn, survival estimate), and smoke helpers: `vxace_smoke.py check`, a scripted DSL (goto, step, talk, wait_until, auto_battle) and in-engine PNG screenshots.
 
 v1.4.1 corrects static passage observations in the [ordinary upper-tile snapshot](references/upper-tile-painting.md). Recreate previous snapshots; the native uppermost non-star tile now takes priority over lower flags. Mutation capabilities and copy safety gates remain as documented.
 
