@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v1.33
+# RPG Maker VX Ace Developer — v1.34
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -27,7 +27,7 @@ python tools/vxace_master.py PROJECT --output NEW_EXTERNAL_REPORT_DIR
 | Notetag registry: note/comment tags vs script parsers, typo hints | [notetags](references/notetag-registry.md) |
 | Dialogue/database text export (JSON/CSV/Markdown) and message lint | [text export](references/text-export.md) |
 | Edited-CSV text import to a guarded patch spec (existing parameter/field/map-name edits) | [text import](references/text-import.md) |
-| In-engine smoke tests of a staged disposable copy (real `Game.exe`, scripted input, crash capture) | [smoke testing](references/smoke-testing.md) |
+| In-engine smoke tests of a staged disposable copy (real `Game.exe`, scripted input, crash capture), one-line `check` with step/talk/auto-battle/screenshots | [smoke testing](references/smoke-testing.md) |
 | Read-only stdio MCP interface | [MCP](references/mcp-read-only.md) |
 | Independent Python codec audit | [upstream adoption](references/upstream-adoption.md) |
 

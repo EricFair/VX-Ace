@@ -61,6 +61,7 @@ Use the smallest relevant reference first.
 - `map-layouts.md` — readable generated maps: walls, paths, landmarks, presets, reachability (v1.31).
 - `shops-and-inns.md` — `add_shopkeeper`, `add_inn`, shop/recover commands, dialogue graphics (v1.33).
 - `intros.md` — `add_intro`: run-once map intro instead of autorun (v1.33).
+- `rtp-sprites.md` — stock RTP character sprite catalogue; `graphic: {sprite: ...}` lookup (v1.34).
 - `monsters.md` — `add_monster`: touch-battle map monsters, fixed/wandering/chasing, one-time or respawning (v1.30).
 - `treasure-chests.md` — `add_treasure_chest` recipe macro: a two-page chest event (v1.22).
 - `blank-map-append.md` — blank map append.

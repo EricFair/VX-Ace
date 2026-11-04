@@ -209,6 +209,14 @@ def codex(tools,index_root):
     return {"status":"failed","returncode":p.returncode,"stderr":p.stderr.strip()}
 
 
+def overview(tools,index_root):
+    generator=tools/"vxace_overview.py"
+    if not generator.is_file(): return {"status":"skipped","reason":"overview generator missing"}
+    p=subprocess.run([sys.executable,str(generator),str(index_root)],capture_output=True,text=True)
+    if p.returncode==0: return {"status":"ok","path":"overview.md","json":"overview.json"}
+    return {"status":"failed","returncode":p.returncode,"stderr":p.stderr.strip()}
+
+
 def read_project(project,output,ruby=None,bridge=None,run_compat=True,run_codex=True):
     root,data=project_dirs(project); tools=Path(__file__).resolve().parent; rb=Path(bridge or tools/"rvdata2_bridge.rb").resolve(); r=ruby_path(ruby)
     out=Path(output).expanduser().resolve()
@@ -261,6 +269,7 @@ def read_project(project,output,ruby=None,bridge=None,run_compat=True,run_codex=
     dump_json(out/"project.json",summary)
     cdx=codex(tools,out) if run_codex else {"status":"skipped","reason":"disabled"}
     summary["codex_generation"]=cdx
+    summary["overview_generation"]=overview(tools,out) if run_codex else {"status":"skipped","reason":"disabled"}
     dump_json(out/"project.json",summary); return summary
 
 

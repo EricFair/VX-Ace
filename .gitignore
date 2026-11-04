@@ -3,6 +3,9 @@ project-index/
 
 # Local VX Ace projects / engine data should never be committed accidentally
 Data/
+# ...but tools/data/ holds the shipped RTP sprite catalogue (text only)
+!tools/data/
+!tools/data/**
 Graphics/
 Audio/
 *.rvdata2

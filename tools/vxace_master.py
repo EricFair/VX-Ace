@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from vxace_copy_patcher import current_inventory
 from vxace_index_query import unlinked
+from vxace_rtp import find_rtp, add_arguments as rtp_arguments
 
 ROOT = Path(__file__).resolve().parents[1]
 SAFE_POLICY = {
@@ -37,9 +38,16 @@ def settings(path):
     return value
 
 
-def workflow(project, output, ruby, config, rtp=None):
+def workflow(project, output, ruby, config, rtp=None, autodetect=False):
     config = settings(config)
     project, output = Path(project).resolve(), Path(output).resolve()
+    rtp_info = find_rtp(project, rtp, autodetect)
+    if rtp is None and rtp_info['path'] is not None:
+        found = rtp_info['path'].resolve()
+        if found == output or found in output.parents or found == project or project in found.parents:
+            rtp_info = {'path': None, 'source': 'detected-but-unusable', 'tried': rtp_info['tried']}
+        else:
+            rtp = found
     if rtp is not None:
         rtp = unlinked(rtp)
         if output == rtp or rtp in output.parents:
@@ -74,7 +82,7 @@ def workflow(project, output, ruby, config, rtp=None):
         if reader == 0 and config.get('map_tile_audit', False):
             stage('map-audit','vxace_map_audit.py',[output/'index','--project',project,'--output',output/'map-audit'])
         if reader == 0 and config.get('asset_audit', False):
-            args = [output/'index','--project',project,'--output',output/'asset-audit']
+            args = [output/'index','--project',project,'--output',output/'asset-audit','--no-rtp-autodetect']
             if rtp is not None: args += ['--rtp', rtp]
             if config.get('image_headers', False): args += ['--image-headers']
             stage('asset-audit','vxace_asset_audit.py',args)
@@ -84,14 +92,18 @@ def workflow(project, output, ruby, config, rtp=None):
         validation = output / "validation/validation.json"
         ready = validation.is_file() and json.loads(validation.read_text(encoding="utf-8"))["copy_mutation_ready"]
         ok = completed and unchanged and ready and all(s["exit_code"] == 0 for s in stages)
-        summary = {"version": "1.33.0", "status": "pass" if ok else "review_required", "stages": stages,
+        summary = {"version": "1.34.0", "status": "pass" if ok else "review_required", "stages": stages,
                    "source_unchanged": unchanged, "selected_backend": config["validation_backend"],
                    "copy_mutation_ready": bool(ready and unchanged), "mutation_performed": False,
-                   "runtime_compatibility_proven": False}
+                   "runtime_compatibility_proven": False,
+                   "rtp": {"path": str(rtp) if rtp is not None else None, "source": "explicit" if rtp_info["source"] == "explicit" else rtp_info["source"]},
+                   "overview": "index/overview.md" if (output / "index/overview.md").is_file() else None}
         (output / "master-report.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
         lines = ["# VX Ace master report", "", f"Status: **{summary['status']}**",
-                 f"Original files unchanged: **{unchanged}**", "Mutation performed: **False**", ""]
+                 f"Original files unchanged: **{unchanged}**", "Mutation performed: **False**",
+                 f"RTP: {summary['rtp']['path'] or 'none'} ({summary['rtp']['source']})", ""]
         lines += [f"- {s['name']}: exit {s['exit_code']}" for s in stages]
+        if summary['overview']: lines += ['', 'Project overview (maps, events, scripts, switches, database): [index/overview.md](index/overview.md)']
         lines += ["", "See validation/, codec-audit/, index/codex/, inspection/, event-lint/, map-audit/ and asset-audit/ for enabled evidence.",
                   "A pass does not authorize mutation or prove RGSS3 runtime behavior."]
         (output / "master-report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -104,12 +116,13 @@ def main(argv=None):
     parser.add_argument("--output", required=True)
     parser.add_argument("--ruby", default=__import__("shutil").which("ruby"))
     parser.add_argument("--config", default=str(ROOT / "vxace-master.json"))
-    parser.add_argument('--rtp', help='Explicit unpacked RTP root for the optional asset audit')
+    parser.add_argument('--rtp', help='Explicit unpacked RTP root for the optional asset audit (default: auto-detected, see vxace_rtp.py)')
+    rtp_arguments(parser)
     args = parser.parse_args(argv)
     try:
         if not args.ruby:
             raise ValueError("Ruby is required for extraction and separate syntax diagnostics")
-        result = workflow(args.project, args.output, args.ruby, args.config, args.rtp)
+        result = workflow(args.project, args.output, args.ruby, args.config, args.rtp, not args.no_rtp_autodetect)
         print(json.dumps(result))
         return 0 if result["status"] == "pass" else 3
     except Exception as exc:

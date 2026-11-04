@@ -345,3 +345,7 @@ The example recipe ran unchanged against an editor-created project: four transac
 
 - `tools/recipes/example_cave.json` — enemy, skill, troop and a random encounter on map 1.
 - `tools/recipes/example_smith.json` — a weapon, a blank event (event 1 as schema donor), a Smith dialogue event and a shop selling the weapon and item 1. Check the donor id, coordinates and item ids against your own map before running it.
+
+## Sprite words instead of sheet and index (v1.34)
+
+Any `graphic` in a recipe, including page graphics of staged events, may be `{"sprite": "grey rats"}` (optionally `"direction"` 2/4/6/8, default 2, and `"pattern"` 0..2, default 1) instead of the four exact fields. The words are matched against the stock RTP catalogue ([rtp-sprites.md](rtp-sprites.md), `tools/data/rtp_sprites.json`): every word must start a word of one description or sheet name. A unique match becomes `character_name`/`character_index`; no match or several matches refuse the recipe and list up to 10 candidates. `"Monster3:4"` always resolves exactly. The resolution happens when the recipe is loaded, so `plan` and `run` agree; `plan` prints a **Resolved sprites** section (`recipe-plan.md`) and a `sprites` list (`recipe-plan.json`). The sheet is still bound like any other character graphic: it must exist in the project or the RTP (now auto-detected, see [asset audit](asset-audit.md#rtp-auto-detection-v134)). Catalogue lookup from the command line: `python tools/vxace_rtp_sprites.py grey rats`.

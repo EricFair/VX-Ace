@@ -19,8 +19,10 @@ from vxace_copy_patcher import current_inventory
 from vxace_database_append import LIST_TABLES, DROP_TABLES, ref_field, required_refs
 from vxace_index_query import unlinked
 import vxace_adopt as adopt
+import vxace_rtp
+from vxace_rtp_sprites import SpriteError, resolve_recipe_sprites
 
-VERSION = '1.33.0'
+VERSION = '1.34.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -885,12 +887,21 @@ def validate_recipe(recipe):
     return steps
 
 
+SPRITE_NOTES = []   # {"sprite": ...} graphics resolved by the last load_recipe (plan shows them)
+
+
 def load_recipe(path):
     path = Path(path)
     try:
         recipe = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError) as error:
         raise RecipeError(f'cannot read recipe: {error}')
+    del SPRITE_NOTES[:]
+    if isinstance(recipe, dict) and isinstance(recipe.get('steps'), list):
+        try:
+            resolve_recipe_sprites(recipe['steps'], SPRITE_NOTES, 'steps')
+        except SpriteError as error:
+            raise RecipeError(f'sprite: {error}')
     validate_recipe(recipe)
     return recipe
 
@@ -1784,6 +1795,12 @@ def load_report(path):
     return map_report_paths(read_json(path), absolute)
 
 
+def auto_rtp(args):
+    """--rtp as given, else the installed RTP (Game.ini name in the registry, Steam libraries, Enterbrain folder) unless --no-rtp-autodetect; the source is printed on stderr."""
+    path, _ = vxace_rtp.resolve(args.project, args.rtp, args.no_rtp_autodetect)
+    return path
+
+
 def run_recipe(recipe_path, project, work, ruby=None, smoke=None, rtp=None, in_place=None, cleanup=True):
     """Execute the recipe. Returns the report dict; its status is 'pass', 'step_failed', 'validation_refused', 'smoke_failed' or 'error'.
     `in_place` (None, or {'backup_root', 'confirm', 'rollback_on_failure'}) selects in-place mode; `cleanup` (copy-chain mode) deletes each passed
@@ -1993,7 +2010,8 @@ def main(argv=None):
     item.add_argument('--project', required=True)
     item.add_argument('--output', required=True)
     item.add_argument('--ruby', default=shutil.which('ruby'))
-    item.add_argument('--rtp', help='explicit read-only RTP root, used only to bind page character graphics that are not in the project')
+    item.add_argument('--rtp', help='explicit read-only RTP root, used only to bind page character graphics that are not in the project (default: auto-detected, see vxace_rtp.py)')
+    vxace_rtp.add_arguments(item)
     item.add_argument('--in-place', action='store_true', help='predict an in-place run (no project copies are kept; the backup is reported)')
     item.add_argument('--backup-root', help='with --in-place: where the start backup would go')
     item = commands.add_parser('run')
@@ -2001,7 +2019,8 @@ def main(argv=None):
     item.add_argument('--project', required=True)
     item.add_argument('--work', required=True)
     item.add_argument('--ruby', default=shutil.which('ruby'))
-    item.add_argument('--rtp', help='explicit read-only RTP root, used only to bind page character graphics that are not in the project')
+    item.add_argument('--rtp', help='explicit read-only RTP root, used only to bind page character graphics that are not in the project (default: auto-detected, see vxace_rtp.py)')
+    vxace_rtp.add_arguments(item)
     item.add_argument('--in-place', action='store_true', help='write the steps directly into --project (one start backup, undo record); needs --backup-root and --confirm-in-place')
     item.add_argument('--backup-root', help='in-place: folder (outside the project) that receives the timestamped start backup')
     item.add_argument('--confirm-in-place', help='in-place: must equal the project folder name, e.g. Project3')
@@ -2038,7 +2057,7 @@ def main(argv=None):
             import vxace_recipe_plan
             if args.backup_root and not args.in_place:
                 raise RecipeError('--backup-root belongs to --in-place')
-            plan = vxace_recipe_plan.plan_recipe(args.recipe, args.project, args.output, args.ruby, args.rtp, args.in_place, args.backup_root)
+            plan = vxace_recipe_plan.plan_recipe(args.recipe, args.project, args.output, args.ruby, auto_rtp(args), args.in_place, args.backup_root)
             summary = plan['summary']
             print(json.dumps({'version': vxace_recipe_plan.VERSION, 'status': plan['status'], 'steps_planned': summary['steps_planned'], 'refused_step': plan['refused_step'],
                               'transactions': summary['transactions'], 'files_changed': summary['files_changed'], 'original_unchanged': plan['original_unchanged'],
@@ -2063,7 +2082,7 @@ def main(argv=None):
             in_place = {'backup_root': args.backup_root, 'confirm': args.confirm_in_place, 'rollback_on_failure': args.rollback_on_failure}
         elif args.backup_root or args.confirm_in_place:
             raise RecipeError('--backup-root and --confirm-in-place belong to --in-place')
-        report = run_recipe(args.recipe, args.project, args.work, args.ruby, smoke, args.rtp, in_place, args.cleanup and not args.keep_intermediate)
+        report = run_recipe(args.recipe, args.project, args.work, args.ruby, smoke, auto_rtp(args), in_place, args.cleanup and not args.keep_intermediate)
     except Exception as error:
         print('Recipe refused: ' + str(error), file=sys.stderr)
         return 2

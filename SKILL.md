@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.33.0
+Version: 1.34.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -79,12 +79,14 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Notetags vs the scripts that parse them | `tools/vxace_notetags.py` ([references/notetag-registry.md](references/notetag-registry.md)) |
 | Dialogue/database text export, message lint | `tools/vxace_text_export.py` ([references/text-export.md](references/text-export.md)) |
 | Re-import proofread/translated text | `tools/vxace_text_import.py` -> normal plan/copy chain ([references/text-import.md](references/text-import.md)) |
+| Quick in-engine feature check: start map, expect events, step, talk, auto-battle, screenshot | `vxace_smoke.py check` ([references/smoke-testing.md](references/smoke-testing.md)) |
 | Run a staged copy in the real engine (boot, map, scripted input, crash capture) | `tools/vxace_smoke.py stage/run` ([references/smoke-testing.md](references/smoke-testing.md)) |
 | Find text/commands | [references/search-and-event-diagnostics.md](references/search-and-event-diagnostics.md), [regex-search.md](references/regex-search.md) |
 | Event bugs, autoruns, common-event cycles | [workflows/event-debugging.md](workflows/event-debugging.md), [references/common-event-cycles.md](references/common-event-cycles.md) |
 | Script conflicts / load order | [workflows/script-compatibility-review.md](workflows/script-compatibility-review.md) |
 | Map tiles, passage, regions | [references/map-tile-audit.md](references/map-tile-audit.md) |
-| Missing graphics/audio, RTP | [references/asset-audit.md](references/asset-audit.md), [image-header-layouts.md](references/image-header-layouts.md) |
+| Which RTP sprite is what; pick a sprite by description | [references/rtp-sprites.md](references/rtp-sprites.md) |
+| Missing graphics/audio, RTP (auto-detected) | [references/asset-audit.md](references/asset-audit.md), [image-header-layouts.md](references/image-header-layouts.md) |
 | Schema drift vs a baseline | [references/schema-comparison.md](references/schema-comparison.md) |
 | Impact before a patch, diff after | [workflows/impact-review.md](workflows/impact-review.md) |
 | Plan and stage a change | [workflows/project-aware-patching.md](workflows/project-aware-patching.md), [workflows/verified-copy-mutation.md](workflows/verified-copy-mutation.md) |

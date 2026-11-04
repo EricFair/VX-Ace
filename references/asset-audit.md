@@ -41,3 +41,19 @@ By default there is no image decoding/dimension check. v0.17 offers `--image-hea
 Eighteen asset tests cover fallback uncertainty, local priority, casing, explicit/nested/dotted names, format ambiguity, unsafe/opaque names, provenance, bounded evidence, stale reports, linked files, wrong RTP roots, budgets, metadata changes and RTP text sidecars. Two master configuration tests cover strict flags and older configurations. Windows may skip link-creation tests when privileges are unavailable.
 
 The actual private Oakfall index resolved all 290 distinct indexed asset references against the explicitly supplied installed VX Ace RTP. Real testing exposed tileset `.txt` sidecars as false competitors; the implementation now excludes them and has a regression test. Native playtesting separately observed the village characters, tiles, title and guardian graphics/audio. Runtime-created Oakfall NPC names are outside static reference collection; no broader asset completeness claim follows from that observation. Project/RTP data and private reports remain local.
+
+## RTP auto-detection (v1.34)
+
+`--rtp` is optional. When it is omitted, `vxace_rtp.py` (`find_rtp(project, explicit, autodetect)`) looks for the installed RTP, in this order:
+
+1. an explicit `--rtp` (always wins, never searched);
+2. the project's `Game.ini` `RTP=` name (usually `RPGVXAce`) as a registry value under `HKLM\SOFTWARE\WOW6432Node\Enterbrain\RGSS3\RTP`, then under the non-WOW `HKLM\SOFTWARE\Enterbrain\RGSS3\RTP`;
+3. the Steam install: `steamapps\common\RPGVXAce\rtp` under every library in `libraryfolders.vdf` (the Steam folder from the registry and the default Steam folders are read first), then `C:\Program Files (x86)\Common Files\Enterbrain\RGSS3\RPGVXAce`.
+
+A candidate must contain `Graphics/` or `Audio/`. The first valid one is used and the **source is reported**: on stderr (`RTP: PATH (source)`), in `asset-audit.md` (`RTP: ...`), in the audit's printed JSON (`rtp`, `rtp_source`) and in the master report (`master-report.json` `rtp.path` / `rtp.source`, and a line in `master-report.md`). A detected RTP inside the project is ignored. With the RTP found, the 297-odd stock files of a normal game resolve (`found`) instead of `unresolved_without_rtp`, so the master stays `pass` when nothing else needs review. If nothing is found the old behaviour stays: unresolved references remain uncertain.
+
+`python tools/vxace_rtp.py PROJECT` prints the result and every place tried (exit 1 when none).
+
+- `--no-rtp-autodetect` (asset audit, master, recipe `plan`/`run`, copy patcher) skips the search; the environment variable `VXACE_NO_RTP_AUTODETECT=1` does the same for every tool (the test runner sets it, so tests never depend on this machine's install).
+- Library calls (`audit()`, `workflow()`, `plan_recipe()`, `run_recipe()`) never auto-detect on their own; only the command lines do (`workflow(..., autodetect=True)` is what `vxace_master.py` passes). The master's asset stage is always started with `--no-rtp-autodetect`; the master resolves the RTP itself and hands it over.
+- Snapshot tools (`vxace_map_events.py`, `vxace_database_entries.py`, `vxace_upper_tiles.py`) and the read-only MCP server keep their explicit-only `--rtp`; the recipe passes them the resolved path. The smoke tool does not use the RTP.

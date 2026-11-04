@@ -26,3 +26,20 @@ Use a fresh complete index. The usual freshness, source-integrity and index-inte
 - hp and mp are assumed full; actor stats exclude equipment, states and other features (the hit chance above uses features only: no equipment or state HIT / EVA). Enemy `level` is unavailable, so formulas using it are skipped and counted.
 - Only HP damage and HP drain skills are matched up; MP damage is listed in the formula table only. Enemy actions are used regardless of conditions and ratings.
 - Shops assembled by scripts or variables are not seen. Walk and byte budgets from the shared index reader apply and refuse instead of returning a partial result; narrow with `--actor` / `--enemy` if needed.
+
+## Troop battles (v1.34)
+
+```powershell
+python tools/vxace_balance.py INDEX --project PROJECT --markdown out.md --troop 33 --troop 38 --levels 1,10,20 [--actor 1 --actor 2]
+```
+
+`--troop ID` (repeatable) adds a `troop_battles` section: the troop against the **party** at each `--levels` value (every member at that level, capped at its maximum). The party is `--actor` ids when given, else the System starting party, else every actor. `--enemy` is repeatable too and only narrows the enemy tables. For each troop and level the report gives:
+
+- the sum of the enemies' **expected damage per turn** to the party, per enemy and per member. Enemy actions are chosen like the engine (ratings above max - 3, weighted by rating - (max - 3)); action conditions are ignored. Physical skills use the v1.32 hit chance (enemy HIT, member EVA); single-target hits are shared evenly, all-target skills hit every member, random-target skills count their hits;
+- **turns to kill each member** with plain attacks (the whole troop using Attack on that member) and with the action mix;
+- a rough **party survives N turns** estimate (party HP over expected damage) and the turn the first member is expected to fall;
+- the party's plain-attack damage per turn and a pooled **race simulation** (party kills enemies in listed order, survivors hurt the party): `party_wins` or `party_wiped`, the turn and the HP left.
+
+**Equipment:** each actor's initial equips (`equips`: weapon, then armor slots) add flat parameters (and HIT/EVA features) to the class stats; the labels are listed per member and the report says it is included. Parameter-rate features, states and skills other than Attack are not applied.
+
+Not done (an item for 2.0): `--recipe-plan PLAN.json` to evaluate the troops a recipe plan would create. Until then, plan/run the recipe and point `--troop` at the new id.

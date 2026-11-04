@@ -18,7 +18,7 @@ import vxace_recipe as R
 from vxace_copy_patcher import current_inventory, normalize_changes
 from vxace_index_query import unlinked
 
-VERSION = '1.33.0'
+VERSION = '1.34.0'
 PREDICTED = 'predicted, verify after run'
 EXACT = 'exact'
 HASHES = 'bound at run time'
@@ -937,6 +937,7 @@ def plan_recipe(recipe_path, project, output, ruby=None, rtp=None, in_place=Fals
         if not plan['original_unchanged']:
             plan['status'] = 'error'
             plan['error'] = 'ORIGINAL PROJECT FILES CHANGED'
+    plan['sprites'] = list(R.SPRITE_NOTES)
     plan['summary'] = summarize(plan, sim, project, steps, in_place, backup_root)
     plan['smoke'] = smoke_advice(steps)
     (output / 'recipe-plan.json').write_text(json.dumps(plan, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
@@ -996,6 +997,8 @@ def markdown_plan(plan):
                if summary.get('in_place') else
                f'- Estimated disk use for `run`: {summary["estimated_disk_bytes"] / 1048576:.1f} MiB ({summary["project_bytes"] / 1048576:.2f} MiB x ({summary["transactions"]} + 1))'),
               f'- Smoke: {"recommended" if plan["smoke"]["recommended"] else "optional"}' + (', suite needed' if plan['smoke']['suite_needed'] else '') + f'. {plan["smoke"]["note"]}', '']
+    if plan.get('sprites'):
+        lines += ['## Resolved sprites', ''] + [f'- {s["where"]}: "{s["query"]}" -> {s["sheet"]} #{s["index"]} ({s["description"]})' for s in plan['sprites']] + ['']
     lines += ['## Steps', '']
     for record in plan['steps']:
         lines.append(f'### Step {record["step"]}{record.get("part", "")}: {record["type"]} ({record["status"]})' + (f' [{record["macro"]}]' if record.get('macro') else ''))

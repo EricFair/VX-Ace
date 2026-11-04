@@ -8,7 +8,7 @@ slot changed and that it equals the factory result of applying the overrides to 
 from __future__ import annotations
 import hashlib
 
-VERSION = '1.33.0'
+VERSION = '1.34.0'
 ACTION = 'edit_database_entry'
 BASE_FIELDS = {'action', 'expected_array_sha256', 'expected_entry_sha256', 'overrides'}
 NATIVE_EXTRA = {'table', 'entry_id'}

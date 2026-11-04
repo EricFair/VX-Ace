@@ -2,6 +2,19 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.34.0 — Analysis and test helpers
+
+- **RTP auto-detection:** the RTP is found through the registry, Steam libraries and the common-files folder, so the master pass no longer flags hundreds of stock files.
+- **Project overview:** a one-page summary of maps, events, custom scripts and switch/variable use.
+- **RTP sprite catalogue:** covers 48 sheets, and `graphic: {"sprite": "grey rats"}` looks a sprite up by description.
+- **Troop balance:** hit/evasion, damage per turn, and turns to survive.
+- **Smoke helpers:**
+  - `vxace_smoke.py check` runs a quick feature check on one temporary copy and deletes it afterwards.
+  - A scripted DSL: `goto`, `step`, `talk`, `wait_until`, `auto_battle` and `screenshot`.
+  - In-engine PNG screenshots (about 250 ms each).
+- **Fixed after the first real-engine run:** event lookup, the encoding name, `step` during the transfer fade-in, and waits during auto-driven battles.
+- **Checked on the test project:** RTP detected via the registry. The market check found its NPCs and saved a screenshot. On the v1.30 map, `step up:2` bumped the slime, `auto_battle :attack` won in 4 turns, and a screenshot was saved.
+
 ## 1.33.0 — Shops, inns and intros
 
 - **New commands:** Shop Processing (302/605, the same rows as `add_shop` and the editor) and Recover All (314) are now available in event pages and common events.

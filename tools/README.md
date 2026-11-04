@@ -144,3 +144,10 @@ python tools/vxace_smoke.py run NEW_WORK_DIR --mode test --frames 600 --json NEW
 
 `stage` inserts the harness slot through the guarded validator/reader/slot/planner/impact/copy chain; `run` launches the copy's `Game.exe` (Windows) with a fresh nonce and validates the results file. The harness is inert without the launcher's nonce. See [smoke testing](../references/smoke-testing.md) and `tools/smoke/example_suite.rb`.
 
+## v1.34 additions
+
+- `vxace_rtp.py`: finds the installed RTP (Game.ini name in the registry, Steam libraries, Enterbrain folder); the master, asset audit, recipe and copy patcher use it when `--rtp` is omitted (`--no-rtp-autodetect` / `VXACE_NO_RTP_AUTODETECT=1` to switch off). See [asset-audit.md](../references/asset-audit.md).
+- `vxace_overview.py`: `overview.md` / `overview.json` project page, written by the reader. See [project-reader.md](../references/project-reader.md).
+- `vxace_rtp_sprites.py` + `data/rtp_sprites.json`: stock sprite catalogue and the recipe `{"sprite": "grey rats"}` graphic. See [rtp-sprites.md](../references/rtp-sprites.md).
+- `vxace_smoke.py check` and `run --screenshot`: one-line feature checks, in-engine PNG screenshots, `VXA_Smoke` scripts with `idle?`, `wait_until`, `goto`, `talk`, `step`, `auto_battle`. See [smoke-testing.md](../references/smoke-testing.md).
+- `vxace_balance.py --troop`: expected-damage and survival estimates for troops against the party. See [balance-analysis.md](../references/balance-analysis.md).

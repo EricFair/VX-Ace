@@ -897,11 +897,13 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
 
 def main(argv=None)->int:
     here=Path(__file__).resolve().parent
-    ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('index'); ap.add_argument('--project',required=True); ap.add_argument('--spec',required=True); ap.add_argument('--copy',required=True); ap.add_argument('--audit',required=True); ap.add_argument('--ruby',default=shutil.which('ruby')); ap.add_argument('--mutator'); ap.add_argument('--backend',choices=['ruby','python'],default='ruby'); ap.add_argument('--reader',default=str(here/'vxace_project_reader.py')); ap.add_argument('--diff-tool',default=str(here/'vxace_index_diff.py')); ap.add_argument('--no-reindex',action='store_true'); ap.add_argument('--rtp'); a=ap.parse_args(argv)
+    ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('index'); ap.add_argument('--project',required=True); ap.add_argument('--spec',required=True); ap.add_argument('--copy',required=True); ap.add_argument('--audit',required=True); ap.add_argument('--ruby',default=shutil.which('ruby')); ap.add_argument('--mutator'); ap.add_argument('--backend',choices=['ruby','python'],default='ruby'); ap.add_argument('--reader',default=str(here/'vxace_project_reader.py')); ap.add_argument('--diff-tool',default=str(here/'vxace_index_diff.py')); ap.add_argument('--no-reindex',action='store_true'); ap.add_argument('--rtp',help='explicit RTP root (default: auto-detected, see vxace_rtp.py)'); ap.add_argument('--no-rtp-autodetect',action='store_true'); a=ap.parse_args(argv)
     if a.mutator is None: a.mutator=str(here/('vxace_python_mutator.py' if a.backend=='python' else 'rvdata2_mutator.rb'))
     try:
         if not a.ruby: raise ValueError('Ruby not found; pass --ruby PATH')
-        r=build(Path(a.index),Path(a.project),Path(a.spec),Path(a.copy),Path(a.audit),a.ruby,Path(a.mutator),Path(a.reader),Path(a.diff_tool),a.no_reindex,Path(a.rtp) if a.rtp else None)
+        from vxace_rtp import resolve as resolve_rtp
+        rtp_text,_=resolve_rtp(a.project,a.rtp,a.no_rtp_autodetect)
+        r=build(Path(a.index),Path(a.project),Path(a.spec),Path(a.copy),Path(a.audit),a.ruby,Path(a.mutator),Path(a.reader),Path(a.diff_tool),a.no_reindex,Path(rtp_text) if rtp_text else None)
     except RuntimeError as e:
         msg=str(e)
         reason='stale_index' if msg.startswith('STALE_INDEX:') else ('source_changed' if msg.startswith('SOURCE_CHANGED:') else 'runtime_error')
