@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.28.0
+Version: 1.29.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -25,7 +25,7 @@ Resolve every tool/reference path relative to this skill directory, not the user
 5. Treat third-party scripts as dependencies with license/order/method/save implications.
 6. Do not redistribute proprietary default scripts or user project data.
 7. Never plan/stage from a stale project index.
-8. Never write directly to the user's working VX Ace project. Mutation is copy-only; the single exception is `vxace_adopt.py apply/undo`, run only after the user reviewed the staged copy and its adopt plan and explicitly confirmed it, with the editor closed.
+8. Never write directly to the user's working VX Ace project. Mutation is copy-only, with two exceptions, both with the editor closed: `vxace_adopt.py apply/undo`, run only after the user reviewed the staged copy and its adopt plan and explicitly confirmed it; and `vxace_recipe.py run --in-place --confirm-in-place NAME`, only on a project the user explicitly designated as the working/test project (one verified backup first, rollback on failure, one-command undo).
 9. Never mutate a targeted `.rvdata2` unless its immediate no-op round trip is byte-identical.
 10. On a real project, run the project validator before first mutation-capable use with the current mutator version; a failed file means project-wide mutation readiness is refused.
 11. Never downgrade validator/round-trip failures to warnings merely to permit mutation.
@@ -88,7 +88,7 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Schema drift vs a baseline | [references/schema-comparison.md](references/schema-comparison.md) |
 | Impact before a patch, diff after | [workflows/impact-review.md](workflows/impact-review.md) |
 | Plan and stage a change | [workflows/project-aware-patching.md](workflows/project-aware-patching.md), [workflows/verified-copy-mutation.md](workflows/verified-copy-mutation.md) |
-| Chain several guarded additions (enemy -> skill -> troop -> encounter -> smoke run) | `tools/vxace_recipe.py plan` (dry-run, no copies), then `run` ([references/recipes.md](references/recipes.md)) |
+| Chain several guarded additions (enemy -> skill -> troop -> encounter -> smoke run) | `tools/vxace_recipe.py plan` (dry-run, no copies), then `run` (copy chain with cleanup, or `--in-place` on a designated working project) ([references/recipes.md](references/recipes.md)) |
 | Quest NPC whose dialogue changes with progress | [references/staged-events.md](references/staged-events.md), [patterns/quest-state-machine.md](patterns/quest-state-machine.md) |
 | Shared logic: inn, reward chain, timer (common event) | [references/common-event-append.md](references/common-event-append.md) |
 | Starting party, start position, title, currency or menu terms | [references/system-fields.md](references/system-fields.md) |

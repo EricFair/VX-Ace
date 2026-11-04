@@ -18,7 +18,7 @@ import vxace_recipe as R
 from vxace_copy_patcher import current_inventory, normalize_changes
 from vxace_index_query import unlinked
 
-VERSION = '1.28.0'
+VERSION = '1.29.0'
 PREDICTED = 'predicted, verify after run'
 EXACT = 'exact'
 HASHES = 'bound at run time'
@@ -725,8 +725,9 @@ def link_targets(steps):
     return found
 
 
-def plan_recipe(recipe_path, project, output, ruby=None, rtp=None):
-    """Dry-run the recipe. Returns the plan dict; its status is 'ok', 'step_refused', 'validation_refused' or 'error'."""
+def plan_recipe(recipe_path, project, output, ruby=None, rtp=None, in_place=False, backup_root=None):
+    """Dry-run the recipe. Returns the plan dict; its status is 'ok', 'step_refused', 'validation_refused' or 'error'.
+    With `in_place` the summary describes an in-place run (no retained project copies, a start backup under `backup_root`) instead of the copy-chain disk estimate."""
     recipe_path = Path(recipe_path).resolve()
     recipe = R.load_recipe(recipe_path)
     steps = recipe['steps']
@@ -785,14 +786,20 @@ def plan_recipe(recipe_path, project, output, ruby=None, rtp=None):
         if not plan['original_unchanged']:
             plan['status'] = 'error'
             plan['error'] = 'ORIGINAL PROJECT FILES CHANGED'
-    plan['summary'] = summarize(plan, sim, project, steps)
+    plan['summary'] = summarize(plan, sim, project, steps, in_place, backup_root)
     plan['smoke'] = smoke_advice(steps)
     (output / 'recipe-plan.json').write_text(json.dumps(plan, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     (output / 'recipe-plan.md').write_text(markdown_plan(plan), encoding='utf-8')
     return plan
 
 
-def summarize(plan, sim, project, steps):
+def backup_bytes(project):
+    """Size of what an in-place run backs up at the start: Data/*.rvdata2 and Game.ini."""
+    files = list((project / 'Data').glob('*.rvdata2')) + [project / 'Game.ini']
+    return sum(path.stat().st_size for path in files if path.is_file())
+
+
+def summarize(plan, sim, project, steps, in_place=False, backup_root=None):
     planned = [r for r in plan['steps'] if r['status'] == 'planned']
     files = []
     for record in plan['steps']:
@@ -801,10 +808,18 @@ def summarize(plan, sim, project, steps):
                 files.append(target)
     size = tree_bytes(project)
     transactions = len(planned)
-    return {'complete': plan['status'] == 'ok', 'recipe_steps': len(steps), 'steps_planned': len({r['step'] for r in planned}),
-            'transactions': transactions, 'files_changed': files, 'project_bytes': size,
-            'estimated_disk_bytes': size * (transactions + 1),
-            'estimated_disk_note': 'project size x (transactions + 1), as in the recipes.md limits note; add one more copy for smoke staging'}
+    summary = {'complete': plan['status'] == 'ok', 'recipe_steps': len(steps), 'steps_planned': len({r['step'] for r in planned}),
+               'transactions': transactions, 'files_changed': files, 'project_bytes': size,
+               'estimated_disk_bytes': size * (transactions + 1),
+               'estimated_disk_note': 'project size x (transactions + 1), as in the recipes.md limits note; add one more copy for smoke staging',
+               'in_place': bool(in_place)}
+    if in_place:
+        backup = backup_bytes(project)
+        where = str(backup_root) if backup_root else '(--backup-root, required for the run)'
+        summary.update(retained_project_copies=0, backup_bytes=backup, estimated_disk_bytes=backup,
+                       in_place_line=f'in place on {project}, backup under {where}, 0 project copies',
+                       estimated_disk_note=f'in-place run: {backup} bytes of backup; at most one transient temp copy ({size} bytes) exists at a time and is deleted after each step; add one more transient copy for smoke staging')
+    return summary
 
 
 def smoke_advice(steps):
@@ -826,7 +841,9 @@ def markdown_plan(plan):
     lines += ['## Summary', '', f'- Steps planned: {summary["steps_planned"]} of {summary["recipe_steps"]}' + ('' if summary['complete'] else ' (stopped)'),
               f'- Transactions: {summary["transactions"]}',
               '- Data files that will change: ' + (', '.join(f'`{f}`' for f in summary['files_changed']) or 'none'),
-              f'- Estimated disk use for `run`: {summary["estimated_disk_bytes"] / 1048576:.1f} MiB ({summary["project_bytes"] / 1048576:.2f} MiB x ({summary["transactions"]} + 1))',
+              (f'- Mode: **{summary["in_place_line"]}** (backup {summary["backup_bytes"] / 1048576:.2f} MiB; at most one transient temp copy of {summary["project_bytes"] / 1048576:.2f} MiB at a time)'
+               if summary.get('in_place') else
+               f'- Estimated disk use for `run`: {summary["estimated_disk_bytes"] / 1048576:.1f} MiB ({summary["project_bytes"] / 1048576:.2f} MiB x ({summary["transactions"]} + 1))'),
               f'- Smoke: {"recommended" if plan["smoke"]["recommended"] else "optional"}' + (', suite needed' if plan['smoke']['suite_needed'] else '') + f'. {plan["smoke"]["note"]}', '']
     lines += ['## Steps', '']
     for record in plan['steps']:

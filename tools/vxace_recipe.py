@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Run a recipe: a list of high-level steps, each applied as its own guarded single-change transaction on a chain of disposable copies.
+"""Run a recipe: a list of high-level steps, each applied as its own guarded single-change transaction, either on a chain of disposable copies
+(default) or, with --in-place, directly in a designated project (one start backup, undo record).
 
 Adds no mutation logic. Every step runs the existing Project Reader, the operation's read-only snapshot CLI, builds the exact spec
 from that snapshot, then runs the patch planner, impact report and the Python copy patcher. The original project is never written."""
@@ -8,6 +9,7 @@ import argparse
 import copy as copymod
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -16,8 +18,9 @@ from pathlib import Path
 from vxace_copy_patcher import current_inventory
 from vxace_database_append import LIST_TABLES, DROP_TABLES, ref_field, required_refs
 from vxace_index_query import unlinked
+import vxace_adopt as adopt
 
-VERSION = '1.28.0'
+VERSION = '1.29.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -834,13 +837,142 @@ def main_index(index):
     return mains[0]
 
 
-def execute_step(number, step, title, source, work, ruby, created, recipe_dir, records, tag='', rtp=None, macro='add_treasure_chest'):
+def remove_tree(path):
+    """Delete a folder tree, clearing read-only flags that copied project files may carry."""
+    def clear(function, target, _error):
+        try:
+            os.chmod(target, 0o700)
+            function(target)
+        except OSError:
+            pass
+    path = Path(path)
+    if path.exists():
+        shutil.rmtree(path, onerror=clear)
+
+
+class Session:
+    """In-place mode (v1.29): the designated project is written directly. One start backup, then each step's verified changed files are promoted
+    from the step's single temp copy into the project through adopt's atomic writer, with rollback. `files` is the cumulative change set and is
+    saved after every promoted step as an adopt-compatible undo record (backup_dir/adopt-record.json), so `undo` works at any point."""
+
+    def __init__(self, project, work, backup_dir, recipe_path):
+        self.project, self.work, self.backup_dir, self.recipe_path = project, work, backup_dir, recipe_path
+        self.tmp_copy = work / 'tmp-copy'
+        self.record_path = backup_dir / 'adopt-record.json'
+        self.manifest = {}
+        self.files = {}
+        self.created_dirs = set()
+        self.record_id = None
+        self.promoted = 0
+
+    def back_up_start(self):
+        """Copy every Data/*.rvdata2 and Game.ini into the backup folder with a hash manifest (verified after copying)."""
+        data = self.project / 'Data'
+        rels = sorted([p.relative_to(self.project).as_posix() for p in data.glob('*.rvdata2') if p.is_file()]
+                      + [p.name for p in (self.project / 'Game.ini',) if p.is_file()])
+        for rel in rels:
+            self.back_up_file(rel)
+        adopt.dump_json(self.backup_dir / 'manifest.json', {'version': VERSION, 'project': str(self.project), 'created_utc': adopt.utc_now().isoformat(),
+                                                            'files': self.manifest})
+        self.save_record()
+
+    def back_up_file(self, rel):
+        raw = (self.project / rel).read_bytes()
+        digest = adopt.sha256_bytes(raw)
+        adopt.write_atomic(self.backup_dir / 'files' / rel, raw)
+        if adopt.sha256_file(self.backup_dir / 'files' / rel) != digest:
+            raise RecipeError(f'backup verification failed for {rel}')
+        self.manifest[rel] = digest
+
+    def save_record(self, files=None, created_dirs=None, promoted=None):
+        files = self.files if files is None else files
+        created_dirs = self.created_dirs if created_dirs is None else created_dirs
+        body = {'version': adopt.VERSION, 'kind': 'recipe_in_place', 'project': str(self.project), 'plan_id': None, 'recipe': str(self.recipe_path),
+                'created_utc': adopt.utc_now().isoformat(), 'backup_dir': str(self.backup_dir), 'plan': None,
+                'steps_promoted': self.promoted if promoted is None else promoted, 'created_dirs': sorted(created_dirs),
+                'files': [files[rel] for rel in sorted(files)]}
+        record = {'record_id': adopt.digest(body), **body}
+        adopt.write_atomic(self.record_path, (json.dumps(record, ensure_ascii=False, indent=2) + '\n').encode('utf-8'))
+        self.record_id = record['record_id']
+
+    def promote(self, copy, audit_path):
+        """Verify the step's copy against its audit and the project, then write only the changed files into the project. Raises StepFailure."""
+        try:
+            adopt.refuse_if_running()
+            path, audit = adopt.load_audit(audit_path)
+            state = adopt.declared_state([(path, audit)])
+            declared = {rel: s for rel, s in state.items() if s['before'] != s['after']}
+            project_inv, copy_inv = adopt.inventory(self.project), adopt.inventory(copy)
+        except (adopt.Refused, ValueError, OSError) as error:
+            raise StepFailure(f'promotion refused: {error}')
+        problems = [f'{rel}: project is {"absent" if project_inv.get(rel) is None else project_inv[rel][:12]}, audit expected {"absent" if s["before"] is None else s["before"][:12]}'
+                    for rel, s in sorted(declared.items()) if project_inv.get(rel) != s['before']]
+        differing = sorted(rel for rel in set(project_inv) | set(copy_inv) if project_inv.get(rel) != copy_inv.get(rel))
+        problems += [f'{rel}: differs between project and temp copy but the audit does not declare it' for rel in differing if rel not in declared]
+        problems += [f'{rel}: declared by the audit but identical in the temp copy' for rel in sorted(declared) if rel not in differing]
+        problems += [f'{rel}: temp copy {copy_inv.get(rel, "absent")[:12]}, audit recorded {declared[rel]["after"][:12]}' for rel in sorted(declared) if copy_inv.get(rel) != declared[rel]['after']]
+        if problems:
+            raise StepFailure('promotion refused, project untouched: ' + '; '.join(problems[:5]))
+        files = [{'path': rel, 'action': 'create' if declared[rel]['before'] is None else 'replace', 'project_sha256': declared[rel]['before'],
+                  'copy_sha256': declared[rel]['after']} for rel in sorted(declared)]
+        payloads = {f['path']: (copy / f['path']).read_bytes() for f in files}
+        backups = {f['path']: (self.project / f['path']).read_bytes() for f in files if f['action'] == 'replace'}
+        new_dirs = {Path(f['path']).parent.as_posix() for f in files if f['action'] == 'create' and not (self.project / Path(f['path']).parent).is_dir()}
+        merged = {rel: dict(row) for rel, row in self.files.items()}
+        for f in files:
+            row = merged.get(f['path'])
+            if row is None:
+                merged[f['path']] = {'path': f['path'], 'action': f['action'], 'before_sha256': f['project_sha256'], 'after_sha256': f['copy_sha256']}
+            else:
+                row['after_sha256'] = f['copy_sha256']
+        written = []
+        try:
+            for f in files:
+                if f['action'] == 'replace' and f['path'] not in self.manifest:
+                    self.back_up_file(f['path'])
+            for f in files:
+                adopt.write_atomic(self.project / f['path'], payloads[f['path']])
+                written.append(f)
+            bad = [f['path'] for f in files if adopt.current_hash(self.project, f['path']) != f['copy_sha256']]
+            if bad:
+                raise RuntimeError('post-write verification failed: ' + ', '.join(bad))
+            self.save_record(merged, self.created_dirs | new_dirs, self.promoted + 1)
+        except BaseException as error:
+            failures = adopt.rollback(self.project, files, written, backups, new_dirs)
+            raise StepFailure(f'promotion failed and was rolled back ({"clean" if not failures else "INCOMPLETE: " + "; ".join(failures)}): {error}')
+        self.files, self.created_dirs, self.promoted = merged, self.created_dirs | new_dirs, self.promoted + 1
+        return [f['path'] for f in files]
+
+    def verify_expected(self, rolled_back):
+        """Every backed-up file and every promoted file must hold exactly the expected bytes now. Returns a list of problems."""
+        problems = []
+        for rel, digest in sorted(self.manifest.items()):
+            expected = digest if rolled_back or rel not in self.files else self.files[rel]['after_sha256']
+            if adopt.current_hash(self.project, rel) != expected:
+                problems.append(rel)
+        if not rolled_back:
+            problems += [rel for rel, row in sorted(self.files.items()) if rel not in self.manifest and adopt.current_hash(self.project, rel) != row['after_sha256']]
+        return problems
+
+
+def shed_step(directory, index, audit, session):
+    """After a step's gates pass: delete the pre index and the post index (and, in place, the snapshot); the per-step evidence files stay."""
+    remove_tree(index)
+    remove_tree(audit / 'post-index')
+    if session:
+        remove_tree(directory / 'snapshot')
+
+
+def execute_step(number, step, title, source, work, ruby, created, recipe_dir, records, tag='', rtp=None, macro='add_treasure_chest', session=None, cleanup=False):
     """Run one step as a normal transaction. Returns its report record; raises StepFailure after filling the record.
-    `tag` ('a', 'b') names the sub-steps of a macro step; `rtp` is the optional explicit RTP root for page graphics."""
+    `tag` ('a', 'b') names the sub-steps of a macro step; `rtp` is the optional explicit RTP root for page graphics.
+    With a `session` (in-place mode) `source` is the live project, the patcher clones it into the session's single temp copy and, once every gate
+    passed, only the changed files are promoted into the project; the temp copy and both indexes are deleted. With `cleanup` the copy-chain run
+    deletes the pre and post index folders once the step has passed."""
     directory = work / f'step-{number:02d}{tag}'
     directory.mkdir()
     logs = directory / 'logs'
-    index, copy, audit = directory / 'index', directory / 'copy', directory / 'audit'
+    index, copy, audit = directory / 'index', (session.tmp_copy if session else directory / 'copy'), directory / 'audit'
     record = {'step': number, 'type': step['type'], 'status': 'running', **({'macro': macro, 'part': tag} if tag else {}), 'source': str(source), 'directory': str(directory),
               'resolved_parameters': None, 'created_id': None, 'spec': None, 'snapshot': None, 'plan': None, 'impact': None,
               'audit': None, 'copy': None, 'exit_codes': {}, 'error': None}
@@ -969,9 +1101,10 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
                                                   *(['--rtp', rtp] if rtp and ((kind == 'append_staged_event' and graphic_names(resolved['pages']))
                                                                                or (kind == 'append_entry' and resolved['table'] == 'actors' and any(actor_graphics(resolved['overrides'])))) else [])])
         record['audit'] = str(audit / 'audit.json')
-        record['copy'] = str(copy)
         if not copy.is_dir():
             fail('copy patcher reported success but the copy is missing')
+        if not session:
+            record['copy'] = str(copy)
         if record['created_id'] is not None:
             try:
                 audit_change = read_json(audit / 'audit.json')['changes'][0]
@@ -982,6 +1115,14 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
                 audited = None
             if audited != record['created_id']:
                 fail(f'audit created_id {audited!r} does not match the snapshot id {record["created_id"]!r}')
+        if session:
+            try:
+                record['promoted_files'] = session.promote(copy, audit / 'audit.json')
+            except StepFailure as failure:
+                fail(str(failure))
+            record['snapshot'] = None
+        if session or cleanup:
+            shed_step(directory, index, audit, session)
         record['status'] = 'ok'
         return record
     except StepFailure:
@@ -990,6 +1131,9 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
         record['status'] = 'failed'
         record['error'] = f'{type(error).__name__}: {error}'
         raise StepFailure(record['error'])
+    finally:
+        if session:
+            remove_tree(copy)
 
 
 def chest_message(contents, project):
@@ -1117,7 +1261,7 @@ def failed_record(number, step_type, message, records):
     raise StepFailure(message)
 
 
-def execute_area(number, step, title, source, work, ruby, created, recipe_dir, records, rtp):
+def execute_area(number, step, title, source, work, ruby, created, recipe_dir, records, rtp, session=None, cleanup=False):
     """Run add_area as its ordinary transactions (new map, door, return door; see expand_area). Sub-steps refer to each other by local numbers.
     Returns a record whose created_id is the new map id and whose copy is the new current project."""
     try:
@@ -1126,34 +1270,42 @@ def execute_area(number, step, title, source, work, ruby, created, recipe_dir, r
         failed_record(number, 'add_area', str(error), records)
     local, current, record = {}, source, None
     for position, sub in enumerate(sub_steps, 1):
-        record = execute_step(number, sub, title, current, work, ruby, local, recipe_dir, records, 'abcdefgh'[position - 1], rtp, 'add_area')
+        record = execute_step(number, sub, title, current, work, ruby, local, recipe_dir, records, 'abcdefgh'[position - 1], rtp, 'add_area', session, cleanup)
         local[position] = record['created_id']
-        current = Path(record['copy'])
-    return {'copy': str(current), 'created_id': local[1]}
+        current = source if session else Path(record['copy'])
+    return {'copy': None if session else str(current), 'created_id': local[1]}
 
 
-def execute_chest(number, step, title, source, work, ruby, created, recipe_dir, records, rtp):
+def execute_chest(number, step, title, source, work, ruby, created, recipe_dir, records, rtp, session=None, cleanup=False):
     """Run a macro step (add_treasure_chest, add_touch_trigger) as its normal transactions: an optional append_blank_event, then one append_staged_event.
     Returns the staged step's record (its created id is the new event id and its copy the new current project)."""
     macro = step['type']
     if macro == 'add_area':
-        return execute_area(number, step, title, source, work, ruby, created, recipe_dir, records, rtp)
+        return execute_area(number, step, title, source, work, ruby, created, recipe_dir, records, rtp, session, cleanup)
     try:
         blank, staged = MACROS[macro](resolve_refs(step, created), source)
     except (RecipeError, ValueError) as error:
         failed_record(number, macro, str(error), records)
     current = source
     if blank is not None:
-        record = execute_step(number, blank, title, current, work, ruby, created, recipe_dir, records, 'a', rtp, macro)
+        record = execute_step(number, blank, title, current, work, ruby, created, recipe_dir, records, 'a', rtp, macro, session, cleanup)
         staged['template_event'] = record['created_id']
-        current = Path(record['copy'])
-    return execute_step(number, staged, title, current, work, ruby, created, recipe_dir, records, 'b' if blank is not None else 'a', rtp, macro)
+        current = source if session else Path(record['copy'])
+    return execute_step(number, staged, title, current, work, ruby, created, recipe_dir, records, 'b' if blank is not None else 'a', rtp, macro, session, cleanup)
 
 
 def markdown_report(report):
-    lines = ['# VX Ace recipe report', '', f'Recipe: {report.get("title") or "(untitled)"}', f'Status: **{report["status"]}**',
-             f'Original unchanged: **{report["original_unchanged"]}**', 'Mutation performed on original: **False**',
-             f'Final copy: `{report["final_copy"]}`' if report['final_copy'] else 'Final copy: none', '']
+    place = report.get('in_place')
+    lines = ['# VX Ace recipe report', '', f'Recipe: {report.get("title") or "(untitled)"}', f'Status: **{report["status"]}**']
+    if place:
+        lines += ['Mode: **in place** (the project was written directly; there is no staged copy)',
+                  f'Transactions promoted into the project: **{place["steps_promoted"]}**' + (f' (failed at step {place["failed_step"]})' if place.get('failed_step') else ''),
+                  f'Rolled back to the start backup: **{place["rolled_back"]}**' + (f' ({place["rollback_note"]})' if place.get('rollback_note') else ''),
+                  f'Backup: `{place["backup_dir"]}`', f'Undo record: `{place["record"]}`' + (f' (record_id `{place["record_id"]}`)' if place.get('record_id') else ''),
+                  'Undo: `python tools/vxace_recipe.py undo --record <record> --confirm-in-place <project folder name>`', '']
+    else:
+        lines += [f'Original unchanged: **{report["original_unchanged"]}**', 'Mutation performed on original: **False**',
+                  f'Final copy: `{report["final_copy"]}`' if report['final_copy'] else 'Final copy: none', '']
     if report.get('error'):
         lines += [f'Error: {report["error"]}', '']
     lines += ['## Steps', '']
@@ -1164,7 +1316,7 @@ def markdown_report(report):
         lines.append(f'- Spec: {s["spec"]}')
         lines.append('- Exit codes: ' + ', '.join(f'{k} {v}' for k, v in s['exit_codes'].items()))
         lines.append(f'- Audit: {s["audit"]}')
-        lines.append(f'- Copy: {s["copy"]}')
+        lines.append(f'- Promoted files: {", ".join(s["promoted_files"])}' if 'promoted_files' in s else f'- Copy: {s["copy"]}' + (' (deleted by cleanup)' if s.get('copy_removed') else ''))
         if s.get('note'):
             lines.append(f'- Note: {s["note"]}')
         if s['error']:
@@ -1176,8 +1328,55 @@ def markdown_report(report):
     return '\n'.join(lines) + '\n'
 
 
-def run_recipe(recipe_path, project, work, ruby=None, smoke=None, rtp=None):
-    """Execute the recipe. Returns the report dict; its status is 'pass', 'step_failed', 'validation_refused', 'smoke_failed' or 'error'."""
+STEP_PATH_FIELDS = ('source', 'directory', 'spec', 'snapshot', 'plan', 'impact', 'audit', 'copy')
+
+
+def map_report_paths(report, convert):
+    """Copy of a report with `convert` applied to every file or folder path field (the step records, final copy, validation and smoke outputs)."""
+    out = copymod.deepcopy(report)
+    if out.get('final_copy'):
+        out['final_copy'] = convert(out['final_copy'])
+    for block, keys in (('validation', ('output',)), ('smoke', ('json', 'markdown'))):
+        if isinstance(out.get(block), dict):
+            for key in keys:
+                if out[block].get(key):
+                    out[block][key] = convert(out[block][key])
+    for record in out.get('steps') or []:
+        for key in STEP_PATH_FIELDS:
+            if record.get(key):
+                record[key] = convert(record[key])
+        for side in record.get('skipped_side_specs') or []:
+            if side.get('file'):
+                side['file'] = convert(side['file'])
+    return out
+
+
+def report_for_disk(report, work):
+    """Portable form of the report: paths below the work folder become relative to it (the top-level `work` stays absolute, for information only)."""
+    def relative(value):
+        try:
+            return Path(value).relative_to(work).as_posix()
+        except ValueError:
+            return value
+    out = map_report_paths(report, relative)
+    out['paths'] = 'relative'
+    return out
+
+
+def load_report(path):
+    """Read a recipe-report.json and make every path absolute: relative paths resolve against the report file's own folder, absolute paths (older reports) are kept."""
+    path = Path(path)
+    base = path.resolve().parent
+
+    def absolute(value):
+        return value if Path(value).is_absolute() else str(base / value)
+    return map_report_paths(read_json(path), absolute)
+
+
+def run_recipe(recipe_path, project, work, ruby=None, smoke=None, rtp=None, in_place=None, cleanup=True):
+    """Execute the recipe. Returns the report dict; its status is 'pass', 'step_failed', 'validation_refused', 'smoke_failed' or 'error'.
+    `in_place` (None, or {'backup_root', 'confirm', 'rollback_on_failure'}) selects in-place mode; `cleanup` (copy-chain mode) deletes each passed
+    step's index folders and, at the end, every intermediate step copy except the final one."""
     recipe_path = Path(recipe_path).resolve()
     recipe = load_recipe(recipe_path)
     steps = recipe['steps']
@@ -1194,15 +1393,40 @@ def run_recipe(recipe_path, project, work, ruby=None, smoke=None, rtp=None):
     if work.exists() or work == project or project in work.parents or work in project.parents:
         raise RecipeError('Use a new work directory outside the original project')
     ruby = ruby or shutil.which('ruby')
-    before = current_inventory(project)
+    session = None
+    if in_place:
+        if in_place.get('confirm') != project.name:
+            raise RecipeError(f'--in-place writes into the project itself: pass --confirm-in-place {project.name} (the project folder name) to confirm')
+        backup_root = unlinked(in_place['backup_root']).resolve()
+        if backup_root == work or work in backup_root.parents or backup_root in work.parents:
+            raise RecipeError('--backup-root must be outside the work directory')
+        try:
+            adopt.check_project(project)
+            adopt.check_backup_root(backup_root, project)
+            adopt.refuse_if_running()
+        except adopt.Refused as refusal:
+            raise RecipeError(f'in-place run refused ({refusal.reason}): {refusal}')
+        except ValueError as error:
+            raise RecipeError(f'in-place run refused: {error}')
+        before = None
+    else:
+        before = current_inventory(project)
     work.mkdir(parents=True)
     records = []
     report = {'version': VERSION, 'title': recipe.get('title'), 'recipe': str(recipe_path), 'status': 'error', 'error': None,
               'project': str(project), 'work': str(work), 'validation': None, 'steps': records, 'final_copy': None,
-              'smoke': None, 'original_unchanged': None, 'original_files_checked': len(before),
+              'smoke': None, 'original_unchanged': None, 'original_files_checked': len(before) if before is not None else None,
               'mutation_performed_on_original': False}
+    if in_place:
+        report['mode'] = 'in_place'
+        report['in_place'] = {'project': str(project), 'backup_root': str(backup_root), 'backup_dir': None, 'record': None, 'record_id': None,
+                              'rollback_on_failure': bool(in_place.get('rollback_on_failure')), 'rolled_back': False, 'rollback_note': None,
+                              'steps_promoted': 0, 'failed_step': None, 'files_changed': [], 'verified': None, 'final_index': None}
+    else:
+        report['mode'] = 'copy_chain'
     created = {}
     current = project
+    cleanup_copies = bool(cleanup) and not in_place
     try:
         code, out, err = run_tool(work / 'logs', 'validation', 'vxace_project_validator.py',
                                   [project, '--output', work / 'validation', '--backend', 'python', *(['--ruby', ruby] if ruby else [])])
@@ -1214,23 +1438,41 @@ def run_recipe(recipe_path, project, work, ruby=None, smoke=None, rtp=None):
             report['status'] = 'validation_refused'
             report['error'] = f'original project is not copy-mutation ready: {last_line(err, out)}'
         else:
+            if in_place:
+                backup_dir = backup_root / f'{adopt.utc_now().strftime("%Y%m%dT%H%M%SZ")}-recipe-{sha256(recipe_path.read_bytes())[:12]}'
+                if backup_dir.exists():
+                    raise RecipeError(f'backup folder already exists: {backup_dir}')
+                session = Session(project, work, backup_dir, recipe_path)
+                session.back_up_start()
+                report['in_place'].update(backup_dir=str(backup_dir), record=str(session.record_path), record_id=session.record_id)
             report['status'] = 'pass'
             for number, step in enumerate(steps, 1):
                 try:
                     if step['type'] in MACROS:
-                        record = execute_chest(number, step, recipe.get('title'), current, work, ruby, created, recipe_path.parent, records, rtp)
+                        record = execute_chest(number, step, recipe.get('title'), current, work, ruby, created, recipe_path.parent, records, rtp, session, cleanup_copies)
                     else:
-                        record = execute_step(number, step, recipe.get('title'), current, work, ruby, created, recipe_path.parent, records, rtp=rtp)
+                        record = execute_step(number, step, recipe.get('title'), current, work, ruby, created, recipe_path.parent, records, rtp=rtp,
+                                              session=session, cleanup=cleanup_copies)
                 except StepFailure as failure:
                     report['status'] = 'step_failed'
                     report['error'] = f'step {number} ({step["type"]}): {failure}'
+                    if in_place:
+                        report['in_place']['failed_step'] = number
                     break
                 if record['created_id'] is not None:
                     created[number] = record['created_id']
-                current = Path(record['copy'])
-                report['final_copy'] = str(current)
+                if not in_place:
+                    current = Path(record['copy'])
+                    report['final_copy'] = str(current)
+            if in_place and report['status'] == 'pass':
+                final_index = work / 'final-index'
+                code, out, err = run_tool(work / 'logs', 'final-index', 'vxace_project_reader.py', [project, '--output', final_index, *(['--ruby', ruby] if ruby else [])])
+                report['in_place']['final_index'] = {'exit_code': code, 'output': str(final_index)}
+                if code != 0:
+                    report['status'] = 'error'
+                    report['error'] = f'final re-index of the project failed (exit {code}): {last_line(err, out)}'
             if report['status'] == 'pass' and smoke:
-                report['smoke'] = run_smoke(current, work, ruby, smoke)
+                report['smoke'] = run_smoke(project if in_place else current, work, ruby, smoke, delete_stage=bool(in_place))
                 if report['smoke']['status'] != 'pass':
                     report['status'] = 'smoke_failed'
                     report['error'] = 'smoke run did not pass: ' + str(report['smoke'].get('status'))
@@ -1238,18 +1480,67 @@ def run_recipe(recipe_path, project, work, ruby=None, smoke=None, rtp=None):
         report['status'] = 'error'
         report['error'] = f'{type(error).__name__}: {error}'
     finally:
-        report['original_unchanged'] = current_inventory(project) == before
-        if not report['original_unchanged']:
-            report['status'] = 'error'
-            report['error'] = 'ORIGINAL PROJECT FILES CHANGED'
-        (work / 'recipe-report.json').write_text(json.dumps(report, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
-        (work / 'recipe-report.md').write_text(markdown_report(report), encoding='utf-8')
+        if in_place:
+            finish_in_place(report, session)
+        else:
+            report['original_unchanged'] = current_inventory(project) == before
+            if not report['original_unchanged']:
+                report['status'] = 'error'
+                report['error'] = 'ORIGINAL PROJECT FILES CHANGED'
+            if cleanup_copies:
+                # Keep the final copy and, when a macro step failed part-way, the last good sub-step copy (the state the failure started from).
+                last_ok = next((r['copy'] for r in reversed(records) if r['status'] == 'ok' and r.get('copy')), None)
+                for record in records:
+                    if record.get('copy') and record['copy'] not in (report['final_copy'], last_ok) and Path(record['copy']).is_dir():
+                        remove_tree(record['copy'])
+                        record['copy_removed'] = True
+        saved = report_for_disk(report, work)
+        (work / 'recipe-report.json').write_text(json.dumps(saved, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+        (work / 'recipe-report.md').write_text(markdown_report(saved), encoding='utf-8')
     return report
 
 
-def run_smoke(last_copy, work, ruby, options):
-    """Stage and run the existing smoke harness on the last copy (the copy itself is left untouched; staging clones it)."""
+def finish_in_place(report, session):
+    """Roll back when asked and the run failed, then check that the project holds exactly the expected bytes and fill the in-place report block."""
+    place = report['in_place']
+    if session is None:
+        return
+    remove_tree(session.tmp_copy)
+    failed = report['status'] in ('step_failed', 'error')
+    if failed and place['rollback_on_failure'] and session.files:
+        try:
+            result = adopt.undo(session.project, session.record_path, session.record_id)
+            place['rolled_back'] = True
+            place['rollback_note'] = f'restored {result["files"]} file(s) from the start backup'
+        except (adopt.Refused, ValueError, OSError, KeyError) as error:
+            place['rollback_note'] = f'ROLLBACK FAILED, the project keeps the promoted steps; undo manually with the record ({error})'
+            report['error'] = f'{report["error"]}; {place["rollback_note"]}'
+    elif failed and place['rollback_on_failure']:
+        place['rolled_back'] = True
+        place['rollback_note'] = 'no step had been promoted; the project was never changed'
+    place['steps_promoted'] = 0 if place['rolled_back'] else session.promoted
+    place['files_changed'] = [] if place['rolled_back'] else sorted(session.files)
+    problems = session.verify_expected(place['rolled_back'])
+    place['verified'] = not problems
+    report['mutation_performed_on_original'] = bool(session.files)
+    place['record_id'] = session.record_id
+    if problems:
+        report['status'] = 'error'
+        report['error'] = 'PROJECT DIFFERS FROM THE EXPECTED STATE: ' + ', '.join(problems)
+
+
+def run_smoke(last_copy, work, ruby, options, delete_stage=False):
+    """Stage and run the existing smoke harness on the last copy (the copy itself is left untouched; staging clones it).
+    In-place mode passes the project itself and `delete_stage`: the single staged copy is deleted afterwards, the results are kept."""
     smoke_work = work / 'smoke'
+    try:
+        return run_smoke_staged(last_copy, work, ruby, options, smoke_work)
+    finally:
+        if delete_stage:
+            remove_tree(smoke_work)
+
+
+def run_smoke_staged(last_copy, work, ruby, options, smoke_work):
     stage_args = ['stage', last_copy, '--work', smoke_work, *(['--ruby', ruby] if ruby else [])]
     if options.get('suite'):
         stage_args += ['--suite', options['suite']]
@@ -1292,26 +1583,51 @@ def main(argv=None):
     item.add_argument('--output', required=True)
     item.add_argument('--ruby', default=shutil.which('ruby'))
     item.add_argument('--rtp', help='explicit read-only RTP root, used only to bind page character graphics that are not in the project')
+    item.add_argument('--in-place', action='store_true', help='predict an in-place run (no project copies are kept; the backup is reported)')
+    item.add_argument('--backup-root', help='with --in-place: where the start backup would go')
     item = commands.add_parser('run')
     item.add_argument('recipe')
     item.add_argument('--project', required=True)
     item.add_argument('--work', required=True)
     item.add_argument('--ruby', default=shutil.which('ruby'))
     item.add_argument('--rtp', help='explicit read-only RTP root, used only to bind page character graphics that are not in the project')
+    item.add_argument('--in-place', action='store_true', help='write the steps directly into --project (one start backup, undo record); needs --backup-root and --confirm-in-place')
+    item.add_argument('--backup-root', help='in-place: folder (outside the project) that receives the timestamped start backup')
+    item.add_argument('--confirm-in-place', help='in-place: must equal the project folder name, e.g. Project3')
+    item.add_argument('--rollback-on-failure', action=argparse.BooleanOptionalAction, default=True,
+                      help='in-place: restore the start backup when a step fails (default on; --no-rollback-on-failure keeps the verified steps before the failure)')
+    item.add_argument('--cleanup', action=argparse.BooleanOptionalAction, default=True,
+                      help='copy-chain: delete each passed step\'s index folders and, at the end, every intermediate step copy except the final one (default on)')
+    item.add_argument('--keep-intermediate', action='store_true', help='copy-chain: keep every step copy and index (same as --no-cleanup)')
     item.add_argument('--smoke-suite')
     item.add_argument('--smoke-mode', choices=['test', 'normal'])
     item.add_argument('--smoke-frames', type=int, default=600)
     item.add_argument('--smoke-auto-confirm', type=int, default=0)
     item.add_argument('--smoke-launcher', type=json_argv, help=argparse.SUPPRESS)
+    item = commands.add_parser('undo', help='revert an in-place run completely from its undo record (restores the start backup)')
+    item.add_argument('--record', required=True, help='adopt-record.json inside the in-place run\'s backup folder')
+    item.add_argument('--confirm-in-place', required=True, help='the project folder name, e.g. Project3')
     args = parser.parse_args(argv)
     try:
         if args.command == 'validate':
             steps = load_recipe(args.recipe)['steps']
             print(json.dumps({'status': 'ok', 'steps': len(steps)}))
             return 0
+        if args.command == 'undo':
+            try:
+                record = adopt.load_record(args.record)
+                if args.confirm_in_place != Path(record['project']).name:
+                    raise adopt.Refused('wrong_confirm', '--confirm-in-place must equal the project folder name: ' + Path(record['project']).name)
+                print(json.dumps(adopt.undo(record['project'], args.record, record['record_id'])))
+                return 0
+            except adopt.Refused as refusal:
+                print(json.dumps({'status': 'refused', 'reason': refusal.reason, 'detail': str(refusal), 'items': refusal.details}), file=sys.stderr)
+                return 3
         if args.command == 'plan':
             import vxace_recipe_plan
-            plan = vxace_recipe_plan.plan_recipe(args.recipe, args.project, args.output, args.ruby, args.rtp)
+            if args.backup_root and not args.in_place:
+                raise RecipeError('--backup-root belongs to --in-place')
+            plan = vxace_recipe_plan.plan_recipe(args.recipe, args.project, args.output, args.ruby, args.rtp, args.in_place, args.backup_root)
             summary = plan['summary']
             print(json.dumps({'version': vxace_recipe_plan.VERSION, 'status': plan['status'], 'steps_planned': summary['steps_planned'], 'refused_step': plan['refused_step'],
                               'transactions': summary['transactions'], 'files_changed': summary['files_changed'], 'original_unchanged': plan['original_unchanged'],
@@ -1329,13 +1645,24 @@ def main(argv=None):
         if args.smoke_mode:
             smoke = {'suite': args.smoke_suite, 'mode': args.smoke_mode, 'frames': args.smoke_frames,
                      'auto_confirm': args.smoke_auto_confirm, 'launcher': args.smoke_launcher}
-        report = run_recipe(args.recipe, args.project, args.work, args.ruby, smoke, args.rtp)
+        in_place = None
+        if args.in_place:
+            if not args.backup_root or not args.confirm_in_place:
+                raise RecipeError('--in-place needs --backup-root and --confirm-in-place <project folder name>')
+            in_place = {'backup_root': args.backup_root, 'confirm': args.confirm_in_place, 'rollback_on_failure': args.rollback_on_failure}
+        elif args.backup_root or args.confirm_in_place:
+            raise RecipeError('--backup-root and --confirm-in-place belong to --in-place')
+        report = run_recipe(args.recipe, args.project, args.work, args.ruby, smoke, args.rtp, in_place, args.cleanup and not args.keep_intermediate)
     except Exception as error:
         print('Recipe refused: ' + str(error), file=sys.stderr)
         return 2
-    print(json.dumps({'version': VERSION, 'status': report['status'], 'steps_completed': sum(s['status'] == 'ok' for s in report['steps']),
-                      'final_copy': report['final_copy'], 'original_unchanged': report['original_unchanged'],
-                      'report': str(Path(report['work']) / 'recipe-report.json')}))
+    summary = {'version': VERSION, 'status': report['status'], 'steps_completed': sum(s['status'] == 'ok' for s in report['steps']),
+               'final_copy': report['final_copy'], 'original_unchanged': report['original_unchanged'],
+               'report': str(Path(report['work']) / 'recipe-report.json')}
+    if report['mode'] == 'in_place':
+        place = report['in_place']
+        summary.update(mode='in_place', failed_step=place['failed_step'], rolled_back=place['rolled_back'], backup_dir=place['backup_dir'], record=place['record'], record_id=place['record_id'])
+    print(json.dumps(summary))
     if report['status'] == 'error':
         print('Recipe error: ' + str(report['error']), file=sys.stderr)
         return 2

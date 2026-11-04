@@ -18,7 +18,7 @@ Only after all of these are done for the staged copy (or recipe result):
    python tools/vxace_adopt.py plan PROJECT --copy STAGED_COPY --audit AUDIT_DIR [--audit AUDIT_DIR2 ...] --output PLAN_DIR
    python tools/vxace_adopt.py plan PROJECT --recipe WORK/recipe-report.json --output PLAN_DIR
    ```
-   For chained copies pass the audits in step order (the copy is the last one). With `--recipe` the report supplies every step audit and the final copy. Read `PLAN_DIR/adopt-plan.md`; it lists each file (replace/create), sizes and hashes, and prints the `plan_id`.
+   For chained copies pass the audits in step order (the copy is the last one). With `--recipe` the report supplies every step audit and the final copy. Since v1.29 a report stores its paths relative to its own folder and `plan --recipe` resolves them against the report file's location, so the whole recipe work folder can be moved or renamed before planning; reports with absolute paths from older versions still work (as long as the folders they name are still there). The default recipe cleanup keeps the audits and the final copy and deletes the other step copies, which is all this command reads. A report from `vxace_recipe.py run --in-place` has no staged copy and is refused: that run already wrote the project and has its own undo record (`vxace_recipe.py undo`, or `undo` below). Read `PLAN_DIR/adopt-plan.md`; it lists each file (replace/create), sizes and hashes, and prints the `plan_id`.
 3. **Apply**:
    ```
    python tools/vxace_adopt.py apply PROJECT --plan PLAN_DIR/adopt-plan.json --backup-root BACKUP_ROOT --confirm PLAN_ID

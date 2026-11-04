@@ -1,4 +1,4 @@
-# VX Ace Masterfile — v1.28.0
+# VX Ace Masterfile — v1.29.0
 
 The authoritative entry point for this specialist toolchain: recommended settings, available features, evidence, commands, and remaining limits. Repository: [EricFair/VX-Ace](https://github.com/EricFair/VX-Ace).
 
@@ -45,6 +45,8 @@ v1.26 adds a fresh-map mode to the blank-map append (any existing map as schema 
 v1.27 adds enemy `actions` (skill, rating and always/turn/HP/MP/state/party-level/switch conditions), `drop_items` (three editor slots) and `features` overrides to the [database append](references/database-append.md), with per-reference hashes and `from_step` for new skills and drops.
 
 v1.28 adds classes to the [database append](references/database-append.md): EXP parameters, generated stat curves (linear, early or late between level-1 and level-99 values), learnings and class features (skill, weapon and armor types, equip fixes, dual wield, action plus, special flags).
+
+v1.29 adds in-place recipes (`--in-place --confirm-in-place NAME`: one verified backup, every gate per step, promotion of verified files only, rollback on failure, one-command undo, no retained copies), default cleanup of per-step indexes and intermediate copies in the copy chain, and relative report paths.
 
 v1.4.1 corrects static passage observations in the [ordinary upper-tile snapshot](references/upper-tile-painting.md). Recreate previous snapshots; the native uppermost non-star tile now takes priority over lower flags. Mutation capabilities and copy safety gates remain as documented.
 

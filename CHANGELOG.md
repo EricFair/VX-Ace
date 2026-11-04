@@ -2,6 +2,17 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.29.0 — In-place recipes and cleanup
+
+- **In-place runs:** `vxace_recipe.py run --in-place --confirm-in-place NAME` builds a recipe directly in a project the user designates as the working or test project.
+  - One verified backup is taken first.
+  - Every gate runs per step, and only the files each step verified are promoted into the project.
+  - A failure rolls back by default, and one command undoes the whole run.
+  - No project copy is kept.
+- **Copy-chain cleanup:** copy-chain runs now delete per-step indexes and intermediate copies by default (`--keep-intermediate` keeps them).
+- **Relative paths:** reports store paths relative to the work folder, so moving it no longer breaks `adopt plan --recipe`.
+- **Verified on the test project:** a 5-step recipe built a test map, an NPC and a new start position in place in 157 s. It kept a 26 KB backup and left no copies, and the new game started there.
+
 ## 1.28.0 — Classes
 
 - Database append gains classes, configurable through:

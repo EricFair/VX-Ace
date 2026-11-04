@@ -240,12 +240,38 @@ With `"repeatable": true` only page 1 is emitted and it has no self-switch comma
 ]}
 ```
 
+## Cleanup and relative paths (v1.29)
+
+The copy-chain `run` (the default) now cleans up after itself, so a long recipe no longer leaves a project copy and two indexes per step:
+
+- `--cleanup` (default on): once a step has passed, its `index/` and `audit/post-index/` folders are deleted. When the run is complete (pass or stopped), every `step-*/copy` except the final one (and, after a macro step failed part-way, the last good sub-step copy) is deleted; the report marks those steps `copy_removed`. Each step keeps its `spec.json`, `plan/`, `impact.json` / `impact.md`, `audit/audit.json` (with the semantic diff files) and `logs/`, which is all `vxace_adopt.py plan --recipe` needs. `--keep-intermediate` (or `--no-cleanup`) keeps every copy and index as before.
+- `recipe-report.json` stores every path below the work folder (`directory`, `spec`, `plan`, `impact`, `audit`, `copy`, `source`, `final_copy`, validation and smoke outputs) relative to the work folder and sets `"paths": "relative"`. The top-level `work` stays absolute for information only. Move or rename the whole work folder freely: `vxace_adopt.py plan --recipe` resolves the paths against the report file's own folder. Older reports with absolute paths still load. Python callers use `vxace_recipe.load_report(path)`, which returns the report with absolute paths.
+
+## In-place mode (v1.29)
+
+```
+python tools/vxace_recipe.py run RECIPE --project P --work WORK --in-place --backup-root BACKUPS --confirm-in-place Project3
+python tools/vxace_recipe.py undo --record BACKUPS/<stamp>-recipe-<hash>/adopt-record.json --confirm-in-place Project3
+```
+
+Use it only for a project the user designates as the working or test project, when the copy chain's cost (a copy per step, a folder tree to move around, an adopt step at the end) is not wanted. For a real game, keep using the copy chain plus `vxace_adopt.py`.
+
+- **Explicit opt-in.** `--confirm-in-place` must equal the project folder's name (`Project3`); `--backup-root` is required and must be outside the project. The run refuses without them, and refuses while `RPGVXAce.exe` or `Game.exe` is running (adopt's process check; no bypass). Nothing is created when it refuses.
+- **One backup.** Before step 1 every `Data/*.rvdata2` and `Game.ini` is copied to `BACKUPS/<UTC stamp>-recipe-<recipe hash>/files/` with `manifest.json` (hashes, verified after copying). `adopt-record.json` in that folder is an adopt-compatible undo record; it is rewritten after each promoted step, so it always describes the project's current state.
+- **Per step, every gate is kept.** The Project Reader, the operation snapshot, spec, planner, impact report and copy patcher all run with the live project as the source, so each step sees the previous steps' result. The patcher clones the project into one temp working copy (`WORK/tmp-copy`); that copy is checked against the audit and the project exactly as `vxace_adopt.py plan` does (declared files only, recorded before and after hashes). Only the changed files are then written into the project with adopt's atomic writer and rolled back with adopt's rollback if any write or post-write hash check fails. The temp copy is deleted at once, on success or failure, so there is never more than one and none is left at the end. Design choice: the project itself is the source and the working copy is rebuilt per step, rather than one long-lived working copy kept in sync, because the copy patcher refuses an existing destination and always clones its source; this keeps its byte-exact verification unchanged, at the cost of a project clone (time, not retained disk) per step.
+- **Evidence kept per step:** `spec.json`, `plan/`, `impact.json` / `impact.md`, `audit/audit.json`, `logs/`. The pre and post indexes and the snapshot are deleted once the step's gates pass. One index of the finished project is written to `WORK/final-index/`.
+- **Failure.** If step k fails, steps 1..k-1 are verified and already promoted, and the report names step k (`in_place.failed_step`, `error`). `--rollback-on-failure` is the default: the start backup is restored through adopt's undo, so a failed recipe leaves the project exactly as it was (`--no-rollback-on-failure` keeps steps 1..k-1; revert them later with `undo`). Rollback applies to a failed step or an unexpected error; a smoke failure after all steps passed leaves the project as built and reports `smoke_failed`. If the rollback itself fails the report says so and the record can still be used manually.
+- **Undo** reverts the whole recipe in one command (`vxace_recipe.py undo`, or `vxace_adopt.py undo P --record R --confirm RECORD_ID`). It refuses if any promoted file changed since (for example you saved in the editor), so later edits are never lost, and removes files the recipe created.
+- **Smoke.** `--smoke-mode` / `--smoke-suite` stage one temp copy of the finished project, run it and delete the staged copy afterwards; `smoke-result.json` / `.md` stay in the work folder.
+- **Disk use.** Retained: the backup of the Data files (a few MB) plus the work folder's evidence (no project copies, no indexes except the final one). Peak: one transient project clone, plus one more while a smoke run is staged. `plan --in-place --backup-root DIR` prints `in place on P, backup under DIR, 0 project copies` instead of the copy-chain estimate.
+- The report has `"mode": "in_place"`, no `final_copy`, and `mutation_performed_on_original: true` once a step was promoted. `vxace_adopt.py plan --recipe` refuses such a report: there is nothing to adopt, the project already holds the changes.
+
 ## Limits
 
-- Every step clones the whole project, so N steps need roughly N+1 project copies of disk space, plus one more for smoke staging.
+- In the default copy-chain mode every step clones the whole project, so N steps need roughly N+1 project copies of disk space while the run is in progress, plus one more for smoke staging; with `--cleanup` (default) only the final copy remains afterwards. In-place mode needs one transient copy at a time.
 - Each step is a separate transaction with its own plan, impact report, audit and semantic diff. Review every step's `plan/`, `impact.md` and audit before using the final copy; chaining does not merge or replace those reviews.
 - Database appends do not wire the new entry anywhere; a new skill reaches a class only through an explicit `append_learning` step (for example `{"type": "append_learning", "class_id": 1, "skill_id": {"from_step": 2}, "level": 3}`), and the `from_step` links in a recipe are the only automatic connections. An `append_learning` step does not teach existing save-game actors; they learn the skill on a later level-up. Each `append_learning` step also reads `Skills.rvdata2` of the previous copy, so the skills step must come first. Map encounters, region sets and version-advance rules of each operation still apply (each map encounter or display-name step advances `System.version_id` once, as documented).
-- A recipe is not a rollback: nothing is undone if a later step fails, the earlier copies simply remain for inspection. The original is untouched either way.
+- In copy-chain mode a recipe is not a rollback: nothing is undone if a later step fails, the last good copy simply remains for inspection and the original is untouched. In-place mode rolls back by default (see above).
 - Only the step types above are supported; map region painting, general event authoring and the other guarded operations are not available as steps yet.
 - A passing run, including smoke, is evidence and not proof of runtime behavior; test the final copy in the editor and engine before adopting any of it.
 
