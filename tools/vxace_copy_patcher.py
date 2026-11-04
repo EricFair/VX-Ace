@@ -628,11 +628,11 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
         if len(changes)!=1:raise ValueError('Map append requires its own single-change transaction')
         if no_reindex or mutator.resolve()!=(Path(__file__).resolve().parent/'vxace_python_mutator.py'):
             raise ValueError('Map append requires explicit Python backend and mandatory post-copy indexing')
-        from vxace_maps import snapshot as map_snapshot,candidates as map_candidates
+        from vxace_maps import snapshot as map_snapshot,candidates as map_candidates,OPTIONS as MAP_OPTIONS
         from vxace_index_query import Index,unlinked
         from vxace_python_mutator import load
         for c in map_entries:
-            map_data=Index(index);map_snapshot(map_data,project,c['mutation']['template_map_id'],{k:c['mutation'][k] for k in ('width','height','tileset_id','parent_id','fill_floor') if k in c['mutation']});map_data.unchanged()
+            map_data=Index(index);map_snapshot(map_data,project,c['mutation']['template_map_id'],{k:c['mutation'][k] for k in MAP_OPTIONS if k in c['mutation']});map_data.unchanged()
             map_candidates(load(unlinked(project/c['target']))[0],c['mutation'],project)
     if common_events:
         if len(common_events)!=1 or len(changes)!=1:raise ValueError('Common event append requires its own single-change transaction')

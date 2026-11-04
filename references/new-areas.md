@@ -6,6 +6,8 @@ A "new area" is a new map plus a way in and a way out. v1.26 adds three pieces, 
 2. The [blank-map append](blank-map-append.md) operation takes optional `width`, `height`, `tileset_id`, `parent_id` and a bounded `fill_floor`.
 3. The `add_area` recipe macro creates the map, a door on a source map and a return door on the new map as ordinary guarded transactions.
 
+**Readable starter maps (v1.31).** A flat `fill_floor` room is hard to read. `append_blank_map` and `add_area` also take a `layout` (fresh-map mode only) with a wall border, paths, landmarks and stock-tileset presets; see [map layouts](map-layouts.md). `plan` and impact then warn about events the player cannot reach.
+
 **Real level design stays manual in the editor.** `fill_floor` only makes a walkable placeholder room: one plain floor tile over the whole map. Walls, decoration, upper layers, regions, encounters, music and events other than the two doors are for you to place in the editor afterwards.
 
 ## Blank-map options
@@ -208,7 +210,7 @@ The door is an action-button event with priority "same as characters": the playe
 ## Limits
 
 - Without `width`, `height` and `tileset_id` the template must be an inert map (see [blank-map append](blank-map-append.md)); a map with events and encounters is refused. Give all three (the normal case for `add_area`) and any existing map works as the schema template.
-- The new map's autotile layers, walls and decoration are not generated; `fill_floor` is one A5 tile on layer 0. A different floor under a door or a cave wall is manual editor work.
+- The new map's autotile layers, walls and decoration are not generated; `fill_floor` is one A5 tile on layer 0. A `layout` ([map layouts](map-layouts.md)) draws a bordered room with paths and a few landmark tiles, still without autotiles or room shapes. A different floor under a door or a cave wall is manual editor work.
 - Door/return events use one page and a fixed `transfer` with a normal fade; no switches, sounds or story logic. Add those with ordinary staged-event steps on the ids you know (`donor_event`/`template_event` 1 on the new map).
 - Nothing changes the existing maps' tiles. The source map gains one blank template event (unless `door.template_event` is used) and the door; `System.version_id` advances as for any map event append.
 - A passing run, including all gates, is evidence and not proof of runtime behavior. Test the final copy in the editor and the engine.

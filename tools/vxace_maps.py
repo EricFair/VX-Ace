@@ -15,7 +15,8 @@ MAP_FIELDS={'autoplay_bgm','autoplay_bgs','battleback1_name','battleback2_name',
 FIELDS={'action','template_map_id','new_id','name','expected_infos_sha256','expected_template_sha256',
         'expected_inventory_sha256','expected_tilesets_sha256'}
 # v1.26 optional parameters: a size / tileset / parent override and a bounded A5 floor fill (see references/new-areas.md).
-OPTIONS=('width','height','tileset_id','parent_id','fill_floor')
+# v1.31 adds `layout` (fresh-map mode only): a bordered room with paths and landmarks (see references/map-layouts.md).
+OPTIONS=('width','height','tileset_id','parent_id','fill_floor','layout')
 FRESH_KEYS={'width','height','tileset_id'}   # all three given: fresh-map mode, the template supplies only the native schema (no content is copied)
 MIN_WIDTH,MIN_HEIGHT,MAX_SIZE=17,13,500
 A5_BASE,A5_COUNT=1536,128   # Tilemap A5: tile ids 1536..1663 are plain (non-autotile) tiles of the A5 sheet (tileset_names[4])
@@ -179,20 +180,36 @@ def resolve_options(native,lookup,project,options):
     tileset_id=integer(options['tileset_id'],'new map tileset ID',1,999) if 'tileset_id' in options else native.get('tileset_id')
     parent=integer(options.get('parent_id',0),'parent map ID',0,999)
     if parent and parent not in lookup:raise ValueError('Parent map is missing from the native map tree')
-    tile_id=None
-    if 'fill_floor' in options or tileset_id!=native.get('tileset_id'):   # the template's own tileset was already bound by context()
-        _,names,flags=tileset(RubyObject('RPG::Map',{'@tileset_id':tileset_id}),project)
-        if 'fill_floor' in options:tile_id=passable_floor(names,flags,options['fill_floor'])
+    tile_id=None;layout=None
     fresh=FRESH_KEYS<=set(options)
+    if 'layout' in options:
+        if not fresh:raise ValueError('layout needs fresh-map mode: give width, height and tileset_id')
+        if 'fill_floor' in options:raise ValueError('layout replaces fill_floor: give one of them')
+    if 'fill_floor' in options or 'layout' in options or tileset_id!=native.get('tileset_id'):   # the template's own tileset was already bound by context()
+        selected,names,flags=tileset(RubyObject('RPG::Map',{'@tileset_id':tileset_id}),project)
+        if 'fill_floor' in options:tile_id=passable_floor(names,flags,options['fill_floor'])
+        if 'layout' in options:
+            from vxace_map_layout import resolve
+            name=selected.get('name');name=name.data.decode('utf-8','strict') if hasattr(name,'data') else ''
+            layout=resolve(options['layout'],name,names,flags,width,height);tile_id=layout['floor_tile_id']
     rebuilt=fresh or tile_id is not None or (width,height,tileset_id)!=(native.get('width'),native.get('height'),native.get('tileset_id'))
-    return {'fresh':fresh,'width':width,'height':height,'tileset_id':tileset_id,'parent_id':parent,'fill_floor':options.get('fill_floor'),'floor_tile_id':tile_id,'tiles_rebuilt':rebuilt}
+    return {'fresh':fresh,'width':width,'height':height,'tileset_id':tileset_id,'parent_id':parent,'fill_floor':options.get('fill_floor'),'floor_tile_id':tile_id,'tiles_rebuilt':rebuilt,'layout':layout}
 
 
 def new_table(plan):
-    """Empty Table (all layers, regions and shadows 0); layer 0 is filled with the single A5 floor tile when requested."""
+    """Empty Table (all layers, regions and shadows 0); layer 0 is filled with the single A5 floor tile when requested, or painted by a layout."""
     from vxace_python_mutator import Table
     cells=plan['width']*plan['height']
+    if plan.get('layout'):
+        from vxace_map_layout import paint
+        return Table(plan['width'],plan['height'],4,dim=3,data=paint(plan['layout'],plan['width'],plan['height']))
     return Table(plan['width'],plan['height'],4,dim=3,data=[plan['floor_tile_id'] or 0]*cells+[0]*(cells*3))
+
+
+def layout_summary(plan):
+    if not plan.get('layout'):return {}
+    from vxace_map_layout import summary
+    return {'layout':summary(plan['layout'])}
 
 
 def native_snapshot(project,template_id,options=None):
@@ -203,9 +220,10 @@ def native_snapshot(project,template_id,options=None):
     plan=resolve_options(native,lookup,project,options or {})
     return infos,native,{'version':VERSION,'template_map_id':template_id,'new_id':integer(max(lookup)+1,'next map ID',1,999),'width':native.get('width'),'height':native.get('height'),
             'template_inert_event_count':len(native.get('events').pairs),'guard':guard,
-            'planned_map':{key:plan[key] for key in ('fresh','width','height','tileset_id','parent_id','fill_floor','floor_tile_id','tiles_rebuilt')},
+            'planned_map':{**{key:plan[key] for key in ('fresh','width','height','tileset_id','parent_id','fill_floor','floor_tile_id','tiles_rebuilt')},**layout_summary(plan)},
             'limits':['One new map at the next maximum ID, root-level unless a parent is given; inherited dimensions/tiles/tileset unless a size, tileset or floor fill is given, and no events.',
                       'A size, tileset change or fill_floor rebuilds the tile Table: every layer, region and shadow is 0 except an optional single passable A5 tile on layer 0 (a walkable placeholder room, not level design).',
+                      'A layout (fresh-map mode only) paints plain A5 tiles on layer 0 (floor, a one-tile wall border, L-shaped paths) and optional B-E landmark tiles on upper layer 1 or 2; no autotiles, no room shapes beyond a bordered rectangle, not level design.',
                       'Template must have no logic, conditions, encounters, notes or automatic backgrounds/audio; only inert placeholder events can be discarded in the new map.',
                       'No delete, reparent, ID reuse, transfer authoring in this operation or general map writer; review dynamic map/save consumers.']}
 
@@ -256,6 +274,7 @@ def main(argv=None):
     parser.add_argument('--template-map',type=int,required=True);parser.add_argument('--output',required=True)
     parser.add_argument('--width',type=int);parser.add_argument('--height',type=int);parser.add_argument('--tileset-id',type=int)
     parser.add_argument('--parent-id',type=int);parser.add_argument('--fill-floor',type=int,help='A5 tile index 0..127 for layer 0 of the whole new map')
+    parser.add_argument('--layout',type=json.loads,help='JSON layout object (fresh-map mode: needs --width, --height and --tileset-id)')
     args=parser.parse_args(argv)
     options={key:getattr(args,key) for key in OPTIONS if getattr(args,key) is not None}
     try:result=execute(args.index,args.project,args.output,lambda data:snapshot(data,args.project,args.template_map,options),'map-append-snapshot')

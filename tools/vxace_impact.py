@@ -641,6 +641,37 @@ def staged_page_report(pages,switches,variables):
     return rows,warnings
 
 
+PRIORITY_NUMBER={'below':0,'same':1,'above':2}
+
+
+def reachability_warnings(data,mid,native,x,y,name,pages,template_id):
+    """v1.31: warnings when a placed event has no reachable cell from the map's arrival/start cells (tile layers only, see vxace_map_layout).
+    The anchors are the new-game start cell and every direct Transfer Player command aimed at the map; without an anchor nothing is reported.
+    `pages` are the staged pages (None for a dialogue event, which keeps its template's page); template_id names the template event on this map."""
+    import re
+    import vxace_map_layout as layout
+    from vxace_staged_commands import effective_priority
+    try:
+        template=native['events'].get(str(template_id));base=template['pages'][0] if template else {}
+        solid=False
+        for page in (pages if pages else [{}]):
+            options=page.get('options') if isinstance(page.get('options'),dict) else {}
+            priority=PRIORITY_NUMBER.get(effective_priority(page),base.get('priority_type')) if page else base.get('priority_type')
+            through=options['through'] if 'through' in options else base.get('through')
+            solid=solid or (priority==1 and not through)
+        anchors=set();system=data.json('database/system.json')
+        if system.get('start_map_id')==mid:anchors.add((system.get('start_x'),system.get('start_y')))
+        for file in data.paths('maps','map-*.json'):
+            other=data.json(file);data.spend()
+            commands=[(command.get('code'),command.get('parameters')) for event in (other.get('events') or {}).values() if isinstance(event,dict)
+                      for page in event.get('pages') or [] for command in page.get('list') or []]
+            anchors.update(layout.transfer_targets(commands,mid))
+        tilesets=data.json('database/tilesets.json');flags=tilesets[native['tileset_id']]['flags']['data'];table=native['data']['data']
+        return layout.check_events(native['width'],native['height'],table,flags,anchors,[(name,x,y,solid)],mid)
+    except (ValueError,KeyError,IndexError,TypeError,AttributeError,OSError):
+        return []
+
+
 def map_event_impact(index,change):
     from vxace_index_query import Index
     from vxace_map_events import schema,integer,text
@@ -711,8 +742,10 @@ def map_event_impact(index,change):
         graphics=[{'page':number,'graphic':page.get('graphic'),'options':page.get('options')} for number,page in enumerate(pages,1) if page.get('graphic') or page.get('options')]
         staged_report={'page_count':len(pages),'pages':rows,'chests':chests,'monsters':monsters,'graphic_changes':graphics,'priority_note':'The engine runs the highest-numbered page whose conditions are all met; verify the page order against the quest state machine.',
                        'warnings':warnings}
+    reach=[] if blank else reachability_warnings(data,mid,native,x,y,name,mutation['pages'] if staged else None,template_id)
     data.unchanged()
     return {'kind':'map_event','severity':'high','target':{'map_id':mid,'new_id':identifier,'name':name,'x':x,'y':y,('donor_event_id' if blank else 'template_id'):template_id},
+            **({'warnings':reach} if reach else {}),
             **({'staged':staged_report} if staged_report else {}),'literal_dialogue':lines,'event_consumer_mentions':mentions,'proposed_graphic':mutation.get('graphic'),
             'limitations':['Native exact template/map/schema preservation gates are enforced separately by the Python copy chain.',
                           'An appended static ID can collide with runtime-created events or pre-existing orphan self-switch/save state.',
@@ -820,6 +853,7 @@ def map_entry_impact(index,change):
             'limitations':['Actual native tree/file inventory/tileset/template hashes and empty-map construction run separately in the Python copy chain.',
                           'Next static ID can collide with runtime-created maps, custom loaders or old save state; literal search cannot establish absence.',
                           'Adds one map (root-level unless parent_id is given) with inherited dimensions/tiles/tileset and no events, or a rebuilt empty Table when width, height, tileset_id or fill_floor is given (only an optional single A5 tile on layer 0); no transfers are authored and existing maps/System remain unchanged.',
+                          *(['A layout paints plain A5 tiles on layer 0 (a one-tile wall border, floor, L-shaped paths) and optional B-E landmark tiles on upper layer 1 or 2 of a fresh map: a readable starter map, not level design (no autotiles, no room shapes beyond a bordered rectangle).'] if 'layout' in mutation else []),
                           'Review native editor tree/map, real transfer/render/passability, old save and native save/process restart.']}
 
 
@@ -1064,6 +1098,8 @@ def markdown(report):
             lines += ["Dependencies / relationships:",""]
             for d in deps: lines.append(f"- {d.get('direction')} `{d.get('relation')}` → `{d.get('node',{}).get('id')}` ({d.get('node',{}).get('label','')})")
             lines.append("")
+        if x.get("kind")=="map_event" and x.get("warnings"):
+            lines += [f"- Warning: {w}" for w in x["warnings"]]+[""]
         if x.get("kind")=="common_event":
             lines += ["Commands:",""]+[f"    {row}" for row in x["common_event"]["summary"]]+[""]+[f"- Warning: {w}" for w in x.get("warnings",[])]+[""]
         if x.get("kind")=="system_fields":

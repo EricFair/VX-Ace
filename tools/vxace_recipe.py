@@ -20,7 +20,7 @@ from vxace_database_append import LIST_TABLES, DROP_TABLES, ref_field, required_
 from vxace_index_query import unlinked
 import vxace_adopt as adopt
 
-VERSION = '1.30.0'
+VERSION = '1.31.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -34,9 +34,9 @@ STEP_KEYS = {
     'append_staged_event': ({'type', 'map_id', 'template_event', 'x', 'y', 'name', 'pages'}, {'type', 'map_id', 'template_event', 'x', 'y', 'name', 'pages'}),
     'append_common_event': ({'type', 'name', 'trigger', 'commands'}, {'type', 'name', 'trigger', 'commands', 'switch_id'}),
     'append_blank_event': ({'type', 'map_id', 'donor_event', 'x', 'y'}, {'type', 'map_id', 'donor_event', 'x', 'y', 'name', 'donor_map_id'}),
-    'append_blank_map': ({'type', 'template_map_id', 'name'}, {'type', 'template_map_id', 'name', 'width', 'height', 'tileset_id', 'parent_id', 'fill_floor'}),
+    'append_blank_map': ({'type', 'template_map_id', 'name'}, {'type', 'template_map_id', 'name', 'width', 'height', 'tileset_id', 'parent_id', 'fill_floor', 'layout'}),
     'add_area': ({'type', 'template_map_id', 'name', 'door', 'arrival', 'return_door', 'back_to'},
-                 {'type', 'template_map_id', 'name', 'door', 'arrival', 'return_door', 'back_to', 'width', 'height', 'tileset_id', 'parent_id', 'fill_floor', 'donor_event'}),
+                 {'type', 'template_map_id', 'name', 'door', 'arrival', 'return_door', 'back_to', 'width', 'height', 'tileset_id', 'parent_id', 'fill_floor', 'layout', 'donor_event'}),
     'add_treasure_chest': ({'type', 'map_id', 'x', 'y', 'name', 'contents'},
                            {'type', 'map_id', 'x', 'y', 'name', 'contents', 'graphic', 'template_event', 'donor_event', 'blank_x', 'blank_y'}),
     'add_touch_trigger': ({'type', 'map_id', 'x', 'y', 'name', 'commands'},
@@ -359,6 +359,16 @@ def validate_blank_map(step, number):
     for key, (low, high) in BLANK_MAP_LIMITS.items():
         if key in step and (not is_int(step[key]) or not low <= step[key] <= high):
             raise RecipeError(f'step {number}: {key} must be an integer {low}..{high}')
+    if 'layout' in step:
+        from vxace_map_layout import shape
+        try:
+            shape(step['layout'])
+        except ValueError as error:
+            raise RecipeError(f'step {number}: {error}')
+        if not {'width', 'height', 'tileset_id'} <= set(step):
+            raise RecipeError(f'step {number}: layout needs fresh-map mode: give width, height and tileset_id')
+        if 'fill_floor' in step:
+            raise RecipeError(f'step {number}: layout replaces fill_floor: give one of them')
 
 
 def cell_of(value, number, where, extra=()):
@@ -854,10 +864,11 @@ def build_spec(title, number, step, snapshot, source=None):
     elif kind == 'append_blank_map':
         mutation = {'action': 'append_blank_map', 'new_id': snapshot['new_id'], 'name': step['name'],
                     **{field: snapshot['guard'][field] for field in sorted(snapshot['guard'])},
-                    **{key: step[key] for key in ('width', 'height', 'tileset_id', 'parent_id', 'fill_floor') if key in step}}
+                    **{key: step[key] for key in ('width', 'height', 'tileset_id', 'parent_id', 'fill_floor', 'layout') if key in step}}
         change = {'kind': 'map_entry', 'locator': {'template_map_id': step['template_map_id']},
                   'proposal': f'Recipe step {number}: append map {snapshot["new_id"]} "{step["name"]}" from the inert template map {step["template_map_id"]}'
-                              + (f' with an A5 floor fill (tile {snapshot["planned_map"]["floor_tile_id"]})' if step.get('fill_floor') is not None else '') + '.',
+                              + (f' with an A5 floor fill (tile {snapshot["planned_map"]["floor_tile_id"]})' if step.get('fill_floor') is not None else '')
+                              + (' with a bordered room layout (plain A5 tiles on layer 0, B-E landmarks on an upper layer)' if 'layout' in step else '') + '.',
                   'mutation': mutation}
     elif kind == 'append_blank_event':
         change = {'kind': 'map_event', 'locator': {'map_id': step['map_id']},
@@ -1176,7 +1187,8 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
                 script, args, name = ('vxace_maps.py', [index, '--project', source, '--template-map', resolved['template_map_id'],
                                                         *[arg for key, flag in (('width', '--width'), ('height', '--height'), ('tileset_id', '--tileset-id'),
                                                                                 ('parent_id', '--parent-id'), ('fill_floor', '--fill-floor')) if key in resolved
-                                                          for arg in (flag, resolved[key])]], 'map-append-snapshot')
+                                                          for arg in (flag, resolved[key])],
+                                                        *(['--layout', json.dumps(resolved['layout'], sort_keys=True, separators=(',', ':'))] if 'layout' in resolved else [])], 'map-append-snapshot')
             elif kind == 'add_shop':
                 script, args, name = ('vxace_map_shops.py', [index, '--project', source, '--map', resolved['map_id'],
                                                              '--event', resolved['event_id']], 'map-shop-snapshot')
@@ -1360,6 +1372,17 @@ def free_cell(taken):
     return next((x, y) for y in range(13) for x in range(17) if (x, y) not in taken)
 
 
+def area_layout(step):
+    """The layout of an add_area (v1.31): the anchor defaults to the arrival cell, and the paths always start with the return door cell (so the door is
+    connected and, on the border, left open) and the arrival cell when the anchor is another one, followed by the layout's own paths."""
+    layout = copymod.deepcopy(step['layout'])
+    arrival, ret = [step['arrival']['x'], step['arrival']['y']], [step['return_door']['x'], step['return_door']['y']]
+    layout.setdefault('anchor', arrival)
+    paths = [ret] + ([arrival] if layout['anchor'] != arrival else [])
+    layout['paths'] = paths + [list(point) for point in layout.get('paths', []) if list(point) not in paths]
+    return layout
+
+
 def expand_area(step, project=None):
     """Expand a resolved add_area step into its ordinary transactions as a list of concrete steps. They reference each other with local
     {"from_step": k} numbers (1 = the new map), resolved against the macro's own created ids. Order: new map, [door blank event], door, blank event
@@ -1372,6 +1395,8 @@ def expand_area(step, project=None):
         raise RecipeError('arrival is the return_door cell: a player_touch return door would bounce the player straight back out')
     blank_map = {'type': 'append_blank_map', 'template_map_id': step['template_map_id'], 'name': step['name'],
                  **{key: step[key] for key in ('width', 'height', 'tileset_id', 'parent_id', 'fill_floor') if key in step}}
+    if 'layout' in step:
+        blank_map['layout'] = area_layout(step)
     steps = [blank_map]
     donor = step.get('donor_event', door.get('template_event'))
     if donor is None:

@@ -2,6 +2,19 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.31.0 — Readable maps
+
+- Fresh maps and `add_area` accept a `layout` with these parts:
+  - an A5 floor;
+  - an impassable 1-tile border wall;
+  - visible L-shaped paths from an anchor to listed points;
+  - B–E landmarks;
+  - `exterior`, `interior` and `dungeon` presets for the stock RTP tilesets.
+
+  `add_area` paths automatically run from the arrival to the return door and open the wall there.
+- Plan and impact warn when a placed event can't be reached from the start, the arrival or a transfer destination.
+- Verified with screenshots in the real engine: a clearing (meadow, cliff border, dirt paths, boulder, well, flowers) and a hut (wood walls, plank floor, red carpet path from the door, tables, barrel, crate). See [map layouts](references/map-layouts.md).
+
 ## 1.30.0 — Events that behave
 
 - **Collision by default:** staged pages with a character graphic now default to priority same, so they collide and fire when the player faces them. Impact and plan warn about a graphic event below the player.

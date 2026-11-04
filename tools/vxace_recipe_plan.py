@@ -18,7 +18,7 @@ import vxace_recipe as R
 from vxace_copy_patcher import current_inventory, normalize_changes
 from vxace_index_query import unlinked
 
-VERSION = '1.30.0'
+VERSION = '1.31.0'
 PREDICTED = 'predicted, verify after run'
 EXACT = 'exact'
 HASHES = 'bound at run time'
@@ -43,6 +43,7 @@ class Sim:
     def __init__(self, project, rtp):
         self.project, self.rtp = project, rtp
         self.roots = {}
+        self.anchors = {}       # {map id: {(x, y)}} cells a layout declared as the arrival/start cell of a map created by this plan
         self.touched = []
         self.original_load = None
 
@@ -464,7 +465,13 @@ def describe_step(sim, step, snapshot, mutation, number, plan_links):
         lines = [f'Append map {snapshot["new_id"]} "{step["name"]}" from ' + (f'map {step["template_map_id"]} (fresh map: schema only, none of its content is copied)' if planned['fresh'] else f'inert template map {step["template_map_id"]}')
                  + f': {planned["width"]}x{planned["height"]}, tileset {planned["tileset_id"]}, '
                  + (f'child of map {planned["parent_id"]}' if planned['parent_id'] else 'root level') + ', no events.']
-        if planned['floor_tile_id'] is not None:
+        if planned.get('layout'):
+            lay = planned['layout']
+            lines.append(f'  Layout: bordered room, floor tile {lay["floor_tile_id"]}' + (f', wall tile {lay["wall_tile_id"]}' if lay['border'] else ', no border')
+                         + (f', path tile {lay["path_tile_id"]} ({lay["path_cell_count"]} cells from anchor {lay["anchor"]})' if lay['path_tile_id'] is not None else '')
+                         + (f', {len(lay["landmarks"])} landmark(s) on upper layers' if lay['landmarks'] else '') + (f' (preset {lay["preset"]})' if lay['preset'] else '') + '.')
+            warnings.append('A layout only draws plain A5 tiles and B-E landmarks as a readable starter map (no autotiles, one bordered rectangle); real level design stays manual in the editor.')
+        elif planned['floor_tile_id'] is not None:
             lines.append(f'  Floor: A5 tile index {planned["fill_floor"]} (tile id {planned["floor_tile_id"]}) on layer 0 of every cell; the other layers, regions and shadows stay 0.')
             warnings.append('fill_floor only makes a walkable placeholder room; real level design stays manual in the editor.')
         elif planned['tiles_rebuilt']:
@@ -539,6 +546,47 @@ def describe_step(sim, step, snapshot, mutation, number, plan_links):
     return [], warnings
 
 
+# ---------------------------------------------------------------- reachability (v1.31)
+
+def map_anchors(sim, map_id):
+    """Cells the player can start from on a map: a layout anchor declared by this plan, the new-game start cell, and every direct Transfer Player
+    command aimed at the map (events of all maps in the simulated state). Common events are not scanned."""
+    import vxace_map_layout as layout
+    anchors = set(sim.anchors.get(map_id, ()))
+    system = sim.get('Data/System.rvdata2')
+    if system.get('start_map_id') == map_id:
+        anchors.add((system.get('start_x'), system.get('start_y')))
+    folder = sim.project / 'Data'
+    numbers = {int(match[1]) for file in folder.glob('Map*.rvdata2') if (match := re.fullmatch(r'Map([0-9]{3})\.rvdata2', file.name))}
+    for key in sim.roots:
+        match = re.fullmatch(r'map([0-9]{3})\.rvdata2', os.path.basename(key), re.IGNORECASE)
+        if match and os.path.dirname(key) == os.path.normcase(str(folder.resolve())):
+            numbers.add(int(match[1]))
+    for number in sorted(numbers):
+        events = sim.get(f'Data/Map{number:03d}.rvdata2').get('events')
+        commands = [(command.get('code'), [item for item in command.get('parameters')]) for _, event in events.pairs for page in event.get('pages')
+                    for command in page.get('list')]
+        anchors.update(layout.transfer_targets(commands, map_id))
+    return anchors
+
+
+def reachability_warnings(sim, map_id, event_id):
+    """Warning lines when the event just placed has no reachable cell (see vxace_map_layout.check_events). Nothing is reported without an anchor."""
+    import vxace_map_layout as layout
+    from vxace_upper_tiles import tileset
+    try:
+        root = sim.get(f'Data/Map{map_id:03d}.rvdata2')
+        event = next(item for key, item in root.get('events').pairs if key == event_id)
+        solid = any(page.get('priority_type') == 1 and not page.get('through') for page in event.get('pages'))
+        table = root.get('data')
+        _, names, flags = tileset(root, sim.project)
+        anchors = map_anchors(sim, map_id)
+        return layout.check_events(root.get('width'), root.get('height'), table.data, flags, anchors,
+                                   [(text_of(event.get('name')) or f'event {event_id}', event.get('x'), event.get('y'), solid)], map_id)
+    except (ValueError, StopIteration, AttributeError, TypeError, OSError):
+        return []
+
+
 # ---------------------------------------------------------------- one step
 
 def new_record(number, step, tag, source, macro='add_treasure_chest'):
@@ -602,6 +650,10 @@ def plan_step(sim, number, step, created, recipe_dir, records, tag, plan_links, 
         except Exception as error:
             raise PlanRefusal(f'mutation refused: {error}')
         record['summary'], record['warnings'] = lines, warnings
+        if kind == 'append_blank_map' and snapshot['planned_map'].get('layout') and snapshot['planned_map']['layout']['anchor']:
+            sim.anchors[record['created_id']] = {tuple(snapshot['planned_map']['layout']['anchor'])}
+        if kind in ('append_staged_event', 'append_dialogue_event'):
+            record['warnings'] += reachability_warnings(sim, resolved['map_id'], record['created_id'])
         return record
     except PlanRefusal as error:
         record['status'] = 'refused'
