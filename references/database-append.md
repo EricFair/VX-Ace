@@ -1,4 +1,4 @@
-# Guarded native template-clone database append — v1.9 (troops: v1.11, items/effects/features: v1.20, actors: v1.23, enemy actions/drops/features: v1.27, classes: v1.28)
+# Guarded native template-clone database append — v1.9 (troops: v1.11, items/effects/features: v1.20, actors: v1.23, enemy actions/drops/features: v1.27, classes: v1.28, features_add/remove, HIT guard and in-place edit: v1.32)
 
 Use this narrow operation to add one new entry to an existing native Enemies, Items, Skills, States, Weapons or Armors database by cloning a reviewed template entry and overriding a small whitelist of fields. It does not delete, reuse or reorder entries, create other database objects, wire the new entry into troops/shops/drops/classes, or edit saves. Key items keep the separate [key-item append](key-item-append.md) (`append_key_item`), which is unchanged; usable items (potions, ethers, stat boosters) are cloned from a normal item template with `append_database_entry` on `items` (see [Items, effects and features](#items-effects-and-features-v120)).
 
@@ -137,6 +137,43 @@ Codes 11 and 12 need a nonzero rate or flat amount. Parameters are 0 Max HP, 1 M
 | 31 | Attack element | element id | 0 | `expected_system_sha256` |
 | 32 | Attack state | state id | chance 0.0..1.0 | `expected_states_sha256` |
 | 43 | Add skill | skill id | 0 | `expected_skills_sha256` |
+
+### `features_add`, `features_remove` and the HIT guard (v1.32)
+
+`features` replaces the **whole** list. A clone of an Ogre that only wants a fire weakness used to lose every other row of the template, including the ex-parameter rows (HIT, critical): an enemy without a HIT row has hit rate 0 and misses every physical attack. Three keys now make single-row changes safe. They exist for every table that has `features` (actors, classes, enemies, states, weapons, armors).
+
+| Key | Meaning |
+| --- | --- |
+| `features_add` | 1..16 rows (classes 1..32) in the usual `{"code", "data_id", "value"}` form, appended to the **template's own list**. A row with the same `(code, data_id)` as an existing row replaces that row's value in place. |
+| `features_remove` | 1..16 `[code, data_id]` pairs dropped from the template list. A pair the entry does not have is refused. May be combined with `features_add`. |
+| `allow_drop_hit` | `true` only. Allows a `features` replacement (or a `features_remove`) that leaves the battler without HIT, see below. |
+
+`features` cannot be combined with `features_add` / `features_remove` (use one style per entry). Rows are validated exactly like `features` rows (codes, bounds, Float/Integer encoding, class-only codes, referenced-database hashes: `features_add` rows need `expected_states_sha256` / `expected_skills_sha256` / `expected_system_sha256` like `features` rows, `features_remove` needs none). Rows that are kept stay the **same native objects** as in the template (their Integer or Float value and ivar order are untouched); only new rows are built, as `RPG::BaseItem::Feature` with Float values (Integer `0` for codes 31/43).
+
+Order of operations: `features_remove` first, then each `features_add` row. An added row whose `(code, data_id)` matches exactly one existing row replaces that row's value at its position; otherwise it is appended at the end. Rows carry no other uniqueness rule, so the choices for repeated pairs are: an add that matches **several** existing rows is refused as ambiguous (remove them first), a pair listed twice in `features_add` or `features_remove` is refused, and removing and re-adding the same pair appends the new row at the end. No code in the engine data repeats a `(code, data_id)` on purpose, so this does not come up in practice.
+
+**HIT guard.** In Project3 every enemy and every class carries `(22, 0)` (ex-parameter HIT, usually `0.95`; the Ogre has `0.75`), and **no actor has any features at all**: an actor gets HIT from its class. The guard follows that:
+
+- a `features` replacement of an **enemy** or a **class** that has no `[22, 0]` row is refused with an explanation, as is a `features_remove` of `[22, 0]`;
+- for an **actor**, a `features` replacement without a HIT row (or a `features_remove` of `[22, 0]`) is refused only if the actor's class (`class_id` of the override, else the template's) does not carry HIT either; this needs `expected_classes_sha256` and is skipped when the replacement has a HIT row or `allow_drop_hit` is true;
+- `allow_drop_hit: true` overrides the refusal. `features_add` never trips the guard; weapons, armors and states are not guarded.
+
+**Dropped rows.** A full `features` replacement of an enemy or class that drops any template row produces a warning in the impact report and the recipe `plan` that lists the dropped rows in plain words, for example `The features override replaces the whole template list and drops 2 template rows: Ex-parameter: Evasion +5 points; Attack element: element 1. Use features_add / features_remove to change single rows and keep the rest.`
+
+Example, a fire weakness on a cloned Ogre without losing its HIT / critical rows:
+
+```json
+{"type": "append_entry", "table": "enemies", "template_id": 23,
+ "overrides": {"name": "Cave Troll", "features_add": [{"code": 11, "data_id": 3, "value": 2.0}]}}
+```
+
+Drop a state resist and make the clone less accurate (HIT replaced in place):
+
+```json
+{"overrides": {"name": "Blind Troll", "features_remove": [[14, 4]], "features_add": [{"code": 22, "data_id": 0, "value": 0.6}]}}
+```
+
+The same keys work in [`set_fields`](recipes.md#editing-an-existing-entry-set_fields-v132) on an existing entry.
 
 ### Referenced-database hashes
 
@@ -326,7 +363,7 @@ An empty slot is `{"kind": "none", "id": 0, "denominator": 1}` and is written th
 
 ### `features` for enemies
 
-The v1.20 `features` override is now allowed for enemies, with the same codes, bounds, hashes and encodings (see [features override](#features-override-weapons-armors-and-states)). Element rates (code 11, `expected_system_sha256`) and state rates and resists (codes 13, 14, `expected_states_sha256`) matter most. Editor-saved enemies keep the default attack element feature (code 31) as value `100`; the override writes the usual Integer `0` for it, which the engine ignores.
+The v1.20 `features` override is now allowed for enemies, with the same codes, bounds, hashes and encodings (see [features override](#features-override-weapons-armors-and-states)). Since v1.32 a replacement must keep the HIT row (`allow_drop_hit` overrides) and `features_add` / `features_remove` change single rows, see [features_add, features_remove and the HIT guard](#features_add-features_remove-and-the-hit-guard-v132). Element rates (code 11, `expected_system_sha256`) and state rates and resists (codes 13, 14, `expected_states_sha256`) matter most. Editor-saved enemies keep the default attack element feature (code 31) as value `100`; the override writes the usual Integer `0` for it, which the engine ignores.
 
 ### Hashes, snapshot and impact
 

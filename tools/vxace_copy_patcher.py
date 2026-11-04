@@ -92,6 +92,12 @@ def normalize_changes(index:Path,spec:dict)->list[dict]:
             if table not in DB_FILES: raise ValueError(f'unsupported database table: {table}')
             if 'id' not in loc or not mut.get('field'): raise ValueError(f'database change #{n} requires locator.id and mutation.field')
             out.append({'kind':'database','target':'Data/'+DB_FILES[table],'ruby_spec':{'type':'database','mutation':{'id':loc['id'],'field':mut['field'],'value':mut.get('value')}},'description':c.get('description',''),'locator':loc,'mutation':mut})
+        elif kind=='database_entry' and isinstance(mut,dict) and mut.get('action')=='edit_database_entry':
+            from vxace_database_edit import native_mutation as edit_mutation
+            native=edit_mutation(loc,mut)
+            out.append({'kind':'database_entry','target':'Data/'+DB_FILES[loc['table']],
+                        'ruby_spec':{'type':'database_entry','mutation':native},'description':c.get('description',''),
+                        'locator':loc,'mutation':mut})
         elif kind=='database_entry' and isinstance(loc,dict) and loc.get('table')=='classes' and ('id' in loc or (isinstance(mut,dict) and mut.get('action')=='append_class_learning')):
             from vxace_class_learning import native_mutation
             out.append({'kind':'database_entry','target':'Data/'+DB_FILES['classes'],
@@ -298,9 +304,15 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         entry_table=change['locator']['table']
         entry_key_item=entry_table=='items' and mutation.get('action')=='append_key_item'
         entry_learning=entry_table=='classes' and mutation.get('action')=='append_class_learning'
+        entry_edit=mutation.get('action')=='edit_database_entry'
         entry_enemies=snapshot_refs(target,entry_table) if entry_table in SNAPSHOT_REFS and not entry_key_item and not entry_learning else None
         entry_ref_hashes={}
-        if entry_learning:
+        if entry_edit:
+            from vxace_database_edit import snapshot as edit_snapshot
+            entry_snapshot=lambda root,eid:edit_snapshot(root,entry_table,eid,entry_enemies)
+            entry_key=mutation['entry_id']
+            entry_ref_hashes={n:sha256(target.parent/(REF_FILES[n]+'.rvdata2')) for n in required_refs(entry_table,mutation.get('overrides'))-{entry_table}}
+        elif entry_learning:
             from vxace_class_learning import snapshot as learning_snapshot, skills_for
             entry_skills=skills_for(target);entry_skills_sha=sha256(target.parent/'Skills.rvdata2')
             entry_snapshot=lambda root,cid:learning_snapshot(root,entry_skills,cid)
@@ -380,6 +392,9 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         if entry_key_item:
             from vxace_database_entries import verify_transition as verify_entry
             verify_entry(before_entry_root,load(tmp)[0],mutation)
+        elif entry_edit:
+            from vxace_database_edit import verify_transition as verify_edit
+            verify_edit(before_entry_root,load(tmp)[0],mutation,entry_enemies)
         elif entry_learning:
             from vxace_class_learning import verify_transition as verify_learning
             verify_learning(before_entry_root,load(tmp)[0],mutation,entry_skills)
@@ -464,7 +479,7 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
     if change['kind']=='system_fields':
         from vxace_system_fields import current as system_current,changed_ivars
         after_system=system_current(load(target)[0])
-        rec['system_fields']={'locator':change['locator'],'fields':sorted(k for k in ('game_title','currency_unit','party_members','start','terms') if k in mutation),
+        rec['system_fields']={'locator':change['locator'],'fields':sorted(k for k in ('game_title','currency_unit','party_members','start','terms','switch_names','variable_names') if k in mutation),
                               'before':before_system,'after':after_system,
                               'changed_ivars':sorted(changed_ivars(mutation)),'version_id_unchanged':before_system['version_id']==after_system['version_id'],
                               'all_other_system_fields_deep_equal':True,'only_system_file_changed':True,'system_version_unchanged':True,
@@ -486,7 +501,13 @@ def apply_one(ruby:str, mutator:Path, copy_root:Path, change:dict, audit_dir:Pat
         rec['diff']=''.join(difflib.unified_diff(json.dumps(before_regions,indent=2).splitlines(True),json.dumps(after_regions,indent=2).splitlines(True),fromfile='source-regions',tofile='staged-regions'))
     if change['kind']=='database_entry':
         after_entry=entry_snapshot(load(target)[0],entry_key)
-        if entry_learning:
+        if entry_edit:
+            for ref_name,ref_hash in entry_ref_hashes.items():
+                if sha256(target.parent/(REF_FILES[ref_name]+'.rvdata2'))!=ref_hash:raise RuntimeError(REF_FILES[ref_name]+' file changed during database entry edit')
+            rec['entry']={'before':before_entry,'after':after_entry,'edited_id':mutation['entry_id'],'fields':sorted(mutation['overrides']),
+                          'other_entries_unchanged':True,'only_target_entry_changed':True,'approved_factory_result_verified':True,'table':entry_table,
+                          **({'referenced_files_unchanged':sorted(REF_FILES[n] for n in entry_ref_hashes)} if entry_ref_hashes else {})}
+        elif entry_learning:
             if sha256(target.parent/'Skills.rvdata2')!=entry_skills_sha:raise RuntimeError('Skills file changed during class learning append')
             rec['entry']={'before':before_entry,'after':after_entry,'class_id':mutation['class_id'],'skill_id':mutation['skill_id'],'level':mutation['level'],
                           'other_classes_and_existing_learnings_unchanged':True,'skills_unchanged':True,'approved_class_learning_verified':True,'table':'classes'}
@@ -698,10 +719,15 @@ def build(index:Path,project:Path,spec_path:Path,copy_root:Path,audit_dir:Path,r
             raise ValueError('Entry creation requires the explicit Python backend and mandatory post-copy re-indexing')
         from vxace_python_mutator import load
         from vxace_database_entries import new_key_item, indexed_snapshot
-        from vxace_database_append import new_entry, mutation_refs, actor_graphics
+        from vxace_database_append import new_entry, mutation_refs, actor_graphics, snapshot_refs
         from vxace_index_query import Index, unlinked
         for c in entries:
             table=c['locator']['table']
+            if c['mutation'].get('action')=='edit_database_entry':
+                from vxace_database_edit import indexed_snapshot as edit_indexed,edit_entry
+                edit_indexed(Index(index),project,table,c['locator']['id'])
+                edit_entry(load(unlinked(project/c['target']))[0],c['ruby_spec']['mutation'],snapshot_refs(project/c['target'],table))
+                continue
             if table=='classes' and c['mutation'].get('action')=='append_class_learning':
                 if any(o['target']=='Data/Skills.rvdata2' for o in changes):
                     raise ValueError('Class learning append reads Skills read-only; it cannot be combined with changes to Skills')

@@ -1,6 +1,6 @@
-# Guarded System fields edit (set_system_fields) — v1.23
+# Guarded System fields edit (set_system_fields) — v1.23 (switch / variable names: v1.32)
 
-`set_system_fields` changes a bounded subset of `Data/System.rvdata2` in one transaction and nothing else. It is the way to make a new actor the starting party member, move the start position, rename the game or retitle a few terms. It never creates, deletes or reorders anything; every other System field (switches, variables, sounds, vehicles, elements, type lists, option flags, test settings, **`version_id`**) keeps its exact value, and every other file stays byte-identical.
+`set_system_fields` changes a bounded subset of `Data/System.rvdata2` in one transaction and nothing else. It is the way to make a new actor the starting party member, move the start position, rename the game or retitle a few terms. It never creates, deletes or reorders anything; every other System field (the other switch and variable slots, sounds, vehicles, elements, type lists, option flags, test settings, **`version_id`**) keeps its exact value, and every other file stays byte-identical.
 
 ## Snapshot and spec
 
@@ -38,11 +38,17 @@ The mutation is `action`, `expected_system_sha256` and a non-empty subset of:
 | `currency_unit` | literal text, 1..10 characters |
 | `party_members` | the starting party: 1..8 unique ids of existing actors. Needs `expected_actors_sha256` |
 | `start` | exactly `{"map_id", "x", "y"}`: the map must be in MapInfos and its `MapNNN.rvdata2` must exist, `0 <= x < width`, `0 <= y < height`. Needs `expected_mapinfos_sha256` and `expected_start_map_sha256` |
+| `switch_names` | v1.32. Object `{"id": "name"}`: decimal id strings `"1"`..`"5000"` (no leading zero) of switches that exist in the fingerprinted System (ids run 1..len-1 of the native `switches` array), each a literal name of 0..32 characters; the empty string clears the name |
+| `variable_names` | v1.32. The same for the `variables` array |
 | `terms` | object with keys `basic` (index 0..7), `params` (0..7), `etypes` (0..4), `commands` (0..22); each maps canonical decimal index strings (`"0"`, never `"00"` or `"-1"`) to new text of 1..32 characters |
 
 Text is literal: control characters and backslash codes are refused. Any other key, any other System field and any hash that the chosen fields do not need is refused (only the needed `expected_*` hashes may appear), and a field that already has the requested value is refused as a no-op. A stale hash (System, Actors, MapInfos, start map) refuses without a copy. In an editor-saved project `RPG::System::Terms` holds `basic` 8, `params` 8, `etypes` 5 and `commands` 24 strings; index 23 of `commands` is an unused tail slot and not editable, and index 11 is an empty unused slot that is editable but meaningless.
 
 Strings are written as new UTF-8 strings with the editor's `{E: true}` encoding flag; the party list is a new array of integers.
+
+### Switch and variable names (v1.32)
+
+In an editor-saved project `System.switches` and `System.variables` are arrays whose slot 0 is `nil` and whose slots 1..N are Ruby strings with ivar `{E: true}` (UTF-8), empty (`""`) when the editor shows the id as blank (Project3: 100 of each, all empty). A name edit replaces exactly the listed slots with new strings built the same way (an existing slot's encoding flag is reused); the array length, slot 0 and every other slot stay byte-identical, which the verifier checks slot by slot besides the usual deep-equality of all other System ivars. A name that already has the requested value is refused as a no-op, like every other field. The names are editor labels only: nothing reads them at run time, they are not stored in saves and they change no behavior. Impact and the recipe `plan` report them as `switch_names[11]: "" -> "Troll Killed"` rows. Staged events and common events warn about `unnamed switch N` / `unnamed variable N`; because each step reads the System left by the previous one (the simulated System in `plan`), naming the ids in an earlier step makes those warnings disappear for later steps.
 
 ## version_id and old saves
 
@@ -61,7 +67,7 @@ The Python copy backend checks the candidate: only the listed fields (and nothin
 Recipe step: `{"type": "set_system_fields", "party_members": [{"from_step": 2}, 1], "start": {...}, ...}`; `from_step` is allowed only inside `party_members` and must name an earlier `append_entry` step on `actors`. The snapshot supplies every hash.
 
 - One System edit per transaction, with no other change.
-- Not editable: switches, variables, sounds, vehicles, battle/title BGM, window tone, option flags, type lists, element names, test battlers, `version_id`.
+- Not editable: the switch and variable counts, sounds, vehicles, battle/title BGM, window tone, option flags, type lists, element names, test battlers, `version_id`.
 - The start cell is range checked only; passability, events on the cell and the start-map BGM are not analysed.
 - Scripts that overwrite `$data_system` or compare term strings are not analysed.
 

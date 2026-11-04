@@ -18,7 +18,7 @@ import vxace_recipe as R
 from vxace_copy_patcher import current_inventory, normalize_changes
 from vxace_index_query import unlinked
 
-VERSION = '1.31.0'
+VERSION = '1.32.0'
 PREDICTED = 'predicted, verify after run'
 EXACT = 'exact'
 HASHES = 'bound at run time'
@@ -135,7 +135,7 @@ def entry_name(sim, table, number):
 
 def entry_target(step):
     kind = step['type']
-    if kind == 'append_entry':
+    if kind in ('append_entry', 'set_fields'):
         return f'Data/{FILES[step["table"]]}.rvdata2'
     return 'Data/Items.rvdata2' if kind == 'append_key_item' else 'Data/Classes.rvdata2'
 
@@ -160,6 +160,11 @@ def take_snapshot(sim, step, recipe_dir, source_text):
                 from vxace_character_graphics import actor_assets
                 assets = actor_assets(project, rtp, tuple(sorted(characters)), tuple(sorted(faces)))
         return snapshot(root, step['table'], step['template_id'], refs, assets)
+    if kind == 'set_fields':
+        from vxace_database_append import snapshot_refs
+        from vxace_database_edit import snapshot
+        path = sim.path(entry_target(step))
+        return snapshot(sim.get(entry_target(step)), step['table'], step['id'], snapshot_refs(path, step['table']))
     if kind == 'set_system_fields':
         from vxace_system_fields import snapshot
         start = step.get('start')
@@ -256,6 +261,9 @@ def verify_change(sim, change, before, after, extras):
         if table == 'classes' and mutation.get('action') == 'append_class_learning':
             from vxace_class_learning import verify_transition
             verify_transition(before, after, mutation, extras['skills'])
+        elif mutation.get('action') == 'edit_database_entry':
+            from vxace_database_edit import verify_transition
+            verify_transition(before, after, mutation, extras['refs'])
         elif mutation.get('action') == 'append_key_item':
             from vxace_database_entries import verify_transition
             verify_transition(before, after, mutation)
@@ -292,6 +300,8 @@ def before_extras(sim, change):
             return {'skills': skills_for(target)}
         from vxace_database_append import snapshot_refs, SNAPSHOT_REFS
         key_item = table == 'items' and change['ruby_spec']['mutation'].get('action') == 'append_key_item'
+        if change['ruby_spec']['mutation'].get('action') == 'edit_database_entry':
+            return {'refs': snapshot_refs(target, table)}
         return {'refs': snapshot_refs(target, table) if table in SNAPSHOT_REFS and not key_item else None}
     if kind == 'map_shop':
         from vxace_map_shops import goods_arrays
@@ -376,7 +386,7 @@ def describe_entry(sim, step, snapshot, spec_mutation):
     table, overrides = step['table'], step['overrides']
     new_id = snapshot['next_id']
     lines = [f'Append {table} entry {new_id} "{overrides.get("name", snapshot["template_name"])}" cloned from template {step["template_id"]} "{snapshot["template_name"]}".']
-    others = sorted(set(overrides) - {'name', 'effects', 'features', 'members', 'actions', 'drop_items'} - ({'exp_params', 'params', 'learnings'} if table == 'classes' else set()))
+    others = sorted(set(overrides) - {'name', 'effects', 'features', 'features_add', 'features_remove', 'allow_drop_hit', 'members', 'actions', 'drop_items'} - ({'exp_params', 'params', 'learnings'} if table == 'classes' else set()))
     if others:
         lines.append('Overrides: ' + ', '.join(f'{key}={json.dumps(overrides[key], ensure_ascii=False)[:60]}' for key in others))
     warnings = []
@@ -414,6 +424,19 @@ def describe_entry(sim, step, snapshot, spec_mutation):
                 text, warns = describe(rows(overrides[key], roots, table) if key == 'features' else rows(overrides[key], roots), name_of)
                 lines += [f'{key[:-1].title()}: {item}' for item in text] or [f'{key.title()}: none']
                 warnings += warns
+        if 'features' in overrides:
+            from vxace_database_append import dropped_feature_warning, feature_tuples
+            warnings += dropped_feature_warning(table, feature_tuples(roots[table][step['template_id']].get('features')), feature_rows(overrides['features'], roots, table), True, name_of)
+        if any(key in overrides for key in ('features_add', 'features_remove')):
+            from vxace_database_append import validated_overrides, feature_tuples, feature_plan, plan_rows, feature_changes
+            selected = roots[table][step['template_id']]
+            out = validated_overrides(table, selected, {key: overrides[key] for key in ('features_add', 'features_remove', 'allow_drop_hit') if key in overrides}, roots, True)
+            old = feature_tuples(selected.get('features'))
+            removed, added, changed = feature_changes(old, plan_rows(feature_plan(old, out, table), old))
+            for label, group in (('removed', removed), ('added', added), ('changed', [new for _, new in changed])):
+                text, warns = describe_features(group, name_of)
+                lines += [f'Feature {label}: {item}' for item in text]
+                warnings += warns
         if table == 'classes':
             exp = exp_params_value(overrides['exp_params']) if 'exp_params' in overrides else None
             spec = class_params_spec(overrides['params'], roots) if 'params' in overrides else None
@@ -440,6 +463,54 @@ def describe_entry(sim, step, snapshot, spec_mutation):
     return lines, warnings
 
 
+def name_lookup(sim, roots):
+    """name_of(kind, number) over the simulated state; databases the step does not bind are loaded best-effort for names only."""
+    from vxace_database_append import load_reference
+    cache = dict(roots)
+    plural = {'state': 'states', 'skill': 'skills', 'common event': 'common_events', 'item': 'items', 'weapon': 'weapons', 'armor': 'armors', 'class': 'classes', 'enemy': 'enemies'}
+
+    def get(name):
+        if name not in cache:
+            try:
+                cache[name] = load_reference(sim.path('Data/Classes.rvdata2'), name)
+            except Exception:
+                cache[name] = None
+        return cache[name]
+
+    def name_of(kind, number):
+        if kind in ('element', 'switch', 'skill type', 'weapon type', 'armor type'):
+            system = get('system')
+            names = system.get({'element': 'elements', 'switch': 'switches'}.get(kind) or kind.replace(' ', '_') + 's') if system is not None else None
+            return text_of(names[number]) or None if names and 0 <= number < len(names) and names[number] is not None else None
+        source = get(plural[kind])
+        row = source[number] if source is not None and 0 <= number < len(source) else None
+        return text_of(row.get('name')) or None if row is not None else None
+    return name_of, get
+
+
+def describe_edit_step(sim, step, snapshot):
+    """(lines, warnings) of a set_fields step: old -> new per changed field, from the simulated entry and the validated fields."""
+    from vxace_database_append import mutation_refs, validated_overrides, template, class_param_cells
+    from vxace_database_edit import plain, describe_edit, row_lines
+    table, number = step['table'], step['id']
+    path = sim.path(entry_target(step))
+    root = sim.get(entry_target(step))
+    roots = mutation_refs(path, table, {'overrides': step['fields']})
+    roots[table] = root
+    selected = template(root, table, number, True)
+    out = validated_overrides(table, selected, step['fields'], roots, True)
+    name_of, get = name_lookup(sim, roots)
+
+    def skill_info(skill):
+        skills = get('skills')
+        row = skills[skill] if skills is not None and 0 < skill < len(skills) else None
+        return {k: row.get(k) for k in ('scope', 'mp_cost', 'tp_cost')} if row is not None else None
+    cells = class_param_cells(out['params'], roots.get('classes')) if table == 'classes' and 'params' in out else None
+    rows, warnings = describe_edit(table, plain(selected), out, roots, name_of, cells, skill_info)
+    label = text_of(selected.get('name'))
+    return [f'Edit {table} entry {number} "{label}" in place: {len(rows)} field change(s).'] + ['  ' + line for line in row_lines(rows)], warnings
+
+
 def describe_step(sim, step, snapshot, mutation, number, plan_links):
     """(summary lines, warnings) for one concrete transaction, built from the simulated state."""
     kind = step['type']
@@ -449,6 +520,8 @@ def describe_step(sim, step, snapshot, mutation, number, plan_links):
         if step['table'] == 'actors' and not plan_links.get(number):
             warnings.append('The new actor is in no party yet: add it with set_system_fields party_members (new games) or a Change Party Member command; an old save only meets it through such a command.')
         return lines, warnings
+    if kind == 'set_fields':
+        return describe_edit_step(sim, step, snapshot)
     if kind == 'append_key_item':
         return [f'Append inert key item {snapshot["next_item_id"]} "{step["name"]}" cloned from template {step["template_item"]}: {step["description"]}'], warnings
     if kind == 'append_learning':

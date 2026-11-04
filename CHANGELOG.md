@@ -2,6 +2,17 @@
 
 Each release keeps original projects read-only; every write happens on a new disposable copy behind exact native guards. Operation details and limits are in the linked references.
 
+## 1.32.0 — Tool hazards fixed
+
+- **Features overrides:** `features_add` and `features_remove` change single rows without retyping the template. A full replacement that drops the HIT row is refused (enemies, classes, and actors whose class lacks HIT) unless `allow_drop_hit` is set. Dropped template rows are listed as a warning.
+- **Editing existing entries:** the new recipe step `set_fields` (guarded `edit_database_entry`) edits an existing entry with the same whitelisted overrides as an append, so tuning no longer means rebuilding.
+- **Names:** `set_system_fields` can name switches and variables, which removes the "unnamed" warnings from later steps.
+- **Balance:** the balance analysis now includes hit and evasion and warns "enemy can never hit".
+- **Checked on the test project:**
+  - the HIT-less replacement was refused with an explanation;
+  - a `set_fields` step retuned the Cave Troll and changed its fire rate to x2 in place, keeping HIT 75% and CRI 15% in the engine;
+  - 10 switches and 2 variables were named.
+
 ## 1.31.0 — Readable maps
 
 - Fresh maps and `add_area` accept a `layout` with these parts:

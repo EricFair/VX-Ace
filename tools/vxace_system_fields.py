@@ -14,9 +14,12 @@ from pathlib import Path
 from vxace_index_query import execute, unlinked
 from vxace_staged_commands import check_text, plain_int, sha_text, load_array, load_mapinfos, load_map_size
 
-VERSION = '1.23.0'
+VERSION = '1.32.0'
 ACTION = 'set_system_fields'
-FIELDS = ('game_title', 'currency_unit', 'party_members', 'start', 'terms')
+FIELDS = ('game_title', 'currency_unit', 'party_members', 'start', 'terms', 'switch_names', 'variable_names')
+NAME_FIELDS = {'switch_names': 'switches', 'variable_names': 'variables'}
+MAX_NAME_ID = 5000
+MAX_NAME = 32
 BASE_FIELDS = {'action', 'expected_system_sha256'}
 # Editable term indices per group and the native array length (Project3, editor-saved RPG::System::Terms: basic 8, params 8, etypes 5, commands 24).
 TERM_COUNTS = {'basic': 8, 'params': 8, 'etypes': 5, 'commands': 23}
@@ -45,6 +48,13 @@ def term_index(group, key):
     """Canonical decimal index string within the editable range of the group."""
     if not isinstance(key, str) or not re.fullmatch('0|[1-9][0-9]?', key) or int(key) >= TERM_COUNTS[group]:
         raise ValueError(f'terms.{group} index must be a decimal string 0..{TERM_COUNTS[group] - 1}')
+    return int(key)
+
+
+def name_id(field, key):
+    """Canonical decimal id of a switch / variable name entry."""
+    if not isinstance(key, str) or not re.fullmatch('[1-9][0-9]{0,3}', key) or int(key) > MAX_NAME_ID:
+        raise ValueError(f'{field} keys must be decimal id strings 1..{MAX_NAME_ID}')
     return int(key)
 
 
@@ -81,6 +91,14 @@ def schema(mutation):
         if not isinstance(start, dict) or set(start) != {'map_id', 'x', 'y'}:
             raise ValueError('start must be exactly {"map_id", "x", "y"}')
         plain_int(start['map_id'], 'start map_id', 1, MAX_MAP_ID);plain_int(start['x'], 'start x', 0, MAX_CELL);plain_int(start['y'], 'start y', 0, MAX_CELL)
+    for field in NAME_FIELDS:
+        if field in given:
+            names = mutation[field]
+            if not isinstance(names, dict) or not names:
+                raise ValueError(f'{field} must be a non-empty object of id -> name')
+            for key, value in names.items():
+                name_id(field, key)
+                check_text(value, f'{field}.{key}', MAX_NAME, True)
     if 'terms' in given:
         terms = mutation['terms']
         if not isinstance(terms, dict) or not terms or set(terms) - set(TERM_COUNTS):
@@ -120,8 +138,20 @@ def native_system(root):
     return terms
 
 
+def names_array(root, field):
+    """The native switches / variables array (slot 0 nil or empty, one plain string per id) behind a name field."""
+    from vxace_python_mutator import RubyString
+    names = root.get(NAME_FIELDS[field])
+    if not isinstance(names, list) or not 2 <= len(names) <= MAX_NAME_ID + 1 or (names[0] is not None and not isinstance(names[0], RubyString)):
+        raise ValueError(f'Native System {NAME_FIELDS[field]} must be an array of 1..{MAX_NAME_ID} ids')
+    for item in names[1:]:
+        if not isinstance(item, RubyString) or item.ivars not in ({}, {'E': True}, {'E': False}):
+            raise ValueError(f'Native System {NAME_FIELDS[field]} must hold plain strings')
+    return names
+
+
 def text_of(value):
-    return value.data.decode('utf-8', 'replace')
+    return value.data.decode('utf-8', 'replace') if value is not None else ''
 
 
 def current(root):
@@ -131,7 +161,10 @@ def current(root):
             'party_members': list(root.get('party_members')),
             'start': {'map_id': root.get('start_map_id'), 'x': root.get('start_x'), 'y': root.get('start_y')},
             'terms': {group: [text_of(item) for item in terms.get(group)] for group in TERM_COUNTS},
-            'version_id': root.get('version_id')}
+            'version_id': root.get('version_id'),
+            'switch_count': len(root.get('switches')) - 1, 'variable_count': len(root.get('variables')) - 1,
+            'switch_names': {str(n): text_of(v) for n, v in enumerate(root.get('switches')) if n and text_of(v)},
+            'variable_names': {str(n): text_of(v) for n, v in enumerate(root.get('variables')) if n and text_of(v)}}
 
 
 # ------------------------------------------------------------------ references (read-only, hash-bound)
@@ -179,6 +212,15 @@ def validate(root, mutation, project):
         for key, value in rows.items():
             if old['terms'][group][int(key)] == value:
                 raise ValueError(f'terms.{group}.{key} already has this value; remove it from the spec')
+    for field, native in NAME_FIELDS.items():
+        if field in mutation:
+            names_array(root, field)
+            count = len(root.get(native)) - 1
+            for key, value in mutation[field].items():
+                if int(key) > count:
+                    raise ValueError(f'{field} id {key} is outside the {count} {native} of the fingerprinted System')
+                if old[field].get(key, '') == value:
+                    raise ValueError(f'{field}.{key} already has this value; remove it from the spec')
     return old
 
 
@@ -200,6 +242,11 @@ def write(root, mutation):
         values = terms.get(group)
         for key, value in rows.items():
             values[int(key)] = convert(value, values[int(key)])
+    for field, native in NAME_FIELDS.items():
+        if field in mutation:
+            names = names_array(root, field)
+            for key, value in mutation[field].items():
+                names[int(key)] = convert(value, names[int(key)])
 
 
 def apply(root, mutation, project=None):
@@ -208,7 +255,8 @@ def apply(root, mutation, project=None):
 
 
 def changed_ivars(mutation):
-    names = {'game_title': 'game_title', 'currency_unit': 'currency_unit', 'party_members': 'party_members', 'terms': 'terms'}
+    names = {'game_title': 'game_title', 'currency_unit': 'currency_unit', 'party_members': 'party_members', 'terms': 'terms',
+             'switch_names': 'switches', 'variable_names': 'variables'}
     out = {names[key] for key in names if key in mutation}
     if 'start' in mutation:
         out |= {'start_map_id', 'start_x', 'start_y'}
@@ -233,6 +281,13 @@ def verify_transition(before, after, mutation, project):
     apply(expected, mutation, project)
     if digest(after) != digest(expected):
         raise ValueError('System candidate differs from the approved result')
+    for field, native in NAME_FIELDS.items():
+        if len(before.get(native)) != len(after.get(native)):
+            raise ValueError(f'System candidate changed the length of {native}')
+        wanted_names = {int(key) for key in mutation.get(field, {})}
+        for number, (old, new) in enumerate(zip(before.get(native), after.get(native))):
+            if number not in wanted_names and marshal_rb.dump(old) != marshal_rb.dump(new):
+                raise ValueError(f'System candidate changed unapproved {native}[{number}]')
     # terms: only the approved indices differ
     wanted = {(group, int(key)) for group, rows in mutation.get('terms', {}).items() for key in rows}
     for group in TERM_COUNTS:
@@ -275,6 +330,12 @@ def describe(mutation, old, actor_names, map_names, map_size=None, options=None)
         for key in sorted(entries, key=int):
             index = int(key)
             rows.append({'field': f'terms.{group}[{index}]', 'meaning': TERM_LABELS[group][index], 'old': old['terms'][group][index], 'new': entries[key]})
+    for field, label in (('switch_names', 'switch'), ('variable_names', 'variable')):
+        if field in mutation:
+            for key in sorted(mutation[field], key=int):
+                rows.append({'field': f'{field}[{key}]', 'meaning': f'{label} {key}', 'old': old[field].get(key, ''), 'new': mutation[field][key]})
+            warnings.append(f'{label.title()} names are editor labels only: they are not stored in saves and change no behavior; an empty name clears the label. '
+                            f'Impact and plan reports stop calling these ids unnamed once the names are set.')
     if 'terms' in mutation:
         warnings.append('Terms are read live by Vocab (menus, battle, equipment and shop windows): old saves show the new text; long words can clip their window, and scripts that compare term strings are not analysed.')
     warnings.append('System version_id is not advanced: none of these fields is stored in saves, and a version change would only force old saves to rebuild their current map.')
@@ -286,7 +347,7 @@ def describe(mutation, old, actor_names, map_names, map_size=None, options=None)
 def snapshot(root, project, start_map=None):
     from vxace_python_mutator import RubyString
     old = current(root)
-    result = {'system_sha256': digest(root), **{key: old[key] for key in ('game_title', 'currency_unit', 'start', 'version_id')},
+    result = {'system_sha256': digest(root), **{key: old[key] for key in ('game_title', 'currency_unit', 'start', 'version_id', 'switch_count', 'variable_count', 'switch_names', 'variable_names')},
               'terms': {group: [{'index': number, 'meaning': TERM_LABELS[group][number], 'text': old['terms'][group][number]} for number in range(TERM_COUNTS[group])]
                         for group in TERM_COUNTS},
               'options': {'opt_draw_title': root.get('opt_draw_title')}}
@@ -318,7 +379,8 @@ def indexed_snapshot(data, project, start_map=None):
         raise ValueError('Indexed/native System disagree')
     return {'version': VERSION, **result,
             'limits': ['Edits only game_title (1..100), currency_unit (1..10), party_members (1..8 unique existing actors), start (existing map + in-bounds cell) and terms basic 0..7, params 0..7, etypes 0..4, commands 0..22 (1..32 characters each).',
-                       'Every other System ivar, including version_id, switches, variables, sounds and option flags, is preserved; no other file changes.',
+                       'switch_names / variable_names set the editor label of switch / variable ids 1..N (decimal id string -> literal name of 0..32 characters, empty clears it); only the listed array slots change.',
+                       'Every other System ivar, including version_id, sounds and option flags, is preserved; no other file changes.',
                        'version_id is not advanced: these fields are not stored in saves, so old saves keep their party, map and position; terms and currency_unit show the new text on load; game_title shows on the title screen only.',
                        'party_members is bound by expected_actors_sha256; start by expected_mapinfos_sha256 and expected_start_map_sha256 (pass --start-map to this snapshot to get the map hash and size); the start cell is not checked for passability.',
                        'Texts are literal (no escape codes); the spec may not contain fields outside this list. Snapshot is not mutation permission.']}

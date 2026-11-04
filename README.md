@@ -1,4 +1,4 @@
-# RPG Maker VX Ace Developer — v1.31
+# RPG Maker VX Ace Developer — v1.32
 
 A specialist skill/agent knowledge base and toolchain for developing, debugging, analyzing, validating, planning, and safely staging changes to **RPG Maker VX Ace** projects using **RGSS3 / Ruby 1.9.2-era semantics**.
 
@@ -56,7 +56,7 @@ Each operation is a narrow, separately evidenced subset with exact native guards
 | Readable generated maps: border walls, paths and landmarks with stock-tileset presets; reachability warnings | [map layouts](references/map-layouts.md) |
 | Map monsters that start battle on touch (`add_monster`); sprite events default to same priority (collide) | [monsters](references/monsters.md) |
 | Treasure chests (gold, item, weapon or armor; closed/opened pages with the RTP chest graphic) | [treasure chests](references/treasure-chests.md) |
-| Starting party, start position, game title, currency and menu terms | [system fields](references/system-fields.md) |
+| Starting party, start position, game title, currency, menu terms, switch and variable names | [system fields](references/system-fields.md) |
 | Map display name and editor/tree name | [display names](references/map-display-names.md), [tree names](references/map-tree-names.md) |
 
 [Recipes](references/recipes.md) chain several of these operations as separate guarded transactions on successive disposable copies, optionally ending with a smoke run, or (`--in-place`) directly in a project you designate as the working project with one backup and undo; `vxace_recipe.py plan` dry-runs a recipe first (predicted ids, links and warnings, no copies).

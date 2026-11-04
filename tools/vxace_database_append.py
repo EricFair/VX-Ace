@@ -51,15 +51,15 @@ DROP_FIELDS = {'kind','data_id','denominator'}
 ACTION_FIELDS = {'condition_type','condition_param1','condition_param2','skill_id','rating'}
 # Whitelisted overrides per table (note is deliberately never overridable).
 OVERRIDES = {
-    'enemies': ('name','params','exp','gold','battler_name','battler_hue','actions','drop_items','features'),
+    'enemies': ('name','params','exp','gold','battler_name','battler_hue','actions','drop_items','features','features_add','features_remove','allow_drop_hit'),
     'items': ('name','description','icon_index','price','consumable','damage_formula','damage_variance','damage_critical','effects'),
     'skills': ('name','description','icon_index','mp_cost','tp_cost','message1','message2','damage_formula','damage_variance','damage_critical','effects'),
-    'states': ('name','icon_index','message1','message2','message3','message4','priority','min_turns','max_turns','auto_removal_timing','features'),
-    'weapons': ('name','description','icon_index','price','params','features'),
-    'armors': ('name','description','icon_index','price','params','features'),
+    'states': ('name','icon_index','message1','message2','message3','message4','priority','min_turns','max_turns','auto_removal_timing','features','features_add','features_remove'),
+    'weapons': ('name','description','icon_index','price','params','features','features_add','features_remove'),
+    'armors': ('name','description','icon_index','price','params','features','features_add','features_remove'),
     'troops': ('name','members'),
-    'actors': ('name','nickname','description','class_id','initial_level','max_level','character_name','character_index','face_name','face_index','equips','features'),
-    'classes': ('name','description','icon_index','exp_params','params','learnings','features'),
+    'actors': ('name','nickname','description','class_id','initial_level','max_level','character_name','character_index','face_name','face_index','equips','features','features_add','features_remove','allow_drop_hit'),
+    'classes': ('name','description','icon_index','exp_params','params','learnings','features','features_add','features_remove','allow_drop_hit'),
 }
 INT_RANGES = {'icon_index':(0,4095),'exp':(0,9999999),'gold':(0,9999999),'battler_hue':(0,360),
               'mp_cost':(0,9999),'tp_cost':(0,100),'damage_variance':(0,100),'priority':(0,100),
@@ -83,6 +83,11 @@ CLASS_MAX_ROWS = 32
 LEARNING_CLS = 'RPG::Class::Learning'
 LEARNING_FIELDS = ('level', 'skill_id', 'note')
 CLASS_FEATURE_CODES = (41, 42, 51, 52, 53, 54, 55, 61, 62)
+# v1.32: features_add / features_remove edit the template list row by row; a full `features` replacement must keep HIT (code 22, data_id 0)
+# on the tables whose battlers need it (enemies and classes carry HIT in Project3; actors keep none and use their class).
+FEATURE_KEYS = ('features', 'features_add', 'features_remove')
+HIT_KEY = (22, 0)
+HIT_TABLES = ('enemies', 'actors', 'classes')
 
 
 def integer(value, label, minimum, maximum):
@@ -153,11 +158,24 @@ def required_refs(table, overrides):
     if table == 'enemies' and isinstance(overrides, dict):
         names |= enemy_refs(overrides)
     if isinstance(overrides, dict):
-        for key, rules in (('effects', EFFECT_REFS), ('features', FEATURE_REFS)):
+        for key, rules, family in (('effects', EFFECT_REFS, 'effects'), ('features', FEATURE_REFS, 'features'), ('features_add', FEATURE_REFS, 'features')):
             rows = overrides.get(key)
-            if table in LIST_TABLES[key] and isinstance(rows, list):
+            if table in LIST_TABLES[family] and isinstance(rows, list):
                 names |= {rules[r['code']] for r in rows if isinstance(r, dict) and type(r.get('code')) is int and r['code'] in rules}
+        if table == 'actors' and hit_class_needed(overrides):
+            names.add('classes')
     return names
+
+
+def hit_class_needed(overrides):
+    """An actor keeps HIT on its class: a features replacement without a HIT row, or removing HIT, is checked against the class features (tolerant of malformed input)."""
+    if overrides.get('allow_drop_hit') is True:
+        return False
+    rows = overrides.get('features')
+    if isinstance(rows, list) and not any(isinstance(r, dict) and r.get('code') == HIT_KEY[0] and type(r.get('code')) is int and r.get('data_id') == 0 and type(r.get('data_id')) is int for r in rows):
+        return True
+    removed = overrides.get('features_remove')
+    return isinstance(removed, list) and any(isinstance(p, list) and len(p) == 2 and p[0] == HIT_KEY[0] and type(p[0]) is int and p[1] == 0 and type(p[1]) is int for p in removed)
 
 
 def enemy_refs(overrides):
@@ -312,13 +330,15 @@ def check_objects(entry, objects, cls, fields, label):
             raise ValueError('Template has unknown ' + label + ' schema')
 
 
-def check_troop_template(entry):
-    """Troop template: native schema, and exactly one blank battle page (no condition, one terminator command)."""
+def check_troop_template(entry, edit=False):
+    """Troop template: native schema, and exactly one blank battle page (no condition, one terminator command). An edited troop keeps its pages untouched, so only its members are checked."""
     from vxace_python_mutator import RubyObject
     check_objects(entry, entry.get('members'), 'RPG::Troop::Member', TROOP_MEMBER_FIELDS, 'members')
     for member in entry.get('members'):
         if any(type(member.get(k)) is not int for k in ('enemy_id', 'x', 'y')) or type(member.get('hidden')) is not bool:
             raise ValueError('Selected troop member field types are unsupported')
+    if edit:
+        return
     pages = entry.get('pages')
     if not isinstance(pages, list) or len(pages) != 1:
         raise ValueError('Troop template must have exactly one blank battle page')
@@ -344,8 +364,9 @@ def check_troop_template(entry):
         raise ValueError('Troop template page is not blank: it must hold only the terminator command')
 
 
-def template(root, table, template_id):
-    """Return the validated selected template; any schema deviation refuses."""
+def template(root, table, template_id, edit=False):
+    """Return the validated selected template; any schema deviation refuses. With `edit` the entry is an existing one to be edited in place:
+    a troop keeps its battle pages (any page content) and a key item is admitted."""
     from vxace_python_mutator import RubyObject, RubyString
     database_array(root, table)
     _, fields = table_spec(table)
@@ -367,13 +388,13 @@ def template(root, table, template_id):
         if not ok:
             raise ValueError('Selected template field types are unsupported')
     if table == 'troops':
-        check_troop_template(entry)
+        check_troop_template(entry, edit)
         return entry
     if table == 'actors':
         equips = entry.get('equips')
         if not isinstance(equips, list) or len(equips) != EQUIP_SLOTS or any(type(value) is not int for value in equips):
             raise ValueError('Selected actor template equips must be five native integers')
-    if table == 'items' and entry.get('itype_id') == 2:
+    if table == 'items' and entry.get('itype_id') == 2 and not edit:
         raise ValueError('Key items (item type 2) are not admitted as templates here; use the append_key_item operation instead')
     check_objects(entry, entry.get('features'), 'RPG::BaseItem::Feature', FEATURE_FIELDS, 'features')
     for feature in entry.get('features'):
@@ -570,6 +591,114 @@ def feature_rows(rows, roots, table=None):
     return out
 
 
+def feature_removals(rows, table=None):
+    """features_remove: a list of [code, data_id] pairs as (code, data_id) tuples; each pair must be a plain pair of integers, listed once."""
+    limit = CLASS_MAX_ROWS if table == 'classes' else MAX_ROWS
+    if not isinstance(rows, list) or not 1 <= len(rows) <= limit:
+        raise ValueError('features_remove must be a list of 1..' + str(limit) + ' [code, data_id] pairs')
+    out = []
+    for n, row in enumerate(rows):
+        if not isinstance(row, list) or len(row) != 2 or any(type(v) is not int for v in row):
+            raise ValueError('features_remove[' + str(n) + '] must be a [code, data_id] pair of integers')
+        if (row[0], row[1]) in out:
+            raise ValueError('features_remove[' + str(n) + '] repeats ' + str(row))
+        out.append((row[0], row[1]))
+    return out
+
+
+def feature_tuples(features):
+    """(code, data_id, value) tuples of native feature objects or indexed feature dicts."""
+    return [(f.get('code'), f.get('data_id'), f.get('value')) for f in features]
+
+
+def feature_plan(old, out, table=None):
+    """How the effective features list is made of the entry's own rows `old` (code, data_id, value tuples): a list of ('keep', old index) and ('new', row).
+
+    `features` replaces everything. Otherwise features_remove drops every row with the listed (code, data_id), then each features_add row replaces the value of the
+    one existing row with the same (code, data_id) in place, or is appended at the end. Rows have no other uniqueness rule: an add that matches several existing
+    rows is refused as ambiguous (use features_remove first), a remove of a pair that is not there is refused, and removing then adding the same pair appends it."""
+    if 'features' in out:
+        return [('new', row) for row in out['features']]
+    limit = CLASS_MAX_ROWS if table == 'classes' else MAX_ROWS
+    items = [('keep', n) for n in range(len(old))]
+    for pair in out.get('features_remove', ()):
+        left = [item for item in items if old[item[1]][:2] != pair]
+        if len(left) == len(items):
+            raise ValueError('features_remove: the entry has no feature with code ' + str(pair[0]) + ' and data_id ' + str(pair[1]))
+        items = left
+    seen = set()
+    for row in out.get('features_add', ()):
+        pair = row[:2]
+        if pair in seen:
+            raise ValueError('features_add repeats code ' + str(pair[0]) + ' and data_id ' + str(pair[1]) + ': give each row once')
+        seen.add(pair)
+        hits = [n for n, item in enumerate(items) if item[0] == 'keep' and old[item[1]][:2] == pair]
+        if len(hits) > 1:
+            raise ValueError('features_add is ambiguous: the entry has ' + str(len(hits)) + ' rows with code ' + str(pair[0]) + ' and data_id ' + str(pair[1]) + ' (remove them with features_remove first)')
+        if hits:
+            items[hits[0]] = ('new', row)
+        else:
+            items.append(('new', row))
+    if len(items) > max(limit, len(old)):
+        raise ValueError('The resulting features list would have ' + str(len(items)) + ' rows; the limit is ' + str(max(limit, len(old))))
+    return items
+
+
+def plan_rows(plan, old):
+    """The effective (code, data_id, value) tuples of a feature plan."""
+    return [old[item[1]] if item[0] == 'keep' else item[1] for item in plan]
+
+
+def build_feature_list(root, selected, entry, plan):
+    """Native feature objects for a plan: kept rows stay the entry's own objects (their Integer / Float types untouched), new rows are built like the editor saves them."""
+    fresh = iter(build_objects(root, selected, 'features', [item[1] for item in plan if item[0] == 'new']))
+    kept = entry.get('features')
+    return [kept[item[1]] if item[0] == 'keep' else next(fresh) for item in plan]
+
+
+def feature_changes(old, final):
+    """(removed, added, changed) between two tuple lists, matched by (code, data_id); changed holds (old row, new row) pairs with a different value."""
+    old_keys, new_keys = {row[:2] for row in old}, {row[:2] for row in final}
+    removed = [row for row in old if row[:2] not in new_keys]
+    added = [row for row in final if row[:2] not in old_keys]
+    changed = []
+    for row in final:
+        before = next((o for o in old if o[:2] == row[:2]), None)
+        if before is not None and before[2] != row[2]:
+            changed.append((before, row))
+    return removed, added, changed
+
+
+def hit_guard(table, out, final, roots, selected):
+    """Refuse a features replacement (or a features_remove of HIT) that leaves a battler without the HIT ex-parameter row: with HIT 0% every physical attack misses.
+    An actor may take HIT from its class, so the class features count; `allow_drop_hit` overrides."""
+    if table not in HIT_TABLES or out.get('allow_drop_hit') or any(row[:2] == HIT_KEY for row in final):
+        return
+    if not ('features' in out or HIT_KEY in out.get('features_remove', ())):
+        return
+    where = {'enemies': 'enemy', 'classes': 'class', 'actors': 'actor'}[table]
+    if table == 'actors':
+        class_id = out.get('class_id', selected.get('class_id'))
+        klass = roots['classes'][class_id] if 'classes' in roots and type(class_id) is int and 0 < class_id < len(roots['classes']) else None
+        if klass is not None and any(row[:2] == HIT_KEY for row in feature_tuples(klass.get('features'))):
+            return
+        where += ' (nor its class ' + str(class_id) + ')'
+    raise ValueError('The ' + ('features replacement' if 'features' in out else 'features_remove') + ' leaves the ' + where + ' without the HIT row (feature code 22, data_id 0): its hit rate becomes 0% and every physical attack misses '
+                     '(Game_BattlerBase#hit sums the ex-parameter features). Keep the HIT row, use features_add / features_remove to change single rows, or give "allow_drop_hit": true if that is intended.')
+
+
+def dropped_feature_warning(table, old, final, replaced, name_of=lambda kind, number: None):
+    """Warning lines for a full features replacement of an enemy or class that drops template rows, listing the dropped rows in plain words."""
+    if table not in ('enemies', 'classes') or not replaced:
+        return []
+    removed, _, _ = feature_changes(old, final)
+    if not removed:
+        return []
+    text, _ = describe_features(removed, name_of)
+    return ['The features override replaces the whole template list and drops ' + str(len(removed)) + ' template row' + ('' if len(removed) == 1 else 's') + ': ' + '; '.join(text)
+            + '. Use features_add / features_remove to change single rows and keep the rest.']
+
+
 def percent_range(value, label):
     if not isinstance(value, list) or len(value) != 2:
         raise ValueError(label + ' must be [min, max] percentages')
@@ -668,9 +797,14 @@ def drop_rows(rows, roots):
 
 def class_table(entry):
     """The class params Table (8 params x 100 levels, [param, level]); anything but the editor layout, or a non-zero level 0, refuses."""
+    from types import SimpleNamespace
     from vxace_python_mutator import Table
     table = entry.get('params')
-    if not isinstance(table, Table) or (table.dim, table.xsize, table.ysize, table.zsize) != (2,) + CLASS_TABLE or len(table.data) != PARAM_COUNT * (CLASS_LEVELS + 1):
+    if isinstance(table, dict) and table.get('__class__') == 'Table' and isinstance(table.get('data'), list):      # indexed (JSON) twin of the native Table
+        table = SimpleNamespace(dim=table.get('dimensions'), xsize=table.get('xsize'), ysize=table.get('ysize'), zsize=table.get('zsize'), data=table['data'])
+    elif not isinstance(table, Table):
+        table = None
+    if table is None or (table.dim, table.xsize, table.ysize, table.zsize) != (2,) + CLASS_TABLE or len(table.data) != PARAM_COUNT * (CLASS_LEVELS + 1):
         raise ValueError('Selected class params must be the editor 8 x 100 Table (dim 2)')
     if any(table.data[:PARAM_COUNT]):
         raise ValueError('Selected class params Table has non-zero values in the unused level-0 column')
@@ -1004,8 +1138,8 @@ def actor_equips(value, roots, features):
     return out
 
 
-def actor_overrides(selected, out, roots):
-    """Cross-field rules of the actor overrides (levels, paired graphics, class, equips)."""
+def actor_overrides(selected, out, roots, final=None):
+    """Cross-field rules of the actor overrides (levels, paired graphics, class, equips). `final` holds the effective feature tuples when the features change."""
     initial, maximum = out.get('initial_level', selected.get('initial_level')), out.get('max_level', selected.get('max_level'))
     if not 1 <= initial <= maximum <= 99:
         raise ValueError('Levels must satisfy 1 <= initial_level <= max_level <= 99 (inherited values included)')
@@ -1022,22 +1156,30 @@ def actor_overrides(selected, out, roots):
         database_id(roots, 'classes', class_id, 'class_id')
     if 'equips' in out:
         if any(out['equips']):
-            actor_features = out['features'] if 'features' in out else selected.get('features')
+            actor_features = final if final is not None else selected.get('features')
             out['equips'] = actor_equips(out['equips'], roots, feature_pairs(roots['classes'][class_id].get('features')) + feature_pairs(actor_features))
 
 
-def validated_overrides(table, selected, overrides, refs=None):
+def validated_overrides(table, selected, overrides, refs=None, edit=False):
     """Return the strictly validated override dict; includes cross-field checks against inherited values.
 
-    `refs` holds the referenced roots by name (a bare list is the legacy Enemies array); entries needed by an override must be present."""
+    `refs` holds the referenced roots by name (a bare list is the legacy Enemies array); entries needed by an override must be present.
+    With `edit` the overrides change an existing entry (`selected`): the name (and troop members) are optional, but at least one key is required."""
     from vxace_balance import parse, Opaque, MAX_FORMULA
     roots = refs_dict(refs)
-    if not isinstance(overrides, dict) or 'name' not in overrides or (table == 'troops' and 'members' not in overrides):
+    if edit:
+        if not isinstance(overrides, dict) or not overrides:
+            raise ValueError('fields must be a non-empty object')
+    elif not isinstance(overrides, dict) or 'name' not in overrides or (table == 'troops' and 'members' not in overrides):
         raise ValueError('overrides must be an object that includes a name' + (' and members' if table == 'troops' else ''))
     allowed = OVERRIDES[table]
     for key in overrides:
         if key not in allowed:
             raise ValueError('Unsupported override key for ' + table + ': ' + str(key))
+    if 'features' in overrides and ('features_add' in overrides or 'features_remove' in overrides):
+        raise ValueError('features replaces the whole list and cannot be combined with features_add / features_remove: use features alone, or features_add / features_remove to change single rows')
+    if 'allow_drop_hit' in overrides and 'features' not in overrides and 'features_remove' not in overrides:
+        raise ValueError('allow_drop_hit only applies together with features or features_remove')
     out = {}
     for key, value in overrides.items():
         if key == 'name':
@@ -1076,6 +1218,16 @@ def validated_overrides(table, selected, overrides, refs=None):
             out[key] = effect_rows(value, roots)
         elif key == 'features':
             out[key] = feature_rows(value, roots, table)
+        elif key == 'features_add':
+            out[key] = feature_rows(value, roots, table)
+            if not out[key]:
+                raise ValueError('features_add must list at least one feature')
+        elif key == 'features_remove':
+            out[key] = feature_removals(value, table)
+        elif key == 'allow_drop_hit':
+            if value is not True:
+                raise ValueError('allow_drop_hit must be true (omit it otherwise)')
+            out[key] = True
         elif key == 'exp_params':
             out[key] = exp_params_value(value)
         elif key == 'learnings':
@@ -1113,8 +1265,14 @@ def validated_overrides(table, selected, overrides, refs=None):
             out[key] = integer(value, key, low, high)
     if table in ('items', 'skills') and any(k.startswith('damage_') for k in out) and selected.get('damage').get('type') == 0:
         raise ValueError('Damage overrides require a template with a native damage type')
+    final = None
+    if any(key in out for key in FEATURE_KEYS):
+        old = feature_tuples(selected.get('features'))
+        final = plan_rows(feature_plan(old, out, table), old)
     if table == 'actors':
-        actor_overrides(selected, out, roots)
+        actor_overrides(selected, out, roots, final)
+    if final is not None:
+        hit_guard(table, out, final, roots, selected)
     if table == 'states':
         low = out.get('min_turns', selected.get('min_turns'))
         high = out.get('max_turns', selected.get('max_turns'))
@@ -1171,10 +1329,10 @@ def has_shape(root, key, cls, fields):
                for entry in root[1:] for o in (entry.get(key) if isinstance(entry.get(key), list) else []))
 
 
-def snapshot(root, table, template_id, refs=None, assets=None):
+def snapshot(root, table, template_id, refs=None, assets=None, edit=False):
     refs = refs_dict(refs)
     need_refs(table, root, refs, {'enemies'} if table == 'troops' else set())
-    selected = template(root, table, template_id)
+    selected = template(root, table, template_id, edit)
     extra = {}
     if table == 'troops':
         enemies = refs['enemies']
@@ -1283,32 +1441,38 @@ def new_entry(root, table, mutation, refs=None, project=None, rtp=None):
         if not isinstance(assets, dict) or assets != actor_assets(project, rtp, characters, faces):
             raise ValueError('Actor graphics asset binding is stale or inconsistent')
     entry = marshal_rb.load(marshal_rb.dump(selected))
+    entry.set('id', new_id)
+    if table != 'troops':
+        entry.set('note', convert('', entry.get('note')))
+    apply_overrides(entry, root, selected, table, overrides, roots)
+    return entry
+
+
+def apply_overrides(entry, root, selected, table, overrides, roots):
+    """Write the validated overrides into `entry` (a marshal clone of `selected`); shared by the template-clone append and the in-place edit.
+    id and note are never touched here."""
+    from vxace_python_mutator import RubyObject, RubyString, convert
 
     def put(owner, key, value):
         owner.set(key, convert(value, owner.get(key)) if isinstance(owner.get(key), RubyString) else value)
-    put(entry, 'id', new_id)
     if table == 'troops':
-        put(entry, 'name', overrides['name'])
-        entry.set('members', [RubyObject('RPG::Troop::Member', {'@' + k: m[k] for k in TROOP_MEMBER_FIELDS}) for m in overrides['members']])
-        return entry
-    put(entry, 'note', '')
-    if table == 'classes':
-        from vxace_python_mutator import Table
-        for key, value in overrides.items():
-            if key == 'params':
-                entry.set(key, Table(CLASS_TABLE[0], CLASS_TABLE[1], CLASS_TABLE[2], dim=2, data=class_param_cells(value, roots.get('classes'))))
-            elif key == 'exp_params':
-                entry.set(key, list(value))
-            elif key == 'learnings':
-                entry.set(key, build_learnings(root, selected, value))
-            elif key in ROW_OBJECTS:
-                entry.set(key, build_objects(root, selected, key, value))
-            else:
-                put(entry, key, value)
-        return entry
+        if 'name' in overrides:
+            put(entry, 'name', overrides['name'])
+        if 'members' in overrides:
+            entry.set('members', [RubyObject('RPG::Troop::Member', {'@' + k: m[k] for k in TROOP_MEMBER_FIELDS}) for m in overrides['members']])
+        return
     damage = {'damage_formula': 'formula', 'damage_variance': 'variance', 'damage_critical': 'critical'}
     for key, value in overrides.items():
-        if key in damage:
+        if key in FEATURE_KEYS or key == 'allow_drop_hit':
+            continue
+        if table == 'classes' and key == 'params':
+            from vxace_python_mutator import Table
+            entry.set(key, Table(CLASS_TABLE[0], CLASS_TABLE[1], CLASS_TABLE[2], dim=2, data=class_param_cells(value, roots.get('classes'))))
+        elif table == 'classes' and key == 'exp_params':
+            entry.set(key, list(value))
+        elif table == 'classes' and key == 'learnings':
+            entry.set(key, build_learnings(root, selected, value))
+        elif key in damage:
             put(entry.get('damage'), damage[key], value)
         elif key in ROW_OBJECTS:
             entry.set(key, build_objects(root, selected, key, value))
@@ -1316,7 +1480,9 @@ def new_entry(root, table, mutation, refs=None, project=None, rtp=None):
             entry.set(key, list(value))
         else:
             put(entry, key, value)
-    return entry
+    if any(key in overrides for key in FEATURE_KEYS):
+        old = feature_tuples(selected.get('features'))
+        entry.set('features', build_feature_list(root, selected, entry, feature_plan(old, overrides, table)))
 
 
 def project_of(source_path):
@@ -1395,6 +1561,7 @@ def indexed_snapshot(data, project, table, template_id, characters=(), faces=(),
             'limits': troop_limits or actor_limits or class_limits or ['Only templates whose exact native field set, nested schemas and types are supported are admitted.',
                        'Features, effects, drops, actions and damage type/element are inherited as-is unless an effects (skills, items), features (actors, weapons, armors, states, enemies), actions or drop_items (enemies) override replaces the whole list; note is forced empty. Review the inherited lists.',
                        'Each effects/features code, enemy action (skill, state, switch) or enemy drop item (item, weapon, armor) that references a database needs that database fingerprinted here (expected_states_sha256, expected_skills_sha256, expected_common_events_sha256, expected_system_sha256, expected_items_sha256, expected_weapons_sha256, expected_armors_sha256); only the needed hashes may appear in the spec, and edits to those files after the snapshot make it stale.',
+                       'features_add / features_remove change single rows of the template list (add replaces the value of a row with the same code and data_id in place); a features replacement of an enemy, actor or class without the HIT row (code 22, data_id 0) is refused unless allow_drop_hit is true, and one that drops template rows is reported in the impact warnings.',
                        'Item templates of item type 2 (key items) are refused; use append_key_item for key items.',
                        'battler_name is only charset/length checked; the asset audit must confirm Graphics/Battlers files exist.',
                        'A new static ID can still collide with runtime-created IDs or custom consumers; review scripts/events/notes.',

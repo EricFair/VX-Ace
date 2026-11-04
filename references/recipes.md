@@ -1,4 +1,4 @@
-# Recipes — v1.15 (classes: v1.28)
+# Recipes — v1.15 (classes: v1.28, set_fields: v1.32)
 
 `tools/vxace_recipe.py` chains existing guarded operations. A recipe is a JSON list of high-level steps. Each step is run as its own normal single-change transaction through the existing tools, on a chain of disposable copies: step 1 reads the original project, step *k* reads step *k-1*'s copy. The original project is never written. The runner adds **no mutation logic**: it only drives the Project Reader, the operation's read-only snapshot CLI, the patch planner, the impact report and the Python copy patcher.
 
@@ -75,6 +75,7 @@ Top level: `{"title": "optional text", "steps": [ ... ]}` (1..50 steps). Unknown
 | `type` | Keys | Existing operation |
 | --- | --- | --- |
 | `append_entry` | `table` (`actors`, `classes`, `enemies`, `items`, `skills`, `states`, `weapons`, `armors`, `troops`), `template_id`, `overrides` | [database append](database-append.md) (`append_database_entry`, troops and items included) |
+| `set_fields` | `table` (as for `append_entry`), `id` (integer 1..999 or `{"from_step": k}` of an `append_entry` step on the same table), `fields` (non-empty object of the override keys that `append_entry` accepts for that table) | in-place edit of an existing entry, see [Editing an existing entry](#editing-an-existing-entry-set_fields-v132) (`edit_database_entry`, v1.32) |
 | `append_key_item` | `template_item`, `name`, `description` | [key-item append](key-item-append.md) |
 | `append_learning` | `class_id`, `skill_id` (integer or `{"from_step": k}`), `level` | [class skill learnings](database-append.md#class-skill-learnings-v114) (`append_class_learning`) |
 | `append_encounter` | `map_id`, `troop_id`, `weight`; optional `region_ids` (default `[]`), `encounter_step` (default `null`) | [map encounters](map-encounters.md) |
@@ -242,6 +243,38 @@ A staged page with a character `graphic` and no `options.priority` is stored wit
   {"type": "append_staged_event", "map_id": 1, "template_event": 1, "x": 6, "y": 6, "name": "Recruiter", "pages": [
     {"condition": {}, "commands": [{"text": ["Join us!"]}, {"party": "add", "actor": {"from_step": 2}, "initialize": true}]}]}]}
 ```
+
+## Editing an existing entry: set_fields (v1.32)
+
+A recipe used to be append-only: retuning five numbers of a monster meant rebuilding the whole recipe. `set_fields` edits one **existing** database entry in place:
+
+```json
+{"type": "set_fields", "table": "enemies", "id": 38, "fields": {"params": [650, 0, 22, 9, 6, 6, 8, 5], "gold": 33,
+                                                                  "features_add": [{"code": 11, "data_id": 3, "value": 2.0}]}}
+```
+
+- `table` is any of `actors`, `classes`, `enemies`, `items`, `skills`, `states`, `weapons`, `armors`, `troops`. `id` is an integer, or `{"from_step": k}` for an entry an earlier `append_entry` step created on the same table.
+- `fields` takes **exactly the override keys `append_entry` accepts for that table**, with the same validation, bounds, referenced-database hashes and `from_step` positions: `name`, `params`, `exp`, `gold`, `price`, `description`, `effects`, `actions`, `drop_items`, `learnings`, `exp_params`, `equips`, troop `members`, and the three feature keys `features`, `features_add` and `features_remove` ([HIT guard included](database-append.md#features_add-features_remove-and-the-hit-guard-v132)). Fields that are not listed keep their value; lists that are listed are replaced whole (except the feature rows of `features_add` / `features_remove`). `id` and `note` never change. Unlike an append, `name` is optional.
+- One entry per transaction. The step needs the snapshot of that entry (`vxace_database_entries.py INDEX --project P --table T --edit-id N`) which supplies `expected_array_sha256` and `expected_entry_sha256` plus exactly the referenced-database hashes the fields need; a stale value refuses.
+- Not supported: actor graphics (`character_name`, `face_name` and their indexes need a sheet binding; change them in the editor or give them to a new actor), and anything outside the whitelist. A troop keeps its battle pages (only `name` and `members` change). A step that changes nothing is refused.
+- `plan` simulates the edit and prints every changed field as `field: old -> new` in words (`params[0] Max HP: 900 -> 650`, `features: (not present) -> Element rate: element 3 "Fire" x2`); later steps see the edited entry. The impact report has the same `changes` and `warnings`.
+
+**Implementation choice.** `set_fields` is a new guarded action `edit_database_entry` (module `tools/vxace_database_edit.py`), not a routing through the existing copy-mutation field edit (`kind: "database"`). That edit is scalar-only (it refuses lists, objects and Tables), so it cannot carry `features`, `effects`, `actions`, `drops`, `members` or class curves; it also has no per-reference hashes. The new action reuses the append machinery instead: the entry is cloned, the override validator and builders of `append_database_entry` write the fields into the clone, and the clone replaces the entry. The native verifier proves that only the targeted slot changed (every other slot deep-equal, array shape unchanged) and that the slot equals the factory result of applying the fields to the old entry. The spec is a normal `database_entry` change with locator `{"table": T, "id": N}`.
+
+Example, retune a Cave Troll and give it a fire weakness in one step (everything else of the troll, including its HIT and critical rows, is kept):
+
+```json
+{"title": "Cave Troll", "steps": [
+  {"type": "append_entry", "table": "enemies", "template_id": 23, "overrides": {"name": "Cave Troll"}},
+  {"type": "set_fields", "table": "enemies", "id": {"from_step": 1},
+   "fields": {"params": [650, 0, 22, 9, 6, 6, 8, 5], "exp": 60, "gold": 40, "features_add": [{"code": 11, "data_id": 3, "value": 2.0}]}}]}
+```
+
+Tuning numbers later is then a one-step recipe on the existing id (`"id": 38`), with no rebuild.
+
+## Naming switches and variables (v1.32)
+
+`set_system_fields` accepts `switch_names` and `variable_names` (`{"11": "Troll Killed"}`), see [system-fields.md](system-fields.md). A step that names ids makes the `unnamed switch` / `unnamed variable` warnings of later steps (impact and `plan`) disappear, because every step reads the System of the previous copy (the simulated System in `plan`).
 
 ## Classes (v1.28)
 

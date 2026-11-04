@@ -109,6 +109,9 @@ def new_key_item(root, mutation):
 
 
 def apply(root, mutation, source_path=None, context=None):
+    if isinstance(mutation,dict) and mutation.get('action')=='edit_database_entry':
+        from vxace_database_edit import apply as edit_entry
+        return edit_entry(root,mutation,source_path)
     if isinstance(mutation,dict) and mutation.get('action')=='append_database_entry':
         from vxace_database_append import apply as append_entry
         rtp=None
@@ -160,11 +163,26 @@ def main(argv=None):
     ap.add_argument('--template-item',type=int,help='Items template ID for the inert key-item append (append_key_item)')
     ap.add_argument('--table',default='items',help='items (with --template-id: template clone; with --template-item: key item), actors, enemies, skills, states, weapons, armors, troops or classes (with --class-id: learnings; with --template-id: class clone)')
     ap.add_argument('--template-id',type=int)
+    ap.add_argument('--edit-id',type=int,help='with --table: snapshot one existing entry for the in-place edit (edit_database_entry / recipe step set_fields)')
     ap.add_argument('--class-id',type=int,help='classes table only: the class whose skill learnings are snapshotted')
     ap.add_argument('--character-sheet',action='append',default=[],help='actors table only: also bind this Graphics/Characters sheet (repeatable; project first, optional --rtp)')
     ap.add_argument('--face-sheet',action='append',default=[],help='actors table only: also bind this Graphics/Faces sheet (repeatable; project first, optional --rtp)')
     ap.add_argument('--rtp',help='actors table only: explicit read-only RTP root used to resolve the sheets')
     args=ap.parse_args(argv)
+    if args.edit_id is not None:
+        if args.template_id is not None or args.template_item is not None or args.class_id is not None or args.character_sheet or args.face_sheet or args.rtp:
+            ap.error('--edit-id is used alone with --table')
+        try:
+            project=unlinked(args.project)
+            if project.is_file() and project.suffix.lower()=='.rvproj2':project=project.parent
+            from vxace_database_edit import indexed_snapshot as edit_snapshot
+            result=execute(args.index,project,args.output,lambda data:edit_snapshot(data,project,args.table,args.edit_id),'item-entry-snapshot')
+            (Path(args.output)/'item-entry-snapshot.md').write_text('# VX Ace database entry edit preconditions\n\nRead-only; no mutation authorized.\n\n```json\n'+json.dumps(result,indent=2)+'\n```\n',encoding='utf-8')
+            print(json.dumps({'status':'ok','table':args.table,'edit_id':args.edit_id}))
+            return 0
+        except Exception as exc:
+            print('Entry edit snapshot refused: '+str(exc),file=sys.stderr)
+            return 2
     if args.table=='classes' and args.template_id is None:
         if args.class_id is None or args.template_item is not None:
             ap.error('--table classes takes --class-id (learning append) or --template-id (class clone)')

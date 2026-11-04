@@ -297,7 +297,7 @@ def append_entry_impact(index, change):
     references={}
     # effects / features replacement: re-run the native validators against the freshly indexed referenced databases and describe the result
     listed={}
-    if any(k in overrides for k in ('effects','features','actions','drop_items')) or table=='classes':
+    if any(k in overrides for k in ('effects','features','features_add','features_remove','actions','drop_items')) or table=='classes':
         index_files={'states':'states','skills':'skills','common_events':'common-events','system':'system','classes':'classes','weapons':'weapons','armors':'armors','items':'items'}
         roots={}
         for name in sorted(required_refs(table,overrides)):
@@ -331,6 +331,18 @@ def append_entry_impact(index, change):
         if 'features' in overrides:
             text,warns=describe_features(feature_rows(overrides['features'],roots,table),name_of)
             listed['new_features']=text;listed['feature_warnings']=warns
+        if 'features' in overrides:
+            from vxace_database_append import dropped_feature_warning,feature_tuples
+            listed['feature_warnings']+=dropped_feature_warning(table,feature_tuples(selected.get('features') or []),feature_rows(overrides['features'],roots,table),True,name_of)
+        if 'features_add' in overrides or 'features_remove' in overrides:
+            from vxace_database_append import validated_overrides,feature_tuples,feature_plan,plan_rows,feature_changes
+            sub=validated_overrides(table,selected,{k:overrides[k] for k in ('features_add','features_remove','allow_drop_hit') if k in overrides},roots,True)
+            old_rows=feature_tuples(selected.get('features') or [])
+            removed,added,changed_rows=feature_changes(old_rows,plan_rows(feature_plan(old_rows,sub,table),old_rows))
+            listed['features_removed']=describe_features(removed,name_of)[0]
+            listed['features_added']=describe_features(added,name_of)[0]
+            listed['features_changed']=[a+' -> '+b for a,b in zip(describe_features([o for o,_ in changed_rows],name_of)[0],describe_features([n for _,n in changed_rows],name_of)[0])]
+            listed['feature_warnings']=listed.get('feature_warnings',[])+describe_features(added+[n for _,n in changed_rows],name_of)[1]
         if table=='classes':
             exp=exp_params_value(overrides['exp_params']) if 'exp_params' in overrides else None
             spec=class_params_spec(overrides['params'],roots) if 'params' in overrides else None
@@ -444,7 +456,70 @@ def class_learning_impact(index, change):
                            'Exact native array/class/skills hashes and schema are enforced separately by the snapshot/copy backend.']}
 
 
+def edit_entry_impact(index, change):
+    """Impact for edit_database_entry: old -> new for every changed field in plain words (indexed evidence; native hashes and the factory comparison run in the copy chain)."""
+    from vxace_index_query import Index
+    from vxace_search import search
+    from vxace_database_append import table_spec, OVERRIDES, required_refs, ref_field, validated_overrides, class_param_cells, OPTIONAL_FIELDS
+    from vxace_database_edit import native_mutation,describe_edit,row_lines
+    mutation=native_mutation(change.get('locator'),change.get('mutation'))
+    table,entry_id,overrides=mutation['table'],mutation['entry_id'],mutation['overrides']
+    cls,fields=table_spec(table)
+    data=Index(index);rows=data.json('database/'+table+'.json')
+    if not isinstance(rows,list) or not 2<=len(rows)<=1000 or rows[0] is not None:raise ValueError('A supported native '+table+' array is required')
+    for number,row in enumerate(rows[1:],1):
+        if not isinstance(row,dict) or row.get('__class__')!=cls or type(row.get('id')) is not int or row['id']!=number:
+            raise ValueError('Indexed '+table+' IDs must match native array slots')
+    if not 0<entry_id<len(rows):raise ValueError('entry ID outside the indexed '+table+' array')
+    selected=rows[entry_id]
+    index_files={'states':'states','skills':'skills','common_events':'common-events','system':'system','classes':'classes','weapons':'weapons','armors':'armors','items':'items','enemies':'enemies'}
+    roots={}
+    for name in sorted(required_refs(table,overrides)):
+        try:roots[name]=rows if name==table else data.json('database/'+index_files[name]+'.json')
+        except Exception:raise ValueError('Indexed database/'+index_files[name]+'.json is required to check the ids referenced by the fields')
+    missing=sorted(ref_field(name) for name in roots if ref_field(name) not in mutation)
+    if missing:raise ValueError('Mutation lacks the referenced-database hashes: '+', '.join(missing))
+    out=validated_overrides(table,selected,overrides,roots,True)
+    lookup=dict(roots)
+    for name in ('system','skills','classes','states','items','weapons','armors','enemies'):
+        if name not in lookup:
+            try:lookup[name]=rows if name==table else data.json('database/'+index_files[name]+'.json')
+            except Exception:pass
+    def name_of(kind,number):
+        system=lookup.get('system') if isinstance(lookup.get('system'),dict) else {}
+        if kind in ('element','switch','skill type','weapon type','armor type'):
+            names=system.get({'element':'elements','switch':'switches'}.get(kind) or kind.replace(' ','_')+'s')
+            return names[number] if isinstance(names,list) and 0<=number<len(names) and names[number] else None
+        source=lookup.get({'state':'states','skill':'skills','common event':'common_events','item':'items','weapon':'weapons','armor':'armors','class':'classes','enemy':'enemies'}.get(kind))
+        row=source[number] if isinstance(source,list) and 0<=number<len(source) else None
+        return row.get('name') if isinstance(row,dict) else None
+    def skill_info(number):
+        skills=lookup.get('skills');row=skills[number] if isinstance(skills,list) and 0<number<len(skills) else None
+        return {k:row.get(k) for k in ('scope','mp_cost','tp_cost')} if isinstance(row,dict) else None
+    cells=None
+    if table=='classes' and 'params' in out:
+        kind,body=out['params']
+        cells=class_param_cells(out['params']) if kind=='curves' else list(roots['classes'][body]['params']['data'])
+    changed,warnings=describe_edit(table,selected,out,roots,name_of,cells,skill_info)
+    mentions=[]
+    for marker in APPEND_MARKERS[table]:
+        result=search(data,query=marker,scopes=('scripts','events'),limit=20)
+        mentions.append({'literal':marker,'matches':result['matches'],'evidence':result['hits'],'evidence_truncated':result['truncated']})
+    data.unchanged()
+    return {'kind':'database_entry','severity':'high','action':mutation['action'],
+            'target':{'table':table,'id':entry_id,'name':selected.get('name')},'overridden_fields':sorted(overrides),
+            'changes':changed,'changes_text':row_lines(changed),'warnings':warnings,'referenced_hashes_required':{ref_field(name):mutation.get(ref_field(name)) for name in sorted(roots)},
+            'consumer_mentions':mentions,
+            'limitations':['The entry keeps its id and note; every other entry of the table stays byte-identical (verified natively against the factory result of these fields on the old entry).',
+                           'Lists named in the fields (features, effects, actions, drop_items, members, learnings, equips) are replaced whole, except features_add / features_remove which change single rows; features_remove and add are matched by (code, data_id).',
+                           'Dependants are not rewritten: troops, shops, drops, encounters and events that reference this entry keep pointing at it with its new numbers.',
+                           'Scripts and notetags that read the old values are not analysed; literal mentions do not prove freedom from dynamic consumers.',
+                           'Exact native array/entry/referenced-database hashes and schema are enforced separately by the snapshot/copy backend.']}
+
+
 def entry_impact(index, change):
+    if isinstance(change.get('mutation'),dict) and change['mutation'].get('action')=='edit_database_entry':
+        return edit_entry_impact(index,change)
     if isinstance(change.get('mutation'),dict) and change['mutation'].get('action')=='append_class_learning':
         return class_learning_impact(index,change)
     if isinstance(change.get('mutation'),dict) and change['mutation'].get('action')=='append_database_entry':
@@ -1009,7 +1084,7 @@ def system_fields_impact(index,change):
     """Impact for set_system_fields: old -> new per field, plus start/party warnings (indexed evidence; native hashes are enforced by the copy chain)."""
     from vxace_index_query import Index
     from vxace_search import search
-    from vxace_system_fields import schema,describe,TERM_COUNTS,ACTION,MAX_PARTY
+    from vxace_system_fields import schema,describe,TERM_COUNTS,ACTION,MAX_PARTY,NAME_FIELDS,FIELDS
     loc=change.get('locator');mutation=change.get('mutation')
     if loc!={'table':'system'} or not isinstance(mutation,dict) or mutation.get('action')!=ACTION:raise ValueError('Exact System fields proposal required')
     schema(mutation)
@@ -1019,6 +1094,14 @@ def system_fields_impact(index,change):
         raise ValueError('Indexed native System with terms required')
     old={'game_title':system.get('game_title'),'currency_unit':system.get('currency_unit'),'party_members':list(system.get('party_members') or []),
          'start':{'map_id':system.get('start_map_id'),'x':system.get('start_x'),'y':system.get('start_y')},'terms':{g:list(terms[g]) for g in TERM_COUNTS}}
+    for field,native in NAME_FIELDS.items():
+        listed=system.get(native)
+        if field in mutation:
+            if not isinstance(listed,list):raise ValueError('Indexed System '+native+' required')
+            for key in mutation[field]:
+                if int(key)>=len(listed):raise ValueError(field+' id '+key+' is outside the indexed '+native)
+                if (listed[int(key)] or '')==mutation[field][key]:raise ValueError(field+'.'+key+' already has this value')
+        old[field]={str(n):v for n,v in enumerate(listed or []) if n and isinstance(v,str) and v}
     for group,entries in mutation.get('terms',{}).items():
         for key in entries:
             if int(key)>=len(old['terms'][group]):raise ValueError('terms.'+group+' index '+key+' is outside the indexed terms')
@@ -1046,11 +1129,11 @@ def system_fields_impact(index,change):
         result=search(data,query=marker,scopes=('scripts','events'),limit=10)
         mentions.append({'literal':marker,'matches':result['matches'],'evidence':result['hits'],'truncated':result['truncated']})
     data.unchanged()
-    return {'kind':'system_fields','severity':'high','target':{'table':'system','fields':[k for k in ('game_title','currency_unit','party_members','start','terms') if k in mutation]},
+    return {'kind':'system_fields','severity':'high','target':{'table':'system','fields':[k for k in FIELDS if k in mutation]},
             'changes':rows,'start_moves':'start' in mutation,'party_changes':'party_members' in mutation,'version_id_advanced':False,
             'warnings':warnings,'consumer_mentions':mentions,
             'limitations':['Native System, Actors, MapInfos and start-map hashes and the deep-equality of every other System field are enforced separately by the Python copy chain.',
-                           'Only the listed fields are written; version_id, switches, variables, sounds, vehicles, option flags and the other terms keep their exact values.',
+                           'Only the listed fields are written (switch_names / variable_names only the listed ids); version_id, sounds, vehicles, option flags and the other terms keep their exact values.',
                            'Old saves keep the party, map and position stored in them (DataManager#setup_new_game is the only reader of these fields); terms and currency_unit are read live and change for old saves too.',
                            'Literal script mentions cannot resolve scripts that overwrite $data_system or compare term strings.']}
 

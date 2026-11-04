@@ -5,7 +5,7 @@ description: Design, analyze, balance, validate, debug, and safely stage RPG Mak
 
 # RPG Maker VX Ace Developer
 
-Version: 1.31.0
+Version: 1.32.0
 Target: RPG Maker VX Ace / RGSS3 / Ruby 1.9.2-era runtime
 
 ## Mission
@@ -91,7 +91,8 @@ Prefer Database -> Event/Common/Troop Event -> formula -> small RGSS3 extension 
 | Chain several guarded additions (enemy -> skill -> troop -> encounter -> smoke run) | `tools/vxace_recipe.py plan` (dry-run, no copies), then `run` (copy chain with cleanup, or `--in-place` on a designated working project) ([references/recipes.md](references/recipes.md)) |
 | Quest NPC whose dialogue changes with progress | [references/staged-events.md](references/staged-events.md), [patterns/quest-state-machine.md](patterns/quest-state-machine.md) |
 | Shared logic: inn, reward chain, timer (common event) | [references/common-event-append.md](references/common-event-append.md) |
-| Starting party, start position, title, currency or menu terms | [references/system-fields.md](references/system-fields.md) |
+| Change an existing database entry (stats, features, effects, actions, drops, members) | recipe `set_fields` ([references/recipes.md](references/recipes.md)) |
+| Starting party, start position, title, currency, menu terms, switch/variable names | [references/system-fields.md](references/system-fields.md) |
 | Map monster that battles on touch (fixed, wandering or chasing; one-time or respawning) | `add_monster` ([references/monsters.md](references/monsters.md)) |
 | Wandering or pacing NPC, step-on trap or cutscene trigger | [references/touch-triggers.md](references/touch-triggers.md) |
 | Readable test/starter map: border walls, paths, landmarks (stock RTP presets), reachability warnings | `layout` ([references/map-layouts.md](references/map-layouts.md)) |
@@ -136,7 +137,8 @@ Only these structural writes exist; everything else is proposal/manual-only. Eac
 - one blank event from an existing schema donor, or one stationary literal-dialogue event, per map ([map-event-creation.md](references/map-event-creation.md)) with optional character graphic ([character-event-graphics.md](references/character-event-graphics.md));
 - one-time constant gold/item map rewards ([one-time-event-rewards.md](references/one-time-event-rewards.md));
 - one quest-stage event: 1..8 action-button pages with switch/variable/self-switch conditions, literal dialogue, Control Switch/Variable/Self Switch, nested choices, if/else and battles, plus party, common event, gold, item, weapon, armor, transfer, wait, Set Move Route and Erase Event commands, optional page graphics, touch/parallel triggers and autonomous movement ([staged-events.md](references/staged-events.md));
-- one System fields edit: starting party, start position, game title, currency unit and menu terms ([system-fields.md](references/system-fields.md));
+- one existing-entry edit (`edit_database_entry`, recipe `set_fields`) with the same whitelisted overrides as appends, including `features_add`/`features_remove`; full feature replacements that drop HIT are refused;
+- one System fields edit: starting party, start position, game title, currency unit, menu terms and switch/variable names ([system-fields.md](references/system-fields.md));
 - one common event (call-only or switch-gated parallel process with a wait) using the same command language ([common-event-append.md](references/common-event-append.md));
 - Shop Processing (1..32 existing goods) on a blank or single-dialogue action-button event ([map-shops.md](references/map-shops.md));
 - blank-map append ([blank-map-append.md](references/blank-map-append.md)) and one direct transfer to it ([direct-map-transfer.md](references/direct-map-transfer.md));

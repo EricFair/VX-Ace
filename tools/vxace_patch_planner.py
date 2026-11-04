@@ -95,7 +95,11 @@ def normalize_spec(spec: dict) -> dict:
                 raise ValueError('Map append proposal requires template_map_id and proposal')
         elif kind == 'database_entry':
             locator=item.get('locator');mutation=item.get('mutation')
-            if isinstance(locator,dict) and locator.get('table')=='classes' and ('id' in locator or (isinstance(mutation,dict) and mutation.get('action')=='append_class_learning')):
+            if isinstance(mutation,dict) and mutation.get('action')=='edit_database_entry':
+                from vxace_database_edit import native_mutation as edit_mutation
+                edit_mutation(locator,mutation)
+                if not item.get('proposal'):raise ValueError('Database entry edit requires a proposal')
+            elif isinstance(locator,dict) and locator.get('table')=='classes' and ('id' in locator or (isinstance(mutation,dict) and mutation.get('action')=='append_class_learning')):
                 from vxace_class_learning import native_mutation
                 native_mutation(locator,mutation)
                 if not item.get('proposal'):raise ValueError('Class learning requires a proposal')
@@ -201,7 +205,7 @@ def regression_checks(changes: list[dict]) -> list[str]:
         checks += ['Review dynamic item IDs, inventory extensions and template/note consumers before appending a key item.',
                    'Verify the new ID/Key Item entry in VX Ace, native inventory categorization and engine save/restart-load.',
                    'Confirm every existing Items entry is unchanged; deletion/reuse/reordering remain disabled.']
-    if any(i.get('kind')=='database_entry' and i.get('mutation',{}).get('action')=='append_database_entry' and any(k in i.get('mutation',{}).get('overrides',{}) for k in ('effects','features')) for i in changes if isinstance(i.get('mutation'),dict) and isinstance(i['mutation'].get('overrides'),dict)):
+    if any(i.get('kind')=='database_entry' and i.get('mutation',{}).get('action')=='append_database_entry' and any(k in i.get('mutation',{}).get('overrides',{}) for k in ('effects','features','features_add','features_remove')) for i in changes if isinstance(i.get('mutation'),dict) and isinstance(i['mutation'].get('overrides'),dict)):
         checks += ['Review every replaced effects/features list entry in the impact report, especially common-event calls (effect 44), learn-skill (effect 43), escape (effect 41) and add-skill features (43).',
                    'Check the referenced states, skills, common events and elements in the VX Ace editor; their files are hash-bound and must stay unchanged in the same transaction.',
                    'Use the new item/skill/equipment or state in a battle test (or smoke test) and confirm the effects/traits show in the editor database tab.']
@@ -213,6 +217,10 @@ def regression_checks(changes: list[dict]) -> list[str]:
         checks += ['Review the new class EXP curve, the eight parameter curves (levels 1 and 99 and a middle level), the learnings (skill and level) and the equip / skill-type features in the impact report.',
                    'The new class is used by no actor until an actor with that class_id exists; give that actor equips the class can wear (the actor append checks them).',
                    'Verify the class in the VX Ace editor (EXP curve, parameter curves, skills to learn, features) and level a test actor through several levels in a battle or smoke test.']
+    if any(i.get('kind')=='database_entry' and i.get('mutation',{}).get('action')=='edit_database_entry' for i in changes):
+        checks += ['Review the old -> new table in the impact report: every listed field is rewritten on the existing entry, whose id and note stay.',
+                   'A features replacement replaces the whole list (the report names the dropped rows); a battler without the HIT row (code 22, data_id 0) misses every physical attack.',
+                   'Test the edited entry in the VX Ace editor and a battle or smoke test; confirm every other entry of the table is unchanged.']
     if any(i.get('kind')=='database_entry' and i.get('mutation',{}).get('action')=='append_class_learning' for i in changes):
         checks += ['Review the class existing learnings, the skill (cost, scope, damage) and the level; the new learning has an empty note and is appended last.',
                    'Check actor initial levels, class-change scripts and custom skill-learning scripts; old saves learn the skill only on a later level-up (no retroactive learning).',

@@ -20,7 +20,7 @@ from vxace_database_append import LIST_TABLES, DROP_TABLES, ref_field, required_
 from vxace_index_query import unlinked
 import vxace_adopt as adopt
 
-VERSION = '1.31.0'
+VERSION = '1.32.0'
 ROOT = Path(__file__).resolve().parent
 STEP_TIMEOUT = 1800
 MAX_STEPS = 50
@@ -48,8 +48,10 @@ STEP_KEYS = {
     'insert_script': ({'type', 'name', 'source_file'}, {'type', 'name', 'source_file'}),
     'set_map_display_name': ({'type', 'map_id', 'name'}, {'type', 'map_id', 'name'}),
     'text_import': ({'type', 'csv'}, {'type', 'csv', 'allow_shorter'}),
-    'set_system_fields': ({'type'}, {'type', 'game_title', 'currency_unit', 'party_members', 'start', 'terms'}),
+    'set_system_fields': ({'type'}, {'type', 'game_title', 'currency_unit', 'party_members', 'start', 'terms', 'switch_names', 'variable_names'}),
+    'set_fields': ({'type', 'table', 'id', 'fields'}, {'type', 'table', 'id', 'fields'}),
 }
+SYSTEM_KEYS = ('game_title', 'currency_unit', 'party_members', 'start', 'terms', 'switch_names', 'variable_names')
 
 
 class RecipeError(ValueError):
@@ -478,6 +480,63 @@ def validate_area(step, number, steps):
         raise RecipeError(f'step {number}: from_step is only allowed for door map_id, door template_event and a has_item id in the door condition')
 
 
+def check_override_refs(table, overrides, number, steps):
+    """from_step rules of an append_entry `overrides` / a set_fields `fields` object (the same keys, the same earlier-step tables)."""
+    shadow = copymod.deepcopy(overrides)
+    members = shadow.get('members')
+    if table == 'troops' and isinstance(members, list):
+        for member in members:
+            if isinstance(member, dict) and is_ref(member.get('enemy_id')):
+                check_ref(member['enemy_id'], number, steps, 'enemies', 'members enemy_id')
+                member['enemy_id'] = 0
+    equips = shadow.get('equips')
+    if table == 'actors' and isinstance(equips, list):
+        for slot, item in enumerate(equips):
+            if is_ref(item):
+                check_goods_ref(item, number, steps, 'weapon' if slot == 0 else 'armor')
+                equips[slot] = 0
+    if table == 'actors' and is_ref(shadow.get('class_id')):
+        check_ref(shadow['class_id'], number, steps, 'classes', 'class_id')
+        shadow['class_id'] = 0
+    if table == 'classes':
+        learned = shadow.get('learnings')
+        for row in learned if isinstance(learned, list) else []:
+            if isinstance(row, dict) and is_ref(row.get('skill_id')):
+                check_ref(row['skill_id'], number, steps, 'skills', 'learnings skill_id')
+                row['skill_id'] = 0
+        curves = shadow.get('params')
+        if isinstance(curves, dict) and is_ref(curves.get('copy_from_class')):
+            check_ref(curves['copy_from_class'], number, steps, 'classes', 'params copy_from_class')
+            curves['copy_from_class'] = 0
+    for key, rules, family in (('effects', EFFECT_REF_TABLE, 'effects'), ('features', FEATURE_REF_TABLE, 'features'), ('features_add', FEATURE_REF_TABLE, 'features')):
+        rows = shadow.get(key)
+        if table in LIST_TABLES[family] and isinstance(rows, list):
+            for row in rows:
+                if isinstance(row, dict) and is_ref(row.get('data_id')):
+                    want = rules.get(row.get('code')) if is_int(row.get('code')) else None
+                    if want is None:
+                        raise RecipeError(f'step {number}: {key} data_id from_step is only allowed for codes {sorted(rules)}')
+                    check_ref(row['data_id'], number, steps, want, f'{key} data_id (code {row["code"]})')
+                    row['data_id'] = 0
+    if table == 'enemies':
+        actions = shadow.get('actions')
+        for row in actions if isinstance(actions, list) else []:
+            if isinstance(row, dict) and is_ref(row.get('skill_id')):
+                check_ref(row['skill_id'], number, steps, 'skills', 'actions skill_id')
+                row['skill_id'] = 0
+        drops = shadow.get('drop_items')
+        for slot in drops if isinstance(drops, list) else []:
+            if isinstance(slot, dict) and is_ref(slot.get('id')):
+                drop_kind = slot.get('kind')
+                want = DROP_TABLES.get(drop_kind) if isinstance(drop_kind, str) else None
+                if want is None:
+                    raise RecipeError(f'step {number}: drop_items id from_step needs kind item, weapon or armor')
+                check_ref(slot['id'], number, steps, want, f'drop_items id (kind {drop_kind})')
+                slot['id'] = 0
+    if contains_ref_key(shadow):
+        raise RecipeError(f'step {number}: from_step is only allowed for troop members enemy_id, actor equips and class_id, class learnings skill_id and params copy_from_class, effects/features data_id, enemy action skill_id and enemy drop item id')
+
+
 def validate_recipe(recipe):
     """Strict structural validation. Operation-level rules (ranges, whitelists) stay with the existing guarded tools."""
     if not isinstance(recipe, dict) or set(recipe) - {'title', 'steps'} or 'steps' not in recipe:
@@ -505,59 +564,17 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: template_id must be a positive integer')
             if not isinstance(step['overrides'], dict):
                 raise RecipeError(f'step {number}: overrides must be an object')
-            shadow = copymod.deepcopy(step['overrides'])
-            members = shadow.get('members')
-            if step['table'] == 'troops' and isinstance(members, list):
-                for member in members:
-                    if isinstance(member, dict) and is_ref(member.get('enemy_id')):
-                        check_ref(member['enemy_id'], number, steps, 'enemies', 'members enemy_id')
-                        member['enemy_id'] = 0
-            equips = shadow.get('equips')
-            if step['table'] == 'actors' and isinstance(equips, list):
-                for slot, item in enumerate(equips):
-                    if is_ref(item):
-                        check_goods_ref(item, number, steps, 'weapon' if slot == 0 else 'armor')
-                        equips[slot] = 0
-            if step['table'] == 'actors' and is_ref(shadow.get('class_id')):
-                check_ref(shadow['class_id'], number, steps, 'classes', 'class_id')
-                shadow['class_id'] = 0
-            if step['table'] == 'classes':
-                learned = shadow.get('learnings')
-                for row in learned if isinstance(learned, list) else []:
-                    if isinstance(row, dict) and is_ref(row.get('skill_id')):
-                        check_ref(row['skill_id'], number, steps, 'skills', 'learnings skill_id')
-                        row['skill_id'] = 0
-                curves = shadow.get('params')
-                if isinstance(curves, dict) and is_ref(curves.get('copy_from_class')):
-                    check_ref(curves['copy_from_class'], number, steps, 'classes', 'params copy_from_class')
-                    curves['copy_from_class'] = 0
-            for key, rules in (('effects', EFFECT_REF_TABLE), ('features', FEATURE_REF_TABLE)):
-                rows = shadow.get(key)
-                if step['table'] in LIST_TABLES[key] and isinstance(rows, list):
-                    for row in rows:
-                        if isinstance(row, dict) and is_ref(row.get('data_id')):
-                            want = rules.get(row.get('code')) if is_int(row.get('code')) else None
-                            if want is None:
-                                raise RecipeError(f'step {number}: {key} data_id from_step is only allowed for codes {sorted(rules)}')
-                            check_ref(row['data_id'], number, steps, want, f'{key} data_id (code {row["code"]})')
-                            row['data_id'] = 0
-            if step['table'] == 'enemies':
-                actions = shadow.get('actions')
-                for row in actions if isinstance(actions, list) else []:
-                    if isinstance(row, dict) and is_ref(row.get('skill_id')):
-                        check_ref(row['skill_id'], number, steps, 'skills', 'actions skill_id')
-                        row['skill_id'] = 0
-                drops = shadow.get('drop_items')
-                for slot in drops if isinstance(drops, list) else []:
-                    if isinstance(slot, dict) and is_ref(slot.get('id')):
-                        drop_kind = slot.get('kind')
-                        want = DROP_TABLES.get(drop_kind) if isinstance(drop_kind, str) else None
-                        if want is None:
-                            raise RecipeError(f'step {number}: drop_items id from_step needs kind item, weapon or armor')
-                        check_ref(slot['id'], number, steps, want, f'drop_items id (kind {drop_kind})')
-                        slot['id'] = 0
-            if contains_ref_key(shadow):
-                raise RecipeError(f'step {number}: from_step is only allowed for troop members enemy_id, actor equips and class_id, class learnings skill_id and params copy_from_class, effects/features data_id, enemy action skill_id and enemy drop item id')
+            check_override_refs(step['table'], step['overrides'], number, steps)
+        elif kind == 'set_fields':
+            if step['table'] not in TABLES:
+                raise RecipeError(f'step {number}: table must be one of {", ".join(TABLES)}')
+            if is_ref(step['id']):
+                check_ref(step['id'], number, steps, step['table'], 'id')
+            elif not is_int(step['id']) or not 1 <= step['id'] <= 999:
+                raise RecipeError(f'step {number}: id must be an integer 1..999 or {{"from_step": N}} of an append_entry step on table {step["table"]}')
+            if not isinstance(step['fields'], dict) or not step['fields']:
+                raise RecipeError(f'step {number}: fields must be a non-empty object')
+            check_override_refs(step['table'], step['fields'], number, steps)
         elif kind == 'append_key_item':
             if not is_int(step['template_item']) or step['template_item'] < 1:
                 raise RecipeError(f'step {number}: template_item must be a positive integer')
@@ -701,7 +718,7 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: name must be a string')
         elif kind == 'set_system_fields':
             if len(step) < 2:
-                raise RecipeError(f'step {number}: give at least one of game_title, currency_unit, party_members, start, terms')
+                raise RecipeError(f'step {number}: give at least one of {", ".join(SYSTEM_KEYS)}')
             if 'party_members' in step:
                 members = step['party_members']
                 if not isinstance(members, list) or not 1 <= len(members) <= 8:
@@ -723,7 +740,7 @@ def validate_recipe(recipe):
                 raise RecipeError(f'step {number}: csv must be a non-empty string')
             if 'allow_shorter' in step and type(step['allow_shorter']) is not bool:
                 raise RecipeError(f'step {number}: allow_shorter must be a boolean')
-        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest', 'add_touch_trigger', 'add_monster', 'set_system_fields', 'add_area') \
+        if kind not in ('append_entry', 'append_encounter', 'append_learning', 'add_shop', 'append_dialogue_event', 'append_staged_event', 'append_common_event', 'add_treasure_chest', 'add_touch_trigger', 'add_monster', 'set_system_fields', 'add_area', 'set_fields') \
                 and contains_ref_key(strip_map_ref(step)):
             raise RecipeError(f'step {number}: from_step is not allowed in a {kind} step')
         if kind == 'append_encounter' and contains_ref_key({k: v for k, v in step.items() if k not in ('troop_id', 'map_id')}):
@@ -786,9 +803,19 @@ def build_spec(title, number, step, snapshot, source=None):
         change = {'kind': 'database_entry', 'locator': {'table': step['table']},
                   'proposal': f'Recipe step {number}: append one {step["table"]} entry cloned from template {step["template_id"]}.',
                   'mutation': mutation}
+    elif kind == 'set_fields':
+        mutation = {'action': 'edit_database_entry', 'expected_array_sha256': snapshot['array_sha256'], 'expected_entry_sha256': snapshot['entry_sha256']}
+        for name in sorted(required_refs(step['table'], step['fields'])):
+            if snapshot.get(name + '_sha256') is None:
+                raise RecipeError(f'snapshot has no {name} hash')
+            mutation[ref_field(name)] = snapshot[name + '_sha256']
+        mutation['overrides'] = step['fields']
+        change = {'kind': 'database_entry', 'locator': {'table': step['table'], 'id': step['id']},
+                  'proposal': f'Recipe step {number}: edit {step["table"]} entry {step["id"]} in place ({", ".join(sorted(step["fields"]))}).',
+                  'mutation': mutation}
     elif kind == 'set_system_fields':
         mutation = {'action': 'set_system_fields', 'expected_system_sha256': snapshot['system_sha256']}
-        mutation.update({key: step[key] for key in ('game_title', 'currency_unit', 'party_members', 'start', 'terms') if key in step})
+        mutation.update({key: step[key] for key in SYSTEM_KEYS if key in step})
         if 'party_members' in step:
             mutation['expected_actors_sha256'] = snapshot['actors_sha256']
         if 'start' in step:
@@ -798,7 +825,7 @@ def build_spec(title, number, step, snapshot, source=None):
             mutation['expected_mapinfos_sha256'] = snapshot['mapinfos_sha256']
             mutation['expected_start_map_sha256'] = start_map['sha256']
         change = {'kind': 'system_fields', 'locator': {'table': 'system'},
-                  'proposal': f'Recipe step {number}: edit System fields ({", ".join(key for key in ("game_title", "currency_unit", "party_members", "start", "terms") if key in step)}).',
+                  'proposal': f'Recipe step {number}: edit System fields ({", ".join(key for key in SYSTEM_KEYS if key in step)}).',
                   'mutation': mutation}
     elif kind == 'append_key_item':
         if not snapshot.get('append_slot_supported'):
@@ -1157,6 +1184,8 @@ def execute_step(number, step, title, source, work, ruby, created, recipe_dir, r
                     if (characters or faces) and rtp:
                         table_args += ['--rtp', rtp]
                 script, args, name = 'vxace_database_entries.py', [index, '--project', source, *table_args], 'item-entry-snapshot'
+            elif kind == 'set_fields':
+                script, args, name = 'vxace_database_entries.py', [index, '--project', source, '--table', resolved['table'], '--edit-id', resolved['id']], 'item-entry-snapshot'
             elif kind == 'set_system_fields':
                 start = resolved.get('start')
                 script, args, name = ('vxace_system_fields.py', [index, '--project', source,

@@ -31,6 +31,7 @@ LIMITS = [
     'The EXP curve uses the ' + EXP_NOTE + '.',
     'Enemy rows use database parameters only; enemy actions are listed regardless of conditions or rating.',
     'Only HP damage and HP drain skills are matched up for hits-to-kill; MP damage is listed in the formula table only.',
+    'Enemy-vs-actor rows add hit chance for physical skills (hit type 1): skill success rate x the enemy HIT ex-parameter x (1 - the actor EVA ex-parameter), both read from features only (an actor: class + actor features, no equipment or states). Certain-hit skills use the success rate alone and magical skills do not model magic evasion.',
     'Shop prices follow command 302/605 as written; shops built with scripts or variables are not seen.',
     'Warnings are heuristics, not defects; no result authorizes mutation.',
 ]
@@ -179,6 +180,20 @@ def exp_for_level(level, exp_params):
     return int(math.floor(value + 0.5)) if value >= 0 else -int(math.floor(-value + 0.5))
 
 
+def xparam(rows, data_id):
+    """Sum of the ex-parameter features (code 22) with this data id in a features list (HIT 0, EVA 1); a battler without the row has 0."""
+    return sum(f['value'] for f in rows if isinstance(f, dict) and f.get('code') == 22 and f.get('data_id') == data_id and type(f.get('value')) in (int, float))
+
+
+def hit_chance(skill, hit, eva):
+    """Chance the skill lands, like Game_Battler#item_hit / item_eva for a physical skill (hit type 1); other hit types ignore HIT and EVA."""
+    success = skill.get('success_rate') if type(skill.get('success_rate')) in (int, float) else 100
+    kind = skill.get('hit_type')
+    if kind == 1:
+        return round(min(max(success * 0.01 * hit, 0.0), 1.0) * (1 - min(max(eva, 0.0), 1.0)), 4)
+    return round(min(max(success * 0.01, 0.0), 1.0), 4)
+
+
 def class_params(klass, level):
     """Eight base parameters at a level from the class Table (index x + y*xsize)."""
     table = klass.get('params') if isinstance(klass, dict) else None
@@ -313,7 +328,8 @@ def analyze(data, levels=(1, 10, 20, 50), max_rows=200, variables=None, actor_id
         ysize = klass['params']['ysize'] if isinstance(klass.get('params'), dict) and type(klass['params'].get('ysize')) is int else 0
         picked = level_set(levels, actor, ysize)
         stats = {lv: class_params(klass, lv) for lv in picked}
-        actor_stats[slot] = {'name': name_of(actor), 'stats': stats, 'klass': klass, 'initial': actor['initial_level'] if type(actor.get('initial_level')) is int else 1}
+        actor_stats[slot] = {'name': name_of(actor), 'stats': stats, 'klass': klass, 'initial': actor['initial_level'] if type(actor.get('initial_level')) is int else 1,
+                             'eva': xparam((klass.get('features') or []) + (actor.get('features') or []), 1)}
         top = min(actor.get('max_level') if type(actor.get('max_level')) is int else 99, ysize - 1)
         curve = []
         for lv in sample_levels(top):
@@ -323,14 +339,15 @@ def analyze(data, levels=(1, 10, 20, 50), max_rows=200, variables=None, actor_id
                              'max_level': top, 'exp_params': klass.get('exp_params'), 'exp_formula': EXP_NOTE, 'curve': curve,
                              'evidence': {'file': t['classes'][0], 'path': [actor['class_id'], 'params']}})
 
-    # Enemy parameters.
-    enemy_stats = {}
+    # Enemy parameters (and the HIT ex-parameter of each enemy).
+    enemy_stats, enemy_hit = {}, {}
     for slot, enemy in enumerate(enemies):
         if enemy is None or (enemy_ids and slot not in enemy_ids): continue
         data.spend(); params = enemy.get('params')
         if not isinstance(params, list) or len(params) != 8 or any(type(x) is not int for x in params):
             warn('enemy_opaque_params', 'Enemy params are not eight integers', {'file': t['enemies'][0], 'path': [slot, 'params']}, enemy_id=slot); continue
         enemy_stats[slot] = dict(zip(PARAMS, params))
+        enemy_hit[slot] = xparam(enemy.get('features') or [], 0)
 
     def with_pools(stats, extra=None):
         return {**stats, 'hp': stats['mhp'], 'mp': stats['mmp'], **(extra or {})}
@@ -377,11 +394,21 @@ def analyze(data, levels=(1, 10, 20, 50), max_rows=200, variables=None, actor_id
                     data.spend()
                     try: dmg = base_value(f['tree'], with_pools(es), with_pools(stats, {'level': lv}), variables)
                     except EvalError as exc: skip(str(exc)); continue
+                    physical = skills[sid].get('hit_type') == 1
+                    chance = hit_chance(skills[sid], enemy_hit[eid], info['eva'])
                     row = {'enemy_id': eid, 'enemy': name_of(enemies[eid]), 'skill_id': sid, 'skill': name_of(skills[sid]), 'actor_id': aid, 'actor': info['name'],
-                           'level': lv, 'base_damage': dmg, 'actor_mhp': stats['mhp'], 'hits_to_kill': math.ceil(stats['mhp'] / dmg) if dmg > 0 else None}
+                           'level': lv, 'base_damage': dmg, 'actor_mhp': stats['mhp'], 'hits_to_kill': math.ceil(stats['mhp'] / dmg) if dmg > 0 else None,
+                           'hit_rate': round(enemy_hit[eid], 4) if physical else None, 'evasion': round(info['eva'], 4) if physical else None,
+                           'hit_chance': chance, 'expected_damage': round(dmg * chance, 1)}
                     record('enemy_vs_actor', row)
                     if row['hits_to_kill'] == 1 and lv == info['initial']: enemy_oneshot.setdefault((eid, sid), []).append(aid)
 
+    for eid in sorted(enemy_stats):
+        physical = [a['skill_id'] for a in enemies[eid].get('actions') or [] if isinstance(a, dict) and type(a.get('skill_id')) is int and 0 < a['skill_id'] < len(skills)
+                    and skills[a['skill_id']] and skills[a['skill_id']].get('hit_type') == 1 and (formula_rows.get(('skill', a['skill_id'])) or {}).get('damage_type_id') in HP_DAMAGE]
+        if physical and enemy_hit[eid] <= 0:
+            warn('enemy_never_hits', 'Enemy can never hit (HIT 0%): its physical attacks always miss (no HIT ex-parameter feature, code 22 data_id 0, or it sums to 0)',
+                 {'file': t['enemies'][0], 'path': [eid, 'features']}, enemy_id=eid, skill_ids=sorted(set(physical)), hit_rate=round(enemy_hit[eid], 4))
     for (aid, sid), eids in sorted(nonpositive.items()):
         warn('nonpositive_damage', 'Base damage is zero or negative at the actor\'s lowest sampled level against these enemies', {'file': t['skills'][0], 'path': [sid, 'damage', 'formula']},
              actor_id=aid, skill_id=sid, enemy_ids=eids[:10], enemy_count=len(eids))
@@ -464,8 +491,10 @@ def markdown(r):
     m = r['matchups']
     out += ['## Actor vs enemy (%d rows%s)' % (m['actor_vs_enemy_total'], ', truncated' if m['actor_vs_enemy_truncated'] else ''), '', '| actor | lv | skill | enemy | damage | hits |', '|---|---|---|---|---|---|']
     out += ['| %s | %d | %s | %s | %d | %s |' % (x['actor'], x['level'], x['skill'], x['enemy'], x['base_damage'], x['hits_to_kill'] if x['hits_to_kill'] is not None else '-') for x in m['actor_vs_enemy']] + ['']
-    out += ['## Enemy vs actor (%d rows%s)' % (m['enemy_vs_actor_total'], ', truncated' if m['enemy_vs_actor_truncated'] else ''), '', '| enemy | skill | actor | lv | damage | hits |', '|---|---|---|---|---|---|']
-    out += ['| %s | %s | %s | %d | %d | %s |' % (x['enemy'], x['skill'], x['actor'], x['level'], x['base_damage'], x['hits_to_kill'] if x['hits_to_kill'] is not None else '-') for x in m['enemy_vs_actor']] + ['']
+    out += ['## Enemy vs actor (%d rows%s)' % (m['enemy_vs_actor_total'], ', truncated' if m['enemy_vs_actor_truncated'] else ''), '', '| enemy | skill | actor | lv | damage | hits | hit | eva | chance | expected |', '|---|---|---|---|---|---|---|---|---|---|']
+    pct = lambda v: '-' if v is None else '%g%%' % round(v * 100, 2)
+    out += ['| %s | %s | %s | %d | %d | %s | %s | %s | %s | %g |' % (x['enemy'], x['skill'], x['actor'], x['level'], x['base_damage'], x['hits_to_kill'] if x['hits_to_kill'] is not None else '-',
+                                                                pct(x['hit_rate']), pct(x['evasion']), pct(x['hit_chance']), x['expected_damage']) for x in m['enemy_vs_actor']] + ['']
     out += ['## Troops', '', '| id | name | members | exp | gold | drops |', '|---|---|---|---|---|---|']
     out += ['| %d | %s | %d | %d | %d | %s |' % (t['id'], t['name'], t['members'], t['total_exp'], t['total_gold'], ', '.join('%s %s (%s)' % (d['goods_type'], d['name'] or d['goods_id'], d['chance']) for d in t['drops'])) for t in r['troops']] + ['']
     out += ['## Shops', '', '| where | good | price | database price | price type |', '|---|---|---|---|---|']
